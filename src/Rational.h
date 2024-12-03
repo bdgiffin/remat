@@ -14,6 +14,9 @@ struct Rational {
   // basic constructor for a Rational number given two Integer integer numbers
   //Rational(double f, Integer d) : numerator(f*d), denominator(d) { }
 
+  // implicit type-cast to a floating point number
+  operator double() { return double(numerator)/denominator; }
+
   // summation of two Rational numbers
   Rational operator+(Rational const summand) {
     Rational sum;
@@ -51,6 +54,19 @@ struct Rational {
     }
     return difference;
   } // operator-
+  
+  // basic arithmetic operations between a Rational number and an Integer
+  Rational operator*(Integer const multiplier) { return Rational(numerator*multiplier,denominator); }
+  Rational operator/(Integer const divisor)    { return Rational(numerator/divisor,   denominator); }
+  Rational operator%(Integer const divisor)    { return Rational(numerator%divisor,   denominator); }
+
+  // comparison of two Fixed-precision numbers
+  bool operator> (Rational const other) { return (this->double() >  double(other)); }
+  bool operator< (Rational const other) { return (this->double() <  double(other)); }
+  bool operator>=(Rational const other) { return (this->double() >= double(other)); }
+  bool operator<=(Rational const other) { return (this->double() <= double(other)); }
+  bool operator==(Rational const other) { return (this->double() == double(other)); }
+  bool operator!=(Rational const other) { return (this->double() != double(other)); }
   
 }; // Rational
 

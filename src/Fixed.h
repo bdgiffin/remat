@@ -10,39 +10,28 @@ struct Fixed {
   inline static double decimal = std::pow(RADIX,EXPONENT);
   Integer mantissa;
 
-  // constructor for a Fixed-precision number given its mantissa
-  Fixed(Integer i = 0) : mantissa(i) { }
-
-  // constructor for a Fixed-precision number given a floating point number
+  // constructor methods for a Fixed-precision number
   Fixed(double d = 0.0) : mantissa(d/decimal) { }
 
   // implicit type-cast to a floating point number
   operator double() { return mantissa*decimal; }
 
-  // summation of two Fixed-precision numbers with the same radix and exponent
-  Fixed<RADIX,EXPONENT> operator+(Fixed<RADIX,EXPONENT> const summand) {
-    return Fixed<RADIX,EXPONENT>(mantissa + summand.mantissa);
-  } // operator+
+  // basic arithmetic operations between two Fixed-precision numbers with the same radix and exponent
+  Fixed<RADIX,EXPONENT> operator+(Fixed<RADIX,EXPONENT> const summand)    { return Fixed<RADIX,EXPONENT>(mantissa + summand.mantissa);    }
+  Fixed<RADIX,EXPONENT> operator-(Fixed<RADIX,EXPONENT> const subtrahend) { return Fixed<RADIX,EXPONENT>(mantissa - subtrahend.mantissa); }
 
-  // subtraction of two Fixed-precision numbers with the same radix and exponent
-  Fixed<RADIX,EXPONENT> operator-(Fixed<RADIX,EXPONENT> const subtrahend) {
-    return Fixed<RADIX,EXPONENT>(mantissa - subtrahend.mantissa);
-  } // operator-
+  // basic arithmetic operations between a Fixed-precision number and an Integer
+  Fixed<RADIX,EXPONENT> operator*(Integer const multiplier) { return Fixed<RADIX,EXPONENT>(mantissa*multiplier); }
+  Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
+  Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
 
-  // multiplication of a Fixed-precision number by an Integer
-  Fixed<RADIX,EXPONENT> operator*(Integer const multiplier) {
-    return Fixed<RADIX,EXPONENT>(mantissa*multiplier);
-  } // operator*
-
-  // division of a Fixed-precision number by an Integer
-  Fixed<RADIX,EXPONENT> operator/(Integer const divisor) {
-    return Fixed<RADIX,EXPONENT>(mantissa/divisor);
-  } // operator/
-
-  // modulo (remainder) of a Fixed-precision number
-  Fixed<RADIX,EXPONENT> operator%(Integer const divisor) {
-    return Fixed<RADIX,EXPONENT>(mantissa%divisor);
-  } // operator%
+  // comparison of two Fixed-precision numbers
+  bool operator> (Fixed<RADIX,EXPONENT> const other) { return (mantissa >  other.mantissa); }
+  bool operator< (Fixed<RADIX,EXPONENT> const other) { return (mantissa <  other.mantissa); }
+  bool operator>=(Fixed<RADIX,EXPONENT> const other) { return (mantissa >= other.mantissa); }
+  bool operator<=(Fixed<RADIX,EXPONENT> const other) { return (mantissa <= other.mantissa); }
+  bool operator==(Fixed<RADIX,EXPONENT> const other) { return (mantissa == other.mantissa); }
+  bool operator!=(Fixed<RADIX,EXPONENT> const other) { return (mantissa != other.mantissa); }
   
 }; // Fixed
 
