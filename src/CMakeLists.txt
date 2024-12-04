@@ -13,10 +13,10 @@ set(REMAT_headers
     PARENT_SCOPE
     )
   
-blt_add_library(
-    NAME        REMAT
-    SOURCES     ${REMAT_sources}
-    HEADERS     ${REMAT_headers}
-    DEPENDS_ON  ${REMAT_dependencies}
-    SHARED      FALSE
-    )
+#blt_add_library(
+#    NAME        REMAT
+#    SOURCES     ${REMAT_sources}
+#    HEADERS     ${REMAT_headers}
+#    DEPENDS_ON  ${REMAT_dependencies}
+#    SHARED      FALSE
+#    )
