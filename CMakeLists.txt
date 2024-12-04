@@ -65,8 +65,8 @@ add_subdirectory(tests)
 # Configure default installation
 #------------------------------------------------------------------------------
 
-install(TARGETS REMAT
-	LIBRARY DESTINATION lib)
+#install(TARGETS REMAT
+#	LIBRARY DESTINATION lib)
 
 # Sets the installation prefix (where to install files)
 set(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR}/install)

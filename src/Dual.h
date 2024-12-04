@@ -12,17 +12,38 @@ struct Dual {
   Dual(T a, T b = 0) : first(a), second(b) { }
   
   // basic arithmetic operations between two Dual numbers of the same templated type
-  Dual<T> operator+(Dual<T> const summand)    { return Dual<T>(first +    summand.first,second +    summand.second); }
-  Dual<T> operator-(Dual<T> const subtrahend) { return Dual<T>(first - subtrahend.first,second - subtrahend.second); }
+  Dual<T> operator+(Dual<T> const summand)    const { return Dual<T>(first +    summand.first,second +    summand.second); }
+  Dual<T> operator-(Dual<T> const subtrahend) const { return Dual<T>(first - subtrahend.first,second - subtrahend.second); }
 
   // basic arithmetic operations between a Dual number and an Integer
-  Dual<T> operator*(Integer const multiplier) { return Dual<T>(first * multiplier + second % multiplier, second / multiplier               ); }
-  Dual<T> operator/(Integer const divisor)    { return Dual<T>(first / divisor                         , second * divisor + first % divisor); }
+  Dual<T> operator*(Integer const multiplier) const {
+    if ((first < zeroT) != (second < zeroT)) {
+      return Dual<T>(first * multiplier - second % multiplier, second / multiplier);
+    } else {
+      return Dual<T>(first * multiplier + second % multiplier, second / multiplier);
+    }
+  }
+  Dual<T> operator/(Integer const divisor)    const {
+    if ((first < zeroT) != (second < zeroT)) {
+      return Dual<T>(first / divisor, second * divisor - first % divisor);
+    } else {
+      return Dual<T>(first / divisor, second * divisor + first % divisor);
+    }
+  }
 
   // comparison of two Dual numbers
-  bool operator==(Dual<T> const other) { return ((first == other.first) && (second == other.second)); }
-  bool operator!=(Dual<T> const other) { return ((first != other.first) || (second != other.second)); }
-  
+  bool operator==(Dual<T> const other) const { return ((first == other.first) && (second == other.second)); }
+  bool operator!=(Dual<T> const other) const { return ((first != other.first) || (second != other.second)); }
+
+private:
+  inline static T zeroT = T(0.0);
 }; // Dual
+
+// overloaded output stream operator
+template<class T>
+std::ostream& operator<<(std::ostream& os, const Dual<T>& number) {
+  os << '{' << number.first << ',' << number.second << '}';
+  return os;
+} // operator<<
 
 #endif // DUAL_H

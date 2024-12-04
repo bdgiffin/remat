@@ -15,10 +15,11 @@ struct Rational {
   //Rational(double f, Integer d) : numerator(f*d), denominator(d) { }
 
   // implicit type-cast to a floating point number
-  operator double() { return double(numerator)/denominator; }
+  double decimal(void) const { return double(numerator)/denominator; }
+  operator double()    const { return decimal(); }
 
   // summation of two Rational numbers
-  Rational operator+(Rational const summand) {
+  Rational operator+(Rational const summand) const {
     Rational sum;
     if (denominator == summand.denominator) {
       sum.numerator   = numerator + summand.numerator;
@@ -37,7 +38,7 @@ struct Rational {
   } // operator+
 
   // subtraction of two Rational numbers
-  Rational operator-(Rational const subtrahend) {
+  Rational operator-(Rational const subtrahend) const {
     Rational difference;
     if (denominator == subtrahend.denominator) {
       difference.numerator   = numerator - subtrahend.numerator;
@@ -56,17 +57,17 @@ struct Rational {
   } // operator-
   
   // basic arithmetic operations between a Rational number and an Integer
-  Rational operator*(Integer const multiplier) { return Rational(numerator*multiplier,denominator); }
-  Rational operator/(Integer const divisor)    { return Rational(numerator/divisor,   denominator); }
-  Rational operator%(Integer const divisor)    { return Rational(numerator%divisor,   denominator); }
+  Rational operator*(Integer const multiplier) const { return Rational(numerator*multiplier,denominator); }
+  Rational operator/(Integer const divisor)    const { return Rational(numerator/divisor,   denominator); }
+  Rational operator%(Integer const divisor)    const { return Rational(numerator%divisor,   denominator); }
 
   // comparison of two Fixed-precision numbers
-  bool operator> (Rational const other) { return (this->double() >  double(other)); }
-  bool operator< (Rational const other) { return (this->double() <  double(other)); }
-  bool operator>=(Rational const other) { return (this->double() >= double(other)); }
-  bool operator<=(Rational const other) { return (this->double() <= double(other)); }
-  bool operator==(Rational const other) { return (this->double() == double(other)); }
-  bool operator!=(Rational const other) { return (this->double() != double(other)); }
+  bool operator> (Rational const other) const { return (decimal() >  other.decimal()); }
+  bool operator< (Rational const other) const { return (decimal() <  other.decimal()); }
+  bool operator>=(Rational const other) const { return (decimal() >= other.decimal()); }
+  bool operator<=(Rational const other) const { return (decimal() <= other.decimal()); }
+  bool operator==(Rational const other) const { return (decimal() == other.decimal()); }
+  bool operator!=(Rational const other) const { return (decimal() != other.decimal()); }
   
 }; // Rational
 

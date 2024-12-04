@@ -1,4 +1,5 @@
-set(test_dependencies REMAT ${REMAT_dependencies} gtest)
+#set(test_dependencies REMAT ${REMAT_dependencies} gtest)
+set(test_dependencies ${REMAT_dependencies} gtest)
 set(test_include_dirs ${REMAT_include_dirs} ../src)
 
 blt_add_executable(NAME       test_Fixed
