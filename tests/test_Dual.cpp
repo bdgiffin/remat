@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "Fixed.h"
+#include "Rational.h"
 #include "Dual.h"
 #include <iostream>
 
@@ -37,11 +38,12 @@ TEST(test_Dual, arithmetic) {
 } /* TEST(test_Dual, arithmetic) */
 
 TEST(test_Dual, reversibility) {
-  FixedE6 a = +5.0/6.0;
-  FixedE6 b =-17.0/12.0;
-  DualE6  c = DualE6(-b,a);
-  DualE6  d = DualE6(a,b);
-  Integer i = 5;
+  FixedE6  a = +5.0/6.0;
+  FixedE6  b =-17.0/12.0;
+  DualE6   c = DualE6(-b,a);
+  DualE6   d = DualE6(a,b);
+  Integer  i = 5;
+  Rational r = Rational(+5,6);
   // Test reversibility of basic arithmetic operations between two Dual numbers
   ASSERT_EQ((c+d)-c,d);
   ASSERT_EQ((c-d)+d,c);
@@ -50,6 +52,11 @@ TEST(test_Dual, reversibility) {
   ASSERT_EQ((c*i)/i,c);
   ASSERT_EQ((d/i)*i,d);
   ASSERT_EQ((d*i)/i,d);
+  // Test reversibility of basic arithmetic operations between a Dual number and a Rational number
+  ASSERT_EQ((c/r)*r,c);
+  ASSERT_EQ((c*r)/r,c);
+  ASSERT_EQ((d/r)*r,d);
+  ASSERT_EQ((d*r)/r,d);
 } /* TEST(test_Dual, reversibility) */
 
 TEST(test_Dual, comparison) {
@@ -66,11 +73,12 @@ TEST(test_Dual, comparison) {
 
 TEST(test_Dual, cout) {
   // Test printing of Dual numbers
-  FixedE6 a = +5.0/6.0;
-  FixedE6 b =-17.0/12.0;
-  DualE6  c = DualE6(-b,a);
-  DualE6  d = DualE6(a,b);
-  Integer i = 5;
+  FixedE6  a = +5.0/6.0;
+  FixedE6  b =-17.0/12.0;
+  DualE6   c = DualE6(-b,a);
+  DualE6   d = DualE6(a,b);
+  Integer  i = 5;
+  Rational r = Rational(+5,6);
   std::cout << "c = " << c << std::endl;
   std::cout << "d = " << d << std::endl;
   std::cout << "c + d = " << (c+d) << std::endl;
@@ -79,4 +87,8 @@ TEST(test_Dual, cout) {
   std::cout << "(c * i) / i = " << (c*i)/i << std::endl;
   std::cout << "(d / i) * i = " << (d/i)*i << std::endl;
   std::cout << "(d * i) / i = " << (d*i)/i << std::endl;
+  std::cout << "(c / r) * r = " << (c/r)*r << std::endl;
+  std::cout << "(c * r) / r = " << (c*r)/r << std::endl;
+  std::cout << "(d / r) * r = " << (d/r)*r << std::endl;
+  std::cout << "(d * r) / r = " << (d*r)/r << std::endl;
 } /* TEST(test_Dual, cout) */

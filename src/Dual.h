@@ -2,7 +2,9 @@
 #define DUAL_H
 
 #include "types.h"
+#include "Rational.h"
 #include <iostream>
+#include <math.h>
 
 template<class T>
 struct Dual {
@@ -30,6 +32,14 @@ struct Dual {
       return Dual<T>(first / divisor, second * divisor + first % divisor);
     }
   }
+
+  // basic arithmetic operations between a Dual number and a Rational number (may overflow!)
+  Dual<T> operator*(Rational const multiplier) const { return ((*this)*multiplier.numerator)/multiplier.denominator; }
+  Dual<T> operator/(Rational const divisor)    const { return ((*this)*divisor.denominator)/divisor.numerator;       }
+
+  // basic arithmetic operations between a Dual number and a double-precision floating point number
+  Dual<T> operator*(double const multiplier) const { return (*this)*multiplier; }
+  Dual<T> operator/(double const divisor)    const { return (*this)*divisor;    }
 
   // comparison of two Dual numbers
   bool operator==(Dual<T> const other) const { return ((first == other.first) && (second == other.second)); }

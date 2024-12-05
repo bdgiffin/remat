@@ -26,6 +26,11 @@ struct Fixed {
   Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
   Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
 
+  // basic arithmetic operations between a Fixed-precision number and a double-precision floating point number
+  Fixed<RADIX,EXPONENT> operator*(double const multiplier) const { return Fixed<RADIX,EXPONENT>(Integer(mantissa*multiplier)); }
+  Fixed<RADIX,EXPONENT> operator/(double const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(mantissa/divisor));    }
+  Fixed<RADIX,EXPONENT> operator%(double const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(std::remainder(mantissa,divisor))); }
+
   // comparison of two Fixed-precision numbers
   bool operator> (Fixed<RADIX,EXPONENT> const other) const { return (mantissa >  other.mantissa); }
   bool operator< (Fixed<RADIX,EXPONENT> const other) const { return (mantissa <  other.mantissa); }

@@ -3,16 +3,36 @@
 
 #include "types.h"
 #include <iostream>
+#include <math.h>
 
 struct Rational {
   Integer numerator;
   Integer denominator;
 
-  // basic constructor for a Rational number given two Integer integer numbers
-  Rational(Integer n = 0, Integer d = 1) : numerator(n), denominator(d) { }
+  // default constructor
+  Rational(void) : numerator(0), denominator(1) { }
 
   // basic constructor for a Rational number given two Integer integer numbers
-  //Rational(double f, Integer d) : numerator(f*d), denominator(d) { }
+  Rational(Integer n, Integer d) : numerator(n), denominator(d) { }
+
+  // basic constructor for a Rational number given a double-precision floating point number
+  Rational(double f) {
+    // Separate exponent and mantissa in [.5, 1),
+    // and scale the mantissa by the number of digits to produce the integer numerator
+    int exponent;
+    numerator = scalb(std::frexp(f, &exponent), std::numeric_limits<double>::digits);
+
+    // Adjust the exponent to compensate for scaling of the mantissa
+    exponent -= std::numeric_limits<double>::digits;
+
+    // Scale either the numerator or denominator, depending on the sign of the exponent
+    denominator = 1;
+    if (exponent < 0) {
+      denominator = scalb(denominator, -exponent);
+    } else {
+      numerator = scalb(numerator, exponent);
+    }
+  }
 
   // implicit type-cast to a floating point number
   double decimal(void) const { return double(numerator)/denominator; }
