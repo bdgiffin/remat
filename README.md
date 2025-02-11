@@ -1,5 +1,7 @@
 # ReMat
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14851878.svg)](https://doi.org/10.5281/zenodo.14851878)
+
 ReMat is a proof-of-concept reversible physics library predicated on the use of fixed-precision numerics and integer arithmetic operations to ensure that all computations are exactly bit-reversible. Consequently, prior solution states may be precisely *rematerialized* through direct reversal of the forward-in-time operations. This is useful for the purpose of computing adjoint sensitivities of a time-dependent simulation without the need for solution checkpointing.
 
 A central concept underpinning the developed bit-reversible computations pertains to the use of "dual" numbers which preserve information (bits) that would otherwise be lost due to finite precision rounding errors. In particular, consider the following example involving integer addition:
