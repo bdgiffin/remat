@@ -1,0 +1,16 @@
+abstract: <p>Preliminary alpha release version of ReMat</p>
+authors:
+- affiliation: Oklahoma State University
+  family-names: Brian Doran Giffin
+cff-version: 1.2.0
+date-released: '2025-02-11'
+doi: 10.5281/zenodo.14851878
+identifiers:
+- type: swh
+  value: swh:1:dir:e25bc6a20fb8bc9405e61e51560be2c380736913;origin=https://doi.org/10.5281/zenodo.14851877;visit=swh:1:snp:596b07e89864367525a390ff21aefaeafa64d86d;anchor=swh:1:rel:4d53d4705b1e1a150ca12ff15a6e76c8078d8046;path=bdgiffin-remat-47abb6e
+license:
+- mit
+repository-code: https://github.com/bdgiffin/remat/tree/v0.1
+title: 'bdgiffin/remat: ReMat v0.1'
+type: software
+version: v0.1
