@@ -29,3 +29,12 @@ blt_add_executable(NAME       test_Dual
 blt_add_test(NAME    test_Dual
 	     COMMAND test_Dual)
 
+blt_add_executable(NAME       test_Matrix
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_Matrix.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+		 
+blt_add_test(NAME    test_Matrix
+	     COMMAND test_Matrix)
+
