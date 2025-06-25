@@ -38,3 +38,21 @@ blt_add_executable(NAME       test_Matrix
 blt_add_test(NAME    test_Matrix
 	     COMMAND test_Matrix)
 
+blt_add_executable(NAME       test_Integrator
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_Integrator.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+		 
+blt_add_test(NAME    test_Integrator
+	     COMMAND test_Integrator)
+
+blt_add_executable(NAME       test_System
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_System.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+		 
+blt_add_test(NAME    test_System
+	     COMMAND test_System)
+

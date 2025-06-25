@@ -6,4 +6,7 @@
 // Define a Fixed-precision numeric type
 typedef int64_t Integer;
 
+// Define a standard Floating point ("Real") numeric type
+typedef double Real;
+
 #endif // TYPES_H

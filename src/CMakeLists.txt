@@ -10,6 +10,8 @@ set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/Fixed.h
     ${CMAKE_CURRENT_LIST_DIR}/Rational.h
     ${CMAKE_CURRENT_LIST_DIR}/Dual.h
+    ${CMAKE_CURRENT_LIST_DIR}/Integrator.h
+    ${CMAKE_CURRENT_LIST_DIR}/System.h
     PARENT_SCOPE
     )
   

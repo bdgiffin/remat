@@ -12,6 +12,9 @@ struct Dual {
 
   // constructor for a Dual number
   Dual(T a, T b = 0) : first(a), second(b) { }
+
+  // implicit type-cast to a primal number
+  operator T() const { return first; }
   
   // basic arithmetic operations between two Dual numbers of the same templated type
   Dual<T> operator+(Dual<T> const summand)    const { return Dual<T>(first +    summand.first,second +    summand.second); }
