@@ -2,6 +2,7 @@
 #include "Integrator.h"
 #include "Rational.h"
 #include "Fixed.h"
+#include "Dual.h"
 #include <vector>
 #include <iostream>
 
@@ -15,18 +16,6 @@ typedef Fixed<RADIX,EXPONENT_U> FixedU;
 TEST(test_Integrator, constructors) {
   // Test creation of integrator
   Integrator<FixedV,FixedU,Rational> leapfrog;
-  
-  const int N = 10;
-  Matrix<N> A;
-  Matrix<N> B(2.0);
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) {
-      ASSERT_EQ(A(i,j), 0.0);
-      ASSERT_EQ(B(i,j), 2.0);
-    }
-  }
-  std::cout << "A = " << std::endl << A << std::endl;
-  std::cout << "B = " << std::endl << B << std::endl;
 } /* TEST(test_Integrator, constructors) */
 
 TEST(test_Integrator, half_step_velocity_update) {
@@ -60,23 +49,12 @@ TEST(test_Integrator, half_step_velocity_update) {
   // Test integrator on Dual Fixed types
   {
     Integrator<FixedV,FixedU,Rational> leapfrog;
-    std::vector<Dual<FixedV> > v(N,0.0);
-    std::vector<Dual<FixedU> > u(N,0.0);
+    std::vector<Dual<FixedV> > v(N,Dual<FixedV>(0.0,0.0));
+    std::vector<Dual<FixedU> > u(N,Dual<FixedU>(0.0,0.0));
 
     // Update should be reversible provided no overflow occurs
     leapfrog.first_half_step_velocity_update( +dt,v.data(),a.data(),alpha.data(),N); // forward
     leapfrog.second_half_step_velocity_update(-dt,v.data(),a.data(),alpha.data(),N); // reverse
   }
   
-  const int N = 10;
-  Matrix<N> A;
-  Matrix<N> B(2.0);
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) {
-      ASSERT_EQ(A(i,j), 0.0);
-      ASSERT_EQ(B(i,j), 2.0);
-    }
-  }
-  std::cout << "A = " << std::endl << A << std::endl;
-  std::cout << "B = " << std::endl << B << std::endl;
 } /* TEST(test_Integrator, constructors) */

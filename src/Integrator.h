@@ -2,6 +2,7 @@
 #define INTEGRATOR_H
 
 #include "types.h"
+#include "Dual.h"
 #include <iostream>
 #include <math.h>
 
@@ -21,16 +22,16 @@ struct Integrator {
       FixedV dv = + 0.5*dt*a[i];
 
       // 2) Compute the damping factor for the current node (cast as a Rational number)
-      Ratio phi = 1 - 0.5*dt*alpha[i];
+      Ratio phi = 1.0 - 0.5*dt*alpha[i];
 
       // 3) Update the dual velocity variable
-      v[i] -= Dual<FixedV>(0,dv);
+      v[i] = v[i] - Dual<FixedV>(0.0,dv);
 
       // 4) Apply the damping factor to the primal/dual velocity pair
-      v[i] *= phi;
+      v[i] = v[i] * phi;
 
       // 5) Update the primal velocity variable
-      v[i] += Dual<FixedV>(dv,0);
+      v[i] = v[i] + Dual<FixedV>(dv,0.0);
 
     } // End loop over all DoFs
     
@@ -49,16 +50,16 @@ struct Integrator {
       FixedV dv = - 0.5*dt*a[i];
 
       // 2) Compute the damping factor for the current node (cast as a Rational number)
-      Ratio phi = 1 + 0.5*dt*alpha[i];
+      Ratio phi = 1.0 + 0.5*dt*alpha[i];
 
       // 3) Update the dual velocity variable
-      v[i] -= Dual<FixedV>(dv,0);
+      v[i] = v[i] - Dual<FixedV>(dv,0.0);
 
       // 4) Apply the damping factor to the primal/dual velocity pair
-      v[i] /= phi;
+      v[i] = v[i] / phi;
 
       // 5) Update the primal velocity variable
-      v[i] += Dual<FixedV>(0,dv);
+      v[i] = v[i] + Dual<FixedV>(0.0,dv);
 
     } // End loop over all DoFs
     
@@ -74,21 +75,16 @@ struct Integrator {
     for (int i=0; i<N; i++) {
 
       // 1) Compute the displacement increment (cast as a FixedU number) from the mid-step velocity
-      FixedU du = v[i]*dt;
+      FixedU du = Real(v[i].first)*dt;
     
       // 2) Update the displacement with the displacement increment
-      u[i] += Dual<FixedU>(+du,-du);
+      u[i] = u[i] + Dual<FixedU>(+du,-du);
 
     } // End loop over all DoFs
     
   } // whole_step_displacement_update()
     
   // ===================================================================== //
-
-private:
-  
-  // private constructor method for a time-integrator object
-  //Integrator() { }
   
 }; // Integrator
 

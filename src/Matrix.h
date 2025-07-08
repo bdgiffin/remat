@@ -20,13 +20,15 @@ struct Matrix {
     }
   }
 
-  Matrix(Matrix<N>& const copy) {
+  /*
+  Matrix(Matrix<N>& copy) {
     for (int i=0; i<N; i++) {
       for (int j=0; j<N; j++) {
         data[i][j] = copy(i,j);
       }
     }
   }
+  */
 
   // Zero all entries in the matrix
   void zero(void) {
@@ -72,7 +74,7 @@ struct Matrix {
   } // transpose()
 
   template<class T>
-  void lower_dual_update(std::vector<Dual<T> >& const x, std::vector<Dual<T> >& y) const {
+  void lower_dual_update(std::vector<Dual<T> >& x, std::vector<Dual<T> >& y) const {
     for (int i=0; i<N; i++) {
       y[i].first = x[i].first;
       for (int j=0; j<i; j++) {
@@ -88,7 +90,7 @@ struct Matrix {
   } // lower_dual_update
 
   template<class T>
-  void upper_dual_update(std::vector<Dual<T> >& const x, std::vector<Dual<T> >& y) const {
+  void upper_dual_update(std::vector<Dual<T> >& x, std::vector<Dual<T> >& y) const {
     for (int i=N-1; i>=0; i--) {
       y[i].first = x[i].first;
       for (int j=i+1; j<N; j++) {
@@ -110,7 +112,7 @@ struct Matrix {
 }; // Matrix
 
 template<class T, int N>
-void dual_update(Matrix<N>& L, Matrix<N>& U, double* D, std::vector<Dual<T> >& const x, std::vector<Dual<T> >& y) {
+void dual_update(Matrix<N>& L, Matrix<N>& U, double* D, std::vector<Dual<T> >& x, std::vector<Dual<T> >& y) {
   std::vector<Dual<T> > temp(N);
   U.upper_dual_update(x,temp);
   for (int i=0; i<N; i++) temp[i] = D[i] * temp[i];

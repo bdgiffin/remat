@@ -41,8 +41,8 @@ struct Dual {
   Dual<T> operator/(Rational const divisor)    const { return ((*this)*divisor.denominator)/divisor.numerator;       }
 
   // basic arithmetic operations between a Dual number and a double-precision floating point number
-  Dual<T> operator*(double const multiplier) const { return (*this)*multiplier; }
-  Dual<T> operator/(double const divisor)    const { return (*this)*divisor;    }
+  Dual<T> operator*(double const multiplier) const { return Dual<T>(first*multiplier,second/multiplier); }
+  Dual<T> operator/(double const divisor)    const { return Dual<T>(first/divisor,second*divisor); }
 
   // comparison of two Dual numbers
   bool operator==(Dual<T> const other) const { return ((first == other.first) && (second == other.second)); }

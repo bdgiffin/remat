@@ -66,35 +66,7 @@ TEST(test_Matrix, transpose) {
 
   // Test transpose
   U = L;
-  U.transpose;
-
-  // Compare against reference solution obtained from MATLAB
-  double tolerance = 1.0e-4;
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) ASSERT_EQ(L(j,i), U(i,j));
-  }
-
-  // Optionally print out the results
-  std::cout << "L = " << std::endl << L << std::endl;
-  std::cout << "U = " << std::endl << U << std::endl;
-  
-} /* TEST(test_Matrix, transpose) */
-
-TEST(test_Matrix, transpose) {
-  // LDL factorization
-  const int N = 10;
-  Matrix<N> A,L,U;
-  double D[N];
-  for (int i=0; i<N; i++) {
-    A(i,i) = 2.0;
-    if (i > 0)   A(i,i-1) = -1.0;
-    if (i < N-1) A(i,i+1) = -1.0;
-  }
-  A.factor(L,D);
-
-  // Test transpose
-  U = L;
-  U.transpose;
+  U.transpose();
 
   // Compare against reference solution obtained from MATLAB
   double tolerance = 1.0e-4;

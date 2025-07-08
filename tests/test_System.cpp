@@ -1,109 +1,77 @@
 #include "gtest/gtest.h"
-#include "Matrix.h"
+#include "System.h"
+#include "Element.h"
+#include "Material.h"
+#include "Parameters.h"
+#include "Fixed.h"
+#include "Rational.h"
 #include <iostream>
 
-TEST(test_Matrix, constructors) {
-  // Test creation of matrices
-  const int N = 10;
-  Matrix<N> A;
-  Matrix<N> B(2.0);
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) {
-      ASSERT_EQ(A(i,j), 0.0);
-      ASSERT_EQ(B(i,j), 2.0);
-    }
-  }
-  std::cout << "A = " << std::endl << A << std::endl;
-  std::cout << "B = " << std::endl << B << std::endl;
+// Declare standard Fixed-precision numbers
+const int          RADIX = 10;
+const int     EXPONENT_V = -6;
+const int     EXPONENT_U = -4;
+typedef Fixed<RADIX,EXPONENT_V> FixedV;
+typedef Fixed<RADIX,EXPONENT_U> FixedU;
+
+TEST(test_System, constructors) {
+  // Test creation of System object
+  System<Element<Material>,FixedV,FixedU,Rational> problem;
 } /* TEST(test_Matrix, constructors) */
 
-TEST(test_Matrix, factor) {
-  // Test simple LDL factorization
-  const int N = 10;
-  Matrix<N> A,L;
-  double D[N];
-  for (int i=0; i<N; i++) {
-    A(i,i) = 2.0;
-    if (i > 0)   A(i,i-1) = -1.0;
-    if (i < N-1) A(i,i+1) = -1.0;
-  }
-  A.factor(L,D);
+TEST(test_System, initialize) {
+  System<Element<Material>,Real,Real,Real> problem;
 
-  // Compare against reference solution obtained from MATLAB
-  double tolerance = 1.0e-4;
-  double Lref[N] = {-0.5000,-0.6667,-0.7500,-0.8000,-0.8333,-0.8571,-0.8750,-0.8889,-0.9000,0.0000};
-  double Dref[N] = {2.0000,1.5000,1.3333,1.2500,1.2000,1.1667,1.1429,1.1250,1.1111,1.1000};
-  for (int i=0; i<N; i++) {
-    ASSERT_NEAR(D[i], Dref[i], tolerance);
-    ASSERT_EQ(L(i,i), 1.0);
-    for (int j=0; j<i; j++) ASSERT_EQ(L(j,i), 0.0);
-    if (i < (N-1)) ASSERT_NEAR(L(i+1,i), Lref[i], tolerance);
-    for (int j=i+2; j<N; j++) ASSERT_EQ(L(j,i), 0.0);
-  }
+  // Define test problem geometry
+  const int Nnodes = 9;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 4;
+  const int Nnodes_per_elem = 4;
+  Real coordinates[18] = { 0.0, 0.0,
+                           1.0, 0.0,
+                           2.0, 0.0,
+		           0.0, 1.0,
+                           1.0, 1.0,
+                           2.0, 1.0,
+		 	   0.0, 2.0,
+                           1.0, 2.0,
+                           2.0, 2.0 };
+  int connectivity[16] = { 0, 1, 4, 3,
+                           1, 2, 5, 4,
+                           3, 4, 7, 6,
+                           4, 5, 8, 7 };
 
-  // Optionally print out the results
-  std::cout << "A = " << std::endl << A << std::endl;
-  std::cout << "L = " << std::endl << L << std::endl;
-  std::cout << "D = [ ";
-  for (int i=0; i<N; i++) {
-    std::cout << D[i] << " ";
+  // Create parameters object
+  Parameters params;
+
+  // Define global parameters
+  params["dt_scale_factor"]     =  1.e-5;
+  params["body_force_y"]        = -1.e-5;
+  params["initial_velocity_y"]  = -1.e-5;
+  params["mass_damping_factor"] = 1.0e-9;
+
+  // Material parameters
+  params["density"] = 0.5;
+  params["youngs_modulus"] = 215.0e+1; // GPa
+  params["poissons_ratio"] = 0.28;
+
+  // Test initialization of the problem object
+  problem.initialize(&coordinates[0],Nnodes,Ndofs_per_node,
+  		     &connectivity[0],Nelems,Nnodes_per_elem,
+  		     params);
+
+  // Initialize the problem state at time t=0.0
+  std::cout << "Initializing state ... " << std::endl;
+  problem.initialize_state(0.0);
+
+  // Update the time step
+  std::cout << "Updating the time step ... " << std::endl;
+  int Nsteps = 10;
+  Real time = 0.0;
+  Real dt = 1.0e-7;
+  for (int i = 0; i<Nsteps; i++) {
+    time += dt;
+    problem.update_state(time,dt);
   }
-  std::cout << "]" << std::endl;
   
-} /* TEST(test_Matrix, factor) */
-
-TEST(test_Matrix, transpose) {
-  // LDL factorization
-  const int N = 10;
-  Matrix<N> A,L,U;
-  double D[N];
-  for (int i=0; i<N; i++) {
-    A(i,i) = 2.0;
-    if (i > 0)   A(i,i-1) = -1.0;
-    if (i < N-1) A(i,i+1) = -1.0;
-  }
-  A.factor(L,D);
-
-  // Test transpose
-  U = L;
-  U.transpose;
-
-  // Compare against reference solution obtained from MATLAB
-  double tolerance = 1.0e-4;
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) ASSERT_EQ(L(j,i), U(i,j));
-  }
-
-  // Optionally print out the results
-  std::cout << "L = " << std::endl << L << std::endl;
-  std::cout << "U = " << std::endl << U << std::endl;
-  
-} /* TEST(test_Matrix, transpose) */
-
-TEST(test_Matrix, transpose) {
-  // LDL factorization
-  const int N = 10;
-  Matrix<N> A,L,U;
-  double D[N];
-  for (int i=0; i<N; i++) {
-    A(i,i) = 2.0;
-    if (i > 0)   A(i,i-1) = -1.0;
-    if (i < N-1) A(i,i+1) = -1.0;
-  }
-  A.factor(L,D);
-
-  // Test transpose
-  U = L;
-  U.transpose;
-
-  // Compare against reference solution obtained from MATLAB
-  double tolerance = 1.0e-4;
-  for (int i=0; i<N; i++) {
-    for (int j=0; j<N; j++) ASSERT_EQ(L(j,i), U(i,j));
-  }
-
-  // Optionally print out the results
-  std::cout << "L = " << std::endl << L << std::endl;
-  std::cout << "U = " << std::endl << U << std::endl;
-  
-} /* TEST(test_Matrix, transpose) */
+} /* TEST(test_Matrix, initialize) */
