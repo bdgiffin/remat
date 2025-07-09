@@ -65,8 +65,16 @@ add_subdirectory(tests)
 # Configure default installation
 #------------------------------------------------------------------------------
 
-#install(TARGETS REMAT
-#	LIBRARY DESTINATION lib)
+install(TARGETS REMAT
+	LIBRARY DESTINATION lib)
+install(TARGETS REMAT
+	LIBRARY DESTINATION package)
+install(FILES ${REMAT_python}
+	DESTINATION package)
+install(FILES ${REMAT_headers}
+	DESTINATION include)
+message(STATUS "REMAT_python: " ${REMAT_python})
+message(STATUS "REMAT_headers: " ${REMAT_headers})
 
 # Sets the installation prefix (where to install files)
 set(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR}/install)

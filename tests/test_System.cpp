@@ -51,7 +51,7 @@ TEST(test_System, initialize) {
   params["mass_damping_factor"] = 1.0e-9;
 
   // Material parameters
-  params["density"] = 0.5;
+  params["density"]        = 0.5;
   params["youngs_modulus"] = 215.0e+1; // GPa
   params["poissons_ratio"] = 0.28;
 

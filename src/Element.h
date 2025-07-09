@@ -18,20 +18,25 @@ public:
   Element(Parameters& params) : m_model(params) { }
     
   // Return the number of state variables for allocation purposes
-  int num_state_vars(void) { return 4*m_model.num_state_vars(); }
+  int num_state_vars(void) { return (4+1)*m_model.num_state_vars(); }
 
   // Initialize the element state
   void initialize(Real* state) {
     // loop over integration points
-    for (int q = 0; q < 4; q++) {
-      Real* model_state = &state[q*m_model.num_state_vars()];
+    const int num_state_vars = m_model.num_state_vars();
+    for (int q=0; q < 4; q++) {
+      Real* model_state = &state[(q+1)*num_state_vars];
       m_model.initialize(model_state);
+
+      // sum contributions to element-averaged state
+      for (int i=0; i<num_state_vars; i++) {
+	state[i] += 0.25*model_state[i];
+      }
     }
   } // initialize()
     
   // Update the element state using the current nodal displacements
-  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8],
-              Real* state, Real dt, Real& sxx, Real& syy, Real& sxy, Real& pressure) {
+  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real* state, Real dt) {
 
     // Determine nodal masses:
     {
@@ -58,14 +63,12 @@ public:
 
     // Determine nodal forces:
     {
+      const int num_state_vars = m_model.num_state_vars();
       const Real sqrt_third = 1.0/std::sqrt(3.0);
       
       // Define parent nodal coordinates
       Real xi[4]   = { -1.0, +1.0, +1.0, -1.0 };
       Real eta[4]  = { -1.0, -1.0, +1.0, +1.0 };
-
-      // Zero element-averaged plot variables
-      sxx = 0.0; syy = 0.0; sxy = 0.0; pressure = 0.0;
       
       // loop over integration points
       Real sound_speed = 0.0;
@@ -112,14 +115,13 @@ public:
 	F[1][1] = J[1][0]*invJ0[0][1] + J[1][1]*invJ0[1][1];
 
 	// update the material state
-	Real* model_state = &state[q*m_model.num_state_vars()];
+	Real* model_state = &state[(q+1)*num_state_vars];
 	m_model.update(F,model_state,dt);
 
-	// Sum element-averaged plot variables
-	sxx += 0.25*model_state[0];
-	syy += 0.25*model_state[1];
-	sxy += 0.25*model_state[2];
-	pressure  += 0.25*model_state[3];
+	// sum contributions to element-averaged state
+	for (int i=0; i<num_state_vars; i++) {
+	  state[i] += 0.25*model_state[i];
+	}
 
 	// Compute cof(J)
 	Real cofJ[2][2];

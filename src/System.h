@@ -175,6 +175,40 @@ struct System {
   } // update_state()
   
   // ===================================================================== //
+
+  // Procedure to get the current system state data
+  void get_field_data(int* step_id, double* time,
+		      double *ux, double *uy,
+	 	      double *vx, double *vy,
+		      double *fx, double *fy,
+		      double *sxx, double *syy, double *sxy, double *pressure) {
+
+    // Return the current time step ID and analysis time
+    *step_id = m_time_step;
+    *time    = m_time;
+
+    // Copy nodal state data
+    for (int i=0; i<Nnodes; i++) {
+      ux[i] = u[2*i+0].first;
+      uy[i] = u[2*i+1].first;
+      vx[i] = v[2*i+0].first;
+      vy[i] = v[2*i+1].first;
+      fx[i] = f[2*i+0];
+      fy[i] = f[2*i+1];
+    }
+
+    // Copy element state data
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
+    for (int e=0; e<Nelems; e++) {
+      sxx[e]      = state[Nstate_vars_per_elem*e+0];
+      syy[e]      = state[Nstate_vars_per_elem*e+1];
+      sxy[e]      = state[Nstate_vars_per_elem*e+2];
+      pressure[e] = state[Nstate_vars_per_elem*e+3];
+    }
+    
+  } // update_state()
+  
+  // ===================================================================== //
 private:
   // ===================================================================== //
 
@@ -203,10 +237,9 @@ private:
       }
 
       // Compute internal force in the current element
-      Real sxx,syy,sxy,pressure;
       Real me[8];
       Real fe[8];
-      m_element.update(xe,ue,me,fe,&state[Nstate_vars_per_elem*e],dt,sxx,syy,sxy,pressure);
+      m_element.update(xe,ue,me,fe,&state[Nstate_vars_per_elem*e],dt);
 
       // Scatter mass and forces to the nodes
       for (int j=0; j<Nnodes_per_elem; j++) {
