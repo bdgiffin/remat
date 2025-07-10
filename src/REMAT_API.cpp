@@ -16,7 +16,7 @@
 // Declare standard Fixed-precision numbers
 const int          RADIX = 10;
 const int     EXPONENT_V = -6;
-const int     EXPONENT_U = -4;
+const int     EXPONENT_U = -6;
 typedef Fixed<RADIX,EXPONENT_V> FixedV;
 typedef Fixed<RADIX,EXPONENT_U> FixedU;
 
@@ -24,7 +24,8 @@ typedef Fixed<RADIX,EXPONENT_U> FixedU;
 Parameters params;
 
 // global instance of the system object
-System<Element<Material>,Real,Real,Real> remat;
+//System<Element<Material>,Real,Real,Real> remat;
+System<Element<Material>,FixedV,FixedU,Rational> remat;
 
 // ======================================================================== //
 
@@ -46,7 +47,7 @@ extern "C" {
   void define_geometry(double *coordinates, int *connectivity, size_t Nnodes, size_t Nelems) {
     int Ndofs_per_node  = 2;
     int Nnodes_per_elem = 4;
-    remat.initialize(coordinates, Nnodes, Ndofs_per_node,
+    remat.initialize(coordinates,  Nnodes, Ndofs_per_node,
 		     connectivity, Nelems, Nnodes_per_elem,
 		     params);
   } // define_geometry()
@@ -54,26 +55,31 @@ extern "C" {
   // ------------------------------------------------------------------------ //
 
   // Initialize the System state at the inidicated initial analysis time
-  void initialize(double time) {
-    remat.initialize_state(time);
+  void initialize() {
+    remat.initialize_state();
   } // initialize()
   
   // ------------------------------------------------------------------------ //
 
   // Update the System state
-  void update_state(double time, double dt) {
-    remat.update_state(time,dt);
+  double update_state(double dt, int Nsub_steps) {
+    double time;
+    for (int i=0; i<Nsub_steps; i++) {
+      time = remat.update_state(dt);
+    }
+    return time;
   } // update_state()
   
   // ------------------------------------------------------------------------ //
 
   // Request the System field data
-  void get_field_data(int* step_id, double* time,
-		      double *ux, double *uy,
-	 	      double *vx, double *vy,
-		      double *fx, double *fy,
-		      double *sxx, double *syy, double *sxy, double *pressure) {
-    remat.get_field_data(step_id,time,ux,uy,vx,vy,fx,fy,sxx,syy,sxy,pressure);
+  double get_field_data(double *ux, double *uy,
+	 	        double *vx, double *vy,
+		        double *fx, double *fy,
+			double *dual_ux, double *dual_uy,
+	 	        double *dual_vx, double *dual_vy,
+		        double *sxx, double *syy, double *sxy, double *pressure) {
+    return remat.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure);
   } // get_field_data()
   
   // ------------------------------------------------------------------------ //

@@ -4,6 +4,7 @@
 #include "types.h"
 #include <iostream>
 #include <math.h>
+#include <limits>
 
 struct Rational {
   Integer numerator;
@@ -17,21 +18,25 @@ struct Rational {
 
   // basic constructor for a Rational number given a double-precision floating point number
   Rational(double f) {
-    // Separate exponent and mantissa in [.5, 1),
-    // and scale the mantissa by the number of digits to produce the integer numerator
-    int exponent;
-    numerator = scalb(std::frexp(f, &exponent), std::numeric_limits<double>::digits);
+    //// Separate exponent and mantissa in [.5, 1),
+    //// and scale the mantissa by the number of digits to produce the integer numerator
+    //int exponent;
+    //numerator = scalb(std::frexp(f, &exponent), std::numeric_limits<double>::digits);
+    //
+    //// Adjust the exponent to compensate for scaling of the mantissa
+    //exponent -= std::numeric_limits<double>::digits;
+    //
+    //// Scale either the numerator or denominator, depending on the sign of the exponent
+    //denominator = 1;
+    //if (exponent < 0) {
+    //  denominator = scalb(denominator, -exponent);
+    //} else {
+    //  numerator = scalb(numerator, exponent);
+    //}
 
-    // Adjust the exponent to compensate for scaling of the mantissa
-    exponent -= std::numeric_limits<double>::digits;
-
-    // Scale either the numerator or denominator, depending on the sign of the exponent
-    denominator = 1;
-    if (exponent < 0) {
-      denominator = scalb(denominator, -exponent);
-    } else {
-      numerator = scalb(numerator, exponent);
-    }
+    // Choose a standard denominator relative to the largest Integer
+    denominator = std::sqrt(std::numeric_limits<Integer>::max());
+    numerator   = Integer(f*denominator);
   }
 
   // implicit type-cast to a floating point number

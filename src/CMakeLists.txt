@@ -1,4 +1,10 @@
 set(REMAT_dependencies
+#    Boost
+    PARENT_SCOPE
+    )
+
+set(REMAT_include_dirs
+#    ${Boost_INCLUDE_DIR}
     PARENT_SCOPE
     )
 
@@ -30,7 +36,9 @@ blt_add_library(
     NAME        REMAT
     SOURCES     ${REMAT_sources}
     HEADERS     ${REMAT_headers}
+    INCLUDES    ${REMAT_include_dirs}
     DEPENDS_ON  ${REMAT_dependencies}
     SHARED      TRUE
     )
 set_target_properties(REMAT PROPERTIES SUFFIX ".so")
+#target_link_libraries(REMAT LINK_PUBLIC ${Boost_LIBRARIES})

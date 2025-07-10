@@ -22,8 +22,14 @@ public:
 
   // Initialize the element state
   void initialize(Real* state) {
-    // loop over integration points
+    
+    // zero-initialize element-averaged state
     const int num_state_vars = m_model.num_state_vars();
+    for (int i=0; i<num_state_vars; i++) {
+      state[i] = 0.0;
+    }
+    
+    // loop over integration points
     for (int q=0; q < 4; q++) {
       Real* model_state = &state[(q+1)*num_state_vars];
       m_model.initialize(model_state);
@@ -33,6 +39,7 @@ public:
 	state[i] += 0.25*model_state[i];
       }
     }
+    
   } // initialize()
     
   // Update the element state using the current nodal displacements
@@ -63,15 +70,19 @@ public:
 
     // Determine nodal forces:
     {
-      const int num_state_vars = m_model.num_state_vars();
       const Real sqrt_third = 1.0/std::sqrt(3.0);
       
       // Define parent nodal coordinates
       Real xi[4]   = { -1.0, +1.0, +1.0, -1.0 };
       Real eta[4]  = { -1.0, -1.0, +1.0, +1.0 };
+
+      // zero-initialize element-averaged state
+      const int num_state_vars = m_model.num_state_vars();
+      for (int i=0; i<num_state_vars; i++) {
+	state[i] = 0.0;
+      }
       
       // loop over integration points
-      Real sound_speed = 0.0;
       for (int q = 0; q < 4; q++) {
 
 	// Set quadrature point position
@@ -81,8 +92,8 @@ public:
 	// Compute shape function partial derivatives (dphi/dxi)
 	Real dxi[4], deta[4];
 	for (int i = 0; i < 4; i++) {
-	  dxi[i]   = 0.25*xi[i]*(1.0+etaq*eta[i]);
-	  deta[i]  = 0.25*eta[i]*(1.0+xiq*xi[i]);
+	  dxi[i]  = 0.25*xi[i]*(1.0+etaq*eta[i]);
+	  deta[i] = 0.25*eta[i]*(1.0+xiq*xi[i]);
 	}
 
 	// Compute initial and current Jacobians (J = dx/dxi = sum_a x_a (x) dphi/dxi)
@@ -125,10 +136,10 @@ public:
 
 	// Compute cof(J)
 	Real cofJ[2][2];
-	cofJ[0][0] = +J0[1][1];
-	cofJ[1][0] = -J0[0][1];
-	cofJ[0][1] = -J0[1][0];
-	cofJ[1][1] = +J0[0][0];
+	cofJ[0][0] = +J[1][1];
+	cofJ[1][0] = -J[0][1];
+	cofJ[0][1] = -J[1][0];
+	cofJ[1][1] = +J[0][0];
 
 	// Compute P = sigma*cofJ relative to the parent element configuration
 	Real P[2][2];

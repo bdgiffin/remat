@@ -25,13 +25,14 @@ struct Integrator {
       Ratio phi = 1.0 - 0.5*dt*alpha[i];
 
       // 3) Update the dual velocity variable
-      v[i] = v[i] - Dual<FixedV>(0.0,dv);
+      //v[i] = v[i] - Tv(0.0,dv);
 
       // 4) Apply the damping factor to the primal/dual velocity pair
       v[i] = v[i] * phi;
 
       // 5) Update the primal velocity variable
-      v[i] = v[i] + Dual<FixedV>(dv,0.0);
+      //v[i] = v[i] + Tv(dv,0.0);
+      v[i] = v[i] + Tv(dv);
 
     } // End loop over all DoFs
     
@@ -53,13 +54,14 @@ struct Integrator {
       Ratio phi = 1.0 + 0.5*dt*alpha[i];
 
       // 3) Update the dual velocity variable
-      v[i] = v[i] - Dual<FixedV>(dv,0.0);
+      //v[i] = v[i] - Tv(dv,0.0);
+      v[i] = v[i] - Tv(dv);
 
       // 4) Apply the damping factor to the primal/dual velocity pair
       v[i] = v[i] / phi;
 
       // 5) Update the primal velocity variable
-      v[i] = v[i] + Dual<FixedV>(0.0,dv);
+      //v[i] = v[i] + Tv(0.0,dv);
 
     } // End loop over all DoFs
     
@@ -78,7 +80,8 @@ struct Integrator {
       FixedU du = Real(v[i].first)*dt;
     
       // 2) Update the displacement with the displacement increment
-      u[i] = u[i] + Dual<FixedU>(+du,-du);
+      //u[i] = u[i] + Tu(+du,-du);
+      u[i] = u[i] + Tu(du);
 
     } // End loop over all DoFs
     

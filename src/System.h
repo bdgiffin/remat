@@ -32,6 +32,9 @@ struct System {
   // Mass-proportional damping factor
   Real m_alpha = 0.0;
 
+  // Contact stiffness parameter
+  Real m_contact_stiffness = 0.0;
+
   // Initial velocity
   Real m_vx0 = 0.0;
   Real m_vy0 = 0.0;
@@ -86,6 +89,7 @@ struct System {
     if (params.count("initial_velocity_y") > 0) m_vy0 = params["initial_velocity_y"];
     if (params.count("dt_scale_factor") > 0) m_dt_scale_factor = params["dt_scale_factor"];
     if (params.count("mass_damping_factor") > 0) m_alpha = params["mass_damping_factor"];
+    if (params.count("contact_stiffness") > 0) m_contact_stiffness = params["contact_stiffness"];
 
     // Initialize the element/material object
     m_element = Element_T(params);
@@ -145,17 +149,20 @@ struct System {
   // ===================================================================== //
 
   // Procedure to initialize the system state at the indicated time
-  void initialize_state(Real time) {
+  void initialize_state(void) {
+
+    // Set the initial time to zero
+    m_time = 0.0;
     
     // Update accelerations and damping factors for each DoF
-    update_accelerations(time,0.0);
+    update_accelerations(0.0);
     
   } // initialize_state()
   
   // ===================================================================== //
 
   // Procedure to update the system state for a given time step
-  void update_state(Real time, Real dt) {
+  Real update_state(Real dt) {
 
     // Update velocities to the half-step
     m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
@@ -164,37 +171,41 @@ struct System {
     m_integrator.whole_step_displacement_update(dt,v.data(),u.data(),Ndofs);
     
     // Update masses, residual forces, and accelerations at the whole-step
-    update_accelerations(time,dt);
+    update_accelerations(dt);
     
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
 
     // Update time step ID
-    std::cout << "Time step: " << ++m_time_step << " at time: " << time << std::endl;
+    std::cout << "Time step: " << ++m_time_step << " at time: " << m_time << std::endl;
+
+    // Return the updated analysis time
+    return m_time;
     
   } // update_state()
   
   // ===================================================================== //
 
   // Procedure to get the current system state data
-  void get_field_data(int* step_id, double* time,
-		      double *ux, double *uy,
-	 	      double *vx, double *vy,
-		      double *fx, double *fy,
-		      double *sxx, double *syy, double *sxy, double *pressure) {
-
-    // Return the current time step ID and analysis time
-    *step_id = m_time_step;
-    *time    = m_time;
+  double get_field_data(double *ux, double *uy,
+	 	        double *vx, double *vy,
+		        double *fx, double *fy,
+			double *dual_ux, double *dual_uy,
+	 	        double *dual_vx, double *dual_vy,
+		        double *sxx, double *syy, double *sxy, double *pressure) {
 
     // Copy nodal state data
     for (int i=0; i<Nnodes; i++) {
-      ux[i] = u[2*i+0].first;
-      uy[i] = u[2*i+1].first;
-      vx[i] = v[2*i+0].first;
-      vy[i] = v[2*i+1].first;
-      fx[i] = f[2*i+0];
-      fy[i] = f[2*i+1];
+      ux[i]      = u[2*i+0].first;
+      uy[i]      = u[2*i+1].first;
+      vx[i]      = v[2*i+0].first;
+      vy[i]      = v[2*i+1].first;
+      fx[i]      = f[2*i+0];
+      fy[i]      = f[2*i+1];
+      dual_ux[i] = u[2*i+0].second;
+      dual_uy[i] = u[2*i+1].second;
+      dual_vx[i] = v[2*i+0].second;
+      dual_vy[i] = v[2*i+1].second;
     }
 
     // Copy element state data
@@ -205,6 +216,9 @@ struct System {
       sxy[e]      = state[Nstate_vars_per_elem*e+2];
       pressure[e] = state[Nstate_vars_per_elem*e+3];
     }
+
+    // Return the current analysis time
+    return m_time;
     
   } // update_state()
   
@@ -213,7 +227,10 @@ private:
   // ===================================================================== //
 
   // Procedure to update the accelerations
-  void update_accelerations(Real time, Real dt) {
+  void update_accelerations(Real dt) {
+
+    // Update the current analysis time
+    m_time = m_time + dt;
 
     // Initialize forces and masses
     std::fill(m.begin(), m.end(), 0.0);
@@ -237,8 +254,8 @@ private:
       }
 
       // Compute internal force in the current element
-      Real me[8];
-      Real fe[8];
+      Real me[8] = { 0.0 };
+      Real fe[8] = { 0.0 };
       m_element.update(xe,ue,me,fe,&state[Nstate_vars_per_elem*e],dt);
 
       // Scatter mass and forces to the nodes
@@ -262,9 +279,9 @@ private:
     // Contact interaction with rigid wall
     for (int i = 0; i < Nnodes; i++) {
       if (x[2*i+1] + u[2*i+1].first < 0.0) {
-	Real contact_stiffness = 1.0e3;
+	Real contact_stiffness = 1.0e1;
 	Real du = - (x[2*i+1] + u[2*i+1].first);
-	f[2*i+1] += contact_stiffness*du;
+	f[2*i+1] += m_contact_stiffness*du;
       }
     }
 
@@ -281,6 +298,13 @@ private:
       alpha[i] = m_alpha;
 
     } // End loop over all DoFs
+
+    // Report the largest dual variable value (indicates an integer overflow ...)
+    Integer max_val;
+    for (int i = 0; i < Ndofs; i++) {
+      max_val = std::max(max_val,std::abs(v[i].second.mantissa));
+    }
+    if (Real(max_val) > 0.99*std::numeric_limits<Integer>::max()) std::cout << "max val = " << max_val << " > " << 0.99*std::numeric_limits<Integer>::max() << std::endl;
     
   } // update_accelerations()
   

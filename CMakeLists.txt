@@ -73,7 +73,7 @@ install(FILES ${REMAT_python}
 	DESTINATION package)
 install(FILES ${REMAT_headers}
 	DESTINATION include)
-message(STATUS "REMAT_python: " ${REMAT_python})
+message(STATUS "REMAT_python:  " ${REMAT_python})
 message(STATUS "REMAT_headers: " ${REMAT_headers})
 
 # Sets the installation prefix (where to install files)

@@ -20,7 +20,7 @@ TEST(test_System, constructors) {
 } /* TEST(test_Matrix, constructors) */
 
 TEST(test_System, initialize) {
-  System<Element<Material>,Real,Real,Real> problem;
+  System<Element<Material>,FixedV,FixedU,Rational> problem;
 
   // Define test problem geometry
   const int Nnodes = 9;
@@ -62,7 +62,7 @@ TEST(test_System, initialize) {
 
   // Initialize the problem state at time t=0.0
   std::cout << "Initializing state ... " << std::endl;
-  problem.initialize_state(0.0);
+  problem.initialize_state();
 
   // Update the time step
   std::cout << "Updating the time step ... " << std::endl;
@@ -70,8 +70,7 @@ TEST(test_System, initialize) {
   Real time = 0.0;
   Real dt = 1.0e-7;
   for (int i = 0; i<Nsteps; i++) {
-    time += dt;
-    problem.update_state(time,dt);
+    time = problem.update_state(dt);
   }
   
 } /* TEST(test_Matrix, initialize) */

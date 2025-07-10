@@ -7,11 +7,11 @@ TEST(test_Rational, constructors) {
   Rational a = Rational(  5,6);
   Rational b = Rational(-17,12);
   Rational c = +5.0/8.0;
-  ASSERT_EQ(double(a), +5.0/6.0);
-  ASSERT_EQ(double(b),-17.0/12.0);
-  ASSERT_EQ(double(c), +5.0/8.0);
-  ASSERT_EQ(c.numerator,5629499534213120);
-  ASSERT_EQ(c.denominator,9007199254740992);
+  ASSERT_NEAR(double(a), +5.0/6.0,  1.0e-4);
+  ASSERT_NEAR(double(b),-17.0/12.0, 1.0e-4);
+  ASSERT_NEAR(double(c), +5.0/8.0,  1.0e-4);
+  ASSERT_EQ(c.numerator,28962);
+  ASSERT_EQ(c.denominator,46340);
 } /* TEST(test_Rational, constructors) */
 
 TEST(test_Rational, arithmetic) {

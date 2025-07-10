@@ -84,7 +84,7 @@ class Material {
       exit(EXIT_FAILURE);
     }
 
-    // Compute inverse square root of J
+    // Compute inverse of J
     Real invJ = 1.0/J;
 
     // Compute the left finger deformation tensor Bbar = Fbar*Fbar^T = (J^(-1/2))^2 (F*F^T)
