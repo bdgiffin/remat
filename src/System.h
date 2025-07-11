@@ -52,17 +52,20 @@ struct System {
   int Nelems;                   // The total number of elements
   int Nnodes_per_elem;          // The total number of nodes per element
   std::vector<int>     connect; // The nodal connectivity array for all elements
+  std::vector<bool>     fixity; // The fixity (fixed == true) assigned to each nodal degree of freedom
   std::vector<Real>          x; // The (primal) system initial position degrees of freedom
+  std::vector<Real>         xt; // The (primal) system current position degrees of freedom
   std::vector<Dual<FixedU> > u; // The (primal/dual) system displacement degrees of freedom
   std::vector<Dual<FixedV> > v; // The (primal/dual) system velocity degrees of freedom
   std::vector<Real>          m; // The (primal) system masses for each DoF
   std::vector<Real>          f; // The (primal) system forces for each DoF
-  std::vector<Real>          a; // The (primal) system accelerations for each DoF
+  std::vector<Dual<Real> >   a; // The (primal) system accelerations for each DoF
   std::vector<Real>      alpha; // The system damping factors for each DoF
   std::vector<Real>      state; // Element state variable data
   
-  Integrator<FixedV,FixedU,Ratio> m_integrator; // (Bit-reversible) leapfrog time integrator
-  Element_T m_element;          // Element class
+  Integrator<Ratio> m_integrator;                         // (Bit-reversible) leapfrog time integrator
+  Element_T m_element;                                    // Element class
+  std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
     
   // ===================================================================== //
   
@@ -72,7 +75,7 @@ struct System {
   // ===================================================================== //
 
   // Procedure to initialize the system
-  void initialize(Real* new_coordinates, int new_Nnodes, int new_Ndofs_per_node,
+  void initialize(Real* new_coordinates, Real* new_velocities, bool* new_fixity, int new_Nnodes, int new_Ndofs_per_node,
 		  int* new_connectivity, int new_Nelems, int new_Nnodes_per_elem,
 		  Parameters& params) {
     
@@ -106,30 +109,34 @@ struct System {
 
     // Initialize the dimensions of all arrays
     connect.resize(Nelem_dofs);
+    fixity.resize(Ndofs);
     x.resize(Ndofs);
+    xt.resize(Ndofs);
     u.resize(Ndofs,Dual<FixedU>(0.0,0.0));
     v.resize(Ndofs,Dual<FixedV>(0.0,0.0));
     m.resize(Ndofs);
     f.resize(Ndofs);
-    a.resize(Ndofs);
+    a.resize(Ndofs,Dual<Real>(0.0,0.0));
     alpha.resize(Ndofs);
     state.resize(Nstate);
 
     // Initialize data for all DoFs
     for (int i=0; i<Ndofs; i++) {
+      fixity[i] = new_fixity[i];
       x[i] = new_coordinates[i];
+      xt[i] = x[i];
       u[i] = Dual<FixedU>(0.0,0.0);
-      v[i] = Dual<FixedV>(0.0,0.0);
+      v[i] = Dual<FixedV>(new_velocities[i],0.0);
       m[i] = 0.0;
       f[i] = 0.0;
-      a[i] = 0.0;
+      a[i] = Dual<Real>(0.0,0.0);
       alpha[i] = 0.0;
     }
     
-    // Assign initial velocity
+    // Assign constant initial velocity (if defined)
     for (int i = 0; i < Nnodes; i++) {
-      v[2*i+0] = Dual<FixedV>(m_vx0,0.0);
-      v[2*i+1] = Dual<FixedV>(m_vy0,0.0);
+      if (m_vx0 != 0.0) v[2*i+0] = Dual<FixedV>(m_vx0,0.0);
+      if (m_vy0 != 0.0) v[2*i+1] = Dual<FixedV>(m_vy0,0.0);
     }
 
     // Initialize connectivity data for all elements
@@ -145,6 +152,17 @@ struct System {
     std::cout << "| ========================================================== |" << std::endl;
     
   } // initialize()
+  
+  // ===================================================================== //
+
+  // Procedure to initialize a new contact interaction
+  void initialize_contact(int* node_ids, int* segment_connectivity, int new_Nnodes, int new_Nsegments, Parameters& params) {
+    
+    // Define a new contact interaction, and initialize it
+    m_contact_interactions.push_back(ContactInteraction());
+    m_contact_interactions.back().initialize(node_ids,segment_connectivity,new_Nnodes,new_Nsegments,params);
+    
+  } // initialize_contact()
   
   // ===================================================================== //
 
@@ -177,7 +195,12 @@ struct System {
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
 
     // Update time step ID
-    std::cout << "Time step: " << ++m_time_step << " at time: " << m_time << std::endl;
+    if (dt > 0.0) {
+      m_time_step++;
+    } else if (dt < 0.0) {
+      m_time_step--;
+    }
+    std::cout << "Time step: " << m_time_step << " at time: " << m_time << std::endl;
 
     // Return the updated analysis time
     return m_time;
@@ -232,9 +255,15 @@ private:
     // Update the current analysis time
     m_time = m_time + dt;
 
-    // Initialize forces and masses
+    // Zero-initialize forces and masses
     std::fill(m.begin(), m.end(), 0.0);
     std::fill(f.begin(), f.end(), 0.0);
+
+    // Update the current deformed nodal coordinates
+    for (int i = 0; i < Nnodes; i++) {
+      xt[2*i+0] = x[2*i+0] + u[2*i+0].first;
+      xt[2*i+1] = x[2*i+1] + u[2*i+1].first;
+    }
     
     const int Nstate_vars_per_elem = m_element.num_state_vars();
 
@@ -259,6 +288,7 @@ private:
       m_element.update(xe,ue,me,fe,&state[Nstate_vars_per_elem*e],dt);
 
       // Scatter mass and forces to the nodes
+      // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
       for (int j=0; j<Nnodes_per_elem; j++) {
 	const int jnode_id = connect[Nnodes_per_elem*e+j];
 	for (int i=0; i<Ndofs_per_node; i++) {
@@ -276,6 +306,9 @@ private:
       f[2*i+1] += m_by*m[2*i+1];
     }
 
+    // Sum nodal forces due to contact interactions
+    for (auto& contact : m_contact_interactions) contact.update_contact_forces(xt,f,dt);
+
     // Contact interaction with rigid wall
     for (int i = 0; i < Nnodes; i++) {
       if (x[2*i+1] + u[2*i+1].first < 0.0) {
@@ -289,7 +322,10 @@ private:
     for (int i=0; i<Ndofs; i++) {
 
       // Divide nodal forces by nodal masses to obtain the (predictor) nodal accelerations
-      a[i] = f[i]/m[i];
+      a[i].first = f[i]/m[i];
+
+      // Determine fictitious dual nodal accelerations (directly proportional to the dual displacements)
+      a[i].second = 0.0*u[i].second;
 
       // Determine the (mass-proportional) damping factor "alpha" in terms of a target frequency and damping ratio
       //Real frequency = 1.0;
@@ -297,14 +333,17 @@ private:
       //alpha[i] = 2.0*frequency*damping_ratio;
       alpha[i] = m_alpha;
 
+      // Impose fixed boundary conditions
+      if (fixity[i]) v[i].first = 0.0;
+
     } // End loop over all DoFs
 
     // Report the largest dual variable value (indicates an integer overflow ...)
-    Integer max_val;
-    for (int i = 0; i < Ndofs; i++) {
-      max_val = std::max(max_val,std::abs(v[i].second.mantissa));
-    }
-    if (Real(max_val) > 0.99*std::numeric_limits<Integer>::max()) std::cout << "max val = " << max_val << " > " << 0.99*std::numeric_limits<Integer>::max() << std::endl;
+    //Integer max_val;
+    //for (int i = 0; i < Ndofs; i++) {
+    //  max_val = std::max(max_val,std::abs(v[i].second.mantissa));
+    //}
+    //if (Real(max_val) > 0.99*std::numeric_limits<Integer>::max()) std::cout << "max val = " << max_val << " > " << 0.99*std::numeric_limits<Integer>::max() << std::endl;
     
   } // update_accelerations()
   

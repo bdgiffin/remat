@@ -15,11 +15,21 @@ set(REMAT_sources
 set(REMAT_python
     ${CMAKE_CURRENT_LIST_DIR}/__init__.py
     ${CMAKE_CURRENT_LIST_DIR}/REMAT.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/FaceSet.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Geometry.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/GeometryFactory.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Material.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Mesh.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/MeshUtils.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/NodeSet.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Part.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Selector.py
     PARENT_SCOPE
     )
 
 set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/Dual.h
+    ${CMAKE_CURRENT_LIST_DIR}/ContactInteraction.h
     ${CMAKE_CURRENT_LIST_DIR}/Element.h
     ${CMAKE_CURRENT_LIST_DIR}/Fixed.h
     ${CMAKE_CURRENT_LIST_DIR}/Integrator.h

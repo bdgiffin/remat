@@ -49,6 +49,7 @@ def animate_state():
             # If the user quit, stop the simulation from running:
             # (this will terminate the event loop and end the program)
             simulation_running = False
+            quit()
         
     # "Erase" the content of the display window
     window.fill("WhiteSmoke") # reset window to display a full white screen
@@ -127,11 +128,11 @@ for cell_block in mesh.cells:
         Nelems = Nelems + cell_block.data.shape[0]
 print("Nnodes = " + str(Nnodes))
 print("Nelems = " + str(Nelems))
-coordinates = np.zeros(2*Nnodes);
+coordinates = np.zeros(2*Nnodes)
 for i, point_coordinates in enumerate(mesh.points):
     coordinates[2*i+0] = point_coordinates[0]
     coordinates[2*i+1] = point_coordinates[1]
-connectivity = np.zeros((Nelems,4), dtype=np.int32);
+connectivity = np.zeros((Nelems,4), dtype=np.int32)
 Nelems = 0
 for cell_block in mesh.cells:
     if (cell_block.type == "triangle"):
@@ -143,41 +144,43 @@ for cell_block in mesh.cells:
             connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[3] ]
         Nelems = Nelems + cell_block.data.shape[0]  
 
+# Initialize nodal velocities and fixity
+velocities = np.zeros(2*Nnodes)
+fixity = np.zeros(2*Nnodes,dtype=np.bool_)
+        
 # Define the problem geometry
-filename = "output.exo"
-REMAT.create_geometry(coordinates,connectivity,Nnodes,Nelems,filename)
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,Nnodes,Nelems)
 
 # Run analysis -------------------------------------------------------------
 
 # initialization
 time = 0.0 # [s] starting time
 REMAT.API.initialize()
-REMAT.output_state()
 
 # set analysis time-stepping parameters
 dt = 2.0e-2 # [s] time increment
 step_id = 0
-Nsteps = 400
-Nsub_steps = 10
+Nsteps = 100
+Nsub_steps = 25
 
-# perform the forward-in-time analysis
-while (simulation_running and (step_id < Nsteps)):
-    # Update the simulation state
-    step_id = step_id + 1
-    time = REMAT.API.update_state(dt,Nsub_steps)
-    REMAT.output_state()
+# perform the reversible analysis
+while simulation_running:
+
+    # Get the "pressed" status of all keys on the keyboard:
+    keys = pygame.key.get_pressed()
+    
+    # Update the simulation state backward-in-time
+    if (keys[pygame.K_LEFT] and (step_id > 0)):
+        step_id = step_id - 1
+        time = REMAT.API.update_state(-dt,Nsub_steps)
+    
+    # Update the simulation state forward-in-time
+    if (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
+        step_id = step_id + 1
+        time = REMAT.API.update_state(+dt,Nsub_steps)
+        
+    # Animate the current state
     animate_state()
-
-# preformed the backward-in-time analysis
-while (simulation_running and (step_id > 0)):
-    # Update the simulation state
-    step_id = step_id - 1
-    time = REMAT.API.update_state(-dt,Nsub_steps)
-    REMAT.output_state()
-    animate_state()
-
-# finalize the REMAT module (close the Exodus files)
-REMAT.finalize()
 
 # --------------------------------------------------------------------------
 

@@ -32,7 +32,7 @@ struct Dual {
 
   // basic arithmetic operations between a Dual number and an Integer
   Dual<T> operator*(Integer const multiplier) const {
-    int64_t res;
+    LongInteger res;
     if (__builtin_mul_overflow(first.mantissa,multiplier,&res)) std::cerr << "OVERFLOW: (*) " << first.mantissa << " * " << multiplier << std::endl;
     if ((first < zeroT) != (second < zeroT)) {
       return Dual<T>(first * multiplier - second % multiplier, second / multiplier);
@@ -41,7 +41,7 @@ struct Dual {
     }
   }
   Dual<T> operator/(Integer const divisor)    const {
-    int64_t res;
+    LongInteger res;
     if (__builtin_mul_overflow(second.mantissa,divisor,&res)) std::cerr << "OVERFLOW: (/) " << second.mantissa << " * " << divisor << std::endl;
     if ((first < zeroT) != (second < zeroT)) {
       return Dual<T>(first / divisor, second * divisor - first % divisor);
@@ -58,9 +58,9 @@ struct Dual {
     //return ((*this)*multiplier.numerator)/multiplier.denominator;
 
     // temporarily cast first and second mantissas to long integers
-    int64_t long_first  = first.mantissa;
-    int64_t long_second = second.mantissa;
-    int64_t res;
+    LongInteger long_first  = first.mantissa;
+    LongInteger long_second = second.mantissa;
+    LongInteger res;
     
     // 1) apply multiplier's numerator
     if (__builtin_mul_overflow(long_first,multiplier.numerator,&res)) std::cerr << "OVERFLOW: (*) " << long_first << " * " << multiplier.numerator << std::endl;
@@ -93,9 +93,9 @@ struct Dual {
     //return ((*this)*divisor.denominator)/divisor.numerator;
     
     // temporarily cast first and second mantissas to long integers
-    int64_t long_first  = first.mantissa;
-    int64_t long_second = second.mantissa;
-    int64_t res;
+    LongInteger long_first  = first.mantissa;
+    LongInteger long_second = second.mantissa;
+    LongInteger res;
     
     // first: apply divisor's denominator
     if (__builtin_mul_overflow(long_first,divisor.denominator,&res)) std::cerr << "OVERFLOW: (*) " << long_first << " * " << divisor.denominator << std::endl;

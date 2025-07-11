@@ -5,6 +5,7 @@
 #include "Parameters.h"
 #include "Fixed.h"
 #include "Rational.h"
+#include <vector>
 #include <iostream>
 
 // Declare standard Fixed-precision numbers
@@ -36,6 +37,8 @@ TEST(test_System, initialize) {
 		 	   0.0, 2.0,
                            1.0, 2.0,
                            2.0, 2.0 };
+  Real velocities[18] = { 0.0 };
+  bool fixity[18] = { false };
   int connectivity[16] = { 0, 1, 4, 3,
                            1, 2, 5, 4,
                            3, 4, 7, 6,
@@ -56,7 +59,7 @@ TEST(test_System, initialize) {
   params["poissons_ratio"] = 0.28;
 
   // Test initialization of the problem object
-  problem.initialize(&coordinates[0],Nnodes,Ndofs_per_node,
+  problem.initialize(&coordinates[0],&velocities[0],&fixity[0],Nnodes,Ndofs_per_node,
   		     &connectivity[0],Nelems,Nnodes_per_elem,
   		     params);
 

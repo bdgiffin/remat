@@ -24,8 +24,8 @@ typedef Fixed<RADIX,EXPONENT_U> FixedU;
 Parameters params;
 
 // global instance of the system object
-//System<Element<Material>,Real,Real,Real> remat;
-System<Element<Material>,FixedV,FixedU,Rational> remat;
+System<Element<Material>,Real,Real,Real> remat;
+//System<Element<Material>,FixedV,FixedU,Rational> remat;
 
 // ======================================================================== //
 
@@ -44,13 +44,22 @@ extern "C" {
   // ------------------------------------------------------------------------ //
 
   // Define the problem geometry and initialize the System object
-  void define_geometry(double *coordinates, int *connectivity, size_t Nnodes, size_t Nelems) {
+  void define_geometry(double *coordinates, double *velocities, bool *fixity,
+		       int *connectivity, size_t Nnodes, size_t Nelems) {
     int Ndofs_per_node  = 2;
     int Nnodes_per_elem = 4;
-    remat.initialize(coordinates,  Nnodes, Ndofs_per_node,
+    remat.initialize(coordinates, velocities, fixity, Nnodes, Ndofs_per_node,
 		     connectivity, Nelems, Nnodes_per_elem,
 		     params);
   } // define_geometry()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Define a new contact interaction
+  void define_contact_interaction(int* node_ids, int* segment_connectivity,
+		                  int Nnodes, int Nsegments) {
+    remat.initialize_contact(node_ids,segment_connectivity,Nnodes,Nsegments,params);
+  } // define_contact_interaction()
   
   // ------------------------------------------------------------------------ //
 
