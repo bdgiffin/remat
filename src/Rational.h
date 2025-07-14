@@ -16,15 +16,15 @@ struct Rational {
   // basic constructor for a Rational number given two Integer integer numbers
   Rational(Integer n, Integer d) : numerator(n), denominator(d) { }
 
-  // basic constructor for a Rational number given a double-precision floating point number
-  Rational(double f) {
+  // basic constructor for a Rational number given a Real (floating point) number
+  Rational(Real f) {
     //// Separate exponent and mantissa in [.5, 1),
     //// and scale the mantissa by the number of digits to produce the integer numerator
     //int exponent;
-    //numerator = scalb(std::frexp(f, &exponent), std::numeric_limits<double>::digits);
+    //numerator = scalb(std::frexp(f, &exponent), std::numeric_limits<Real>::digits);
     //
     //// Adjust the exponent to compensate for scaling of the mantissa
-    //exponent -= std::numeric_limits<double>::digits;
+    //exponent -= std::numeric_limits<Real>::digits;
     //
     //// Scale either the numerator or denominator, depending on the sign of the exponent
     //denominator = 1;
@@ -40,8 +40,8 @@ struct Rational {
   }
 
   // implicit type-cast to a floating point number
-  double decimal(void) const { return double(numerator)/denominator; }
-  operator double()    const { return decimal(); }
+  Real decimal(void) const { return Real(numerator)/denominator; }
+  operator Real()    const { return decimal(); }
 
   // summation of two Rational numbers
   Rational operator+(Rational const summand) const {

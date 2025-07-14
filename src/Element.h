@@ -43,7 +43,7 @@ public:
   } // initialize()
     
   // Update the element state using the current nodal displacements
-  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real* state, Real dt) {
+  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real &E, Real* state, Real dt) {
 
     // Determine nodal masses:
     {
@@ -127,7 +127,8 @@ public:
 
 	// update the material state
 	Real* model_state = &state[(q+1)*num_state_vars];
-	m_model.update(F,model_state,dt);
+	Real psi;
+	m_model.update(F,psi,model_state,dt);
 
 	// sum contributions to element-averaged state
 	for (int i=0; i<num_state_vars; i++) {
@@ -153,6 +154,10 @@ public:
 	  f[2*i+0] += P[0][0]*dxi[i] + P[0][1]*deta[i];
 	  f[2*i+1] += P[1][0]*dxi[i] + P[1][1]*deta[i];
 	}
+
+	// sum contribution to the total elastic strain energy
+	E += psi*detJ0;
+	
       } // end loop over integration points
     }
 

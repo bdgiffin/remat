@@ -7,15 +7,15 @@
 
 template<int RADIX = 10, int EXPONENT = 0>
 struct Fixed {
-  inline static double     decimal = std::pow(RADIX,+EXPONENT);
-  inline static double inv_decimal = std::pow(RADIX,-EXPONENT);
+  inline static Real     decimal = std::pow(RADIX,+EXPONENT);
+  inline static Real inv_decimal = std::pow(RADIX,-EXPONENT);
   Integer mantissa;
 
   // constructor method for a Fixed-precision number
   Fixed(double d = 0.0) : mantissa(d*inv_decimal) { }
 
   // implicit type-cast to a floating point number
-  operator double() const { return mantissa*decimal; }
+  operator Real() const { return mantissa*decimal; }
 
   // basic arithmetic operations between two Fixed-precision numbers with the same radix and exponent
   Fixed<RADIX,EXPONENT> operator+(Fixed<RADIX,EXPONENT> const summand)    const { return Fixed<RADIX,EXPONENT>(mantissa + summand.mantissa);    }
@@ -26,10 +26,10 @@ struct Fixed {
   Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
   Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
 
-  // basic arithmetic operations between a Fixed-precision number and a double-precision floating point number
-  Fixed<RADIX,EXPONENT> operator*(double const multiplier) const { return Fixed<RADIX,EXPONENT>(Integer(mantissa*multiplier)); }
-  Fixed<RADIX,EXPONENT> operator/(double const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(mantissa/divisor));    }
-  Fixed<RADIX,EXPONENT> operator%(double const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(std::remainder(mantissa,divisor))); }
+  // basic arithmetic operations between a Fixed-precision number and a Real (floating point) number
+  Fixed<RADIX,EXPONENT> operator*(Real const multiplier) const { return Fixed<RADIX,EXPONENT>(Integer(mantissa*multiplier)); }
+  Fixed<RADIX,EXPONENT> operator/(Real const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(mantissa/divisor));    }
+  Fixed<RADIX,EXPONENT> operator%(Real const divisor)    const { return Fixed<RADIX,EXPONENT>(Integer(std::remainder(mantissa,divisor))); }
 
   // comparison of two Fixed-precision numbers
   bool operator> (Fixed<RADIX,EXPONENT> const other) const { return (mantissa >  other.mantissa); }

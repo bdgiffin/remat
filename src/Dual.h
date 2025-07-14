@@ -124,9 +124,9 @@ struct Dual {
     return Dual<T>(new_first,new_second);
   }
 
-  // basic arithmetic operations between a Dual number and a double-precision floating point number
-  Dual<T> operator*(double const multiplier) const { return Dual<T>(first*multiplier,second/multiplier); }
-  Dual<T> operator/(double const divisor)    const { return Dual<T>(first/divisor,second*divisor); }
+  // basic arithmetic operations between a Dual number and a Real (floating point) number
+  Dual<T> operator*(Real const multiplier) const { return Dual<T>(first*multiplier,second/multiplier); }
+  Dual<T> operator/(Real const divisor)    const { return Dual<T>(first/divisor,second*divisor); }
 
   // comparison of two Dual numbers
   bool operator==(Dual<T> const other) const { return ((first == other.first) && (second == other.second)); }

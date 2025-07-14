@@ -2,6 +2,7 @@
 #define SYSTEM_H
 
 #include "types.h"
+#include "ContactInteraction.h"
 #include "Dual.h"
 #include "Integrator.h"
 #include "Parameters.h"
@@ -10,8 +11,63 @@
 #include <iostream>
 #include <math.h>
 
-template<class Element_T, class FixedV, class FixedU, class Ratio>
-struct System {
+// Declare a non-templated base class to enable instantiation with variably typed 
+struct SystemBase {
+  
+  // default constructor method for a system object
+  SystemBase() { }
+    
+  // ===================================================================== //
+
+  // Procedure to initialize the system
+  virtual void initialize(double* new_coordinates, double* new_velocities, bool* new_fixity, int new_Nnodes, int new_Ndofs_per_node,
+		          int* new_connectivity, int new_Nelems, int new_Nnodes_per_elem,
+		          Parameters& params) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to initialize a new contact interaction
+  virtual void initialize_contact(int* node_ids, int* segment_connectivity, int new_Nnodes, int new_Nsegments, Parameters& params) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to initialize truss elements
+  virtual void initialize_truss_elements(int* new_truss_connectivity, int new_Ntruss, Parameters& params) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to initialize new point masses
+  virtual void initialize_point_mass(int* new_point_ids, double* new_point_mass, int new_Npoints, Parameters& params) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to initialize the system state at the indicated time
+  virtual void initialize_state(void) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to update the system state for a given time step
+  virtual double update_state(Real dt) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to get the current system state data
+  virtual double get_field_data(double *ux, double *uy,
+	 	                double *vx, double *vy,
+		                double *fx, double *fy,
+			        double *dual_ux, double *dual_uy,
+	 	                double *dual_vx, double *dual_vy,
+			        double *sxx, double *syy, double *sxy, double *pressure,
+				double *system_state) = 0;
+  
+  // ===================================================================== //
+
+}; // SystemBase
+
+// ....................................................................... //
+
+template<class Element_T, class Truss_T, class FixedV, class FixedU, class Ratio>
+struct System : public SystemBase {
 
   // Data members:
 
@@ -45,39 +101,58 @@ struct System {
   // Boundary conditions
   //std::vector<BoundaryCondition> m_bcs;
   //std::vector<NodalForce> m_forces;
+
+  // Node data
+  int                     Nnodes; // The total number of nodes
+  int             Ndofs_per_node; // The total number of degrees of freedom per node
+  int                      Ndofs; // The total number of system degrees of freedom = Nnodes * Ndofs_per_node
+  std::vector<bool>       fixity; // The fixity (fixed == true) assigned to each nodal degree of freedom
+  std::vector<Real>            x; // The (primal) system initial position degrees of freedom
+  std::vector<Real>           xt; // The (primal) system current position degrees of freedom
+  std::vector<Dual<FixedU> >   u; // The (primal/dual) system displacement degrees of freedom
+  std::vector<Dual<FixedV> >   v; // The (primal/dual) system velocity degrees of freedom
+  std::vector<Real>            m; // The (primal) system masses for each DoF
+  std::vector<Real>            f; // The (primal) system forces for each DoF
+  std::vector<Dual<Real> >     a; // The (primal) system accelerations for each DoF
+  std::vector<Real>        alpha; // The system damping factors for each DoF
+
+  // Solid element data
+  Element_T            m_element; // Solid element class
+  int                     Nelems; // The total number of solid elements
+  int            Nnodes_per_elem; // The total number of nodes per solid element
+  std::vector<int>       connect; // The nodal connectivity array for all solid elements
+  std::vector<Real>        state; // Solid element state variable data
+
+  // Truss element data
+  Truss_T                m_truss; // Truss element class
+  int                 Ntruss = 0; // The total number of truss elements
+  std::vector<int> truss_connect; // The nodal connectivity array for all truss elements
+  std::vector<Real>  truss_state; // Truss element state variable data
+
+  // Point mass data
+  int              Npoints = 0; // The total number of point masses
+  std::vector<int>   point_ids; // Node IDs of point massess
+  std::vector<Real> point_mass; // Discrete mass associated with correponding nodal points
+
+  // Total system state data
+  Real elastic_strain_energy;
+  Real kinetic_energy;
+  Real potential_energy;
   
-  int Nnodes;                   // The total number of nodes
-  int Ndofs_per_node;           // The total number of degrees of freedom per node
-  int Ndofs;                    // The total number of system degrees of freedom = Nnodes * Ndofs_per_node
-  int Nelems;                   // The total number of elements
-  int Nnodes_per_elem;          // The total number of nodes per element
-  std::vector<int>     connect; // The nodal connectivity array for all elements
-  std::vector<bool>     fixity; // The fixity (fixed == true) assigned to each nodal degree of freedom
-  std::vector<Real>          x; // The (primal) system initial position degrees of freedom
-  std::vector<Real>         xt; // The (primal) system current position degrees of freedom
-  std::vector<Dual<FixedU> > u; // The (primal/dual) system displacement degrees of freedom
-  std::vector<Dual<FixedV> > v; // The (primal/dual) system velocity degrees of freedom
-  std::vector<Real>          m; // The (primal) system masses for each DoF
-  std::vector<Real>          f; // The (primal) system forces for each DoF
-  std::vector<Dual<Real> >   a; // The (primal) system accelerations for each DoF
-  std::vector<Real>      alpha; // The system damping factors for each DoF
-  std::vector<Real>      state; // Element state variable data
-  
-  Integrator<Ratio> m_integrator;                         // (Bit-reversible) leapfrog time integrator
-  Element_T m_element;                                    // Element class
+  Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
     
   // ===================================================================== //
   
   // default constructor method for a system object
-  System() { }
+  System() : SystemBase() { }
     
   // ===================================================================== //
 
   // Procedure to initialize the system
-  void initialize(Real* new_coordinates, Real* new_velocities, bool* new_fixity, int new_Nnodes, int new_Ndofs_per_node,
-		  int* new_connectivity, int new_Nelems, int new_Nnodes_per_elem,
-		  Parameters& params) {
+  virtual void initialize(double* new_coordinates, double* new_velocities, bool* new_fixity, int new_Nnodes, int new_Ndofs_per_node,
+		          int* new_connectivity, int new_Nelems, int new_Nnodes_per_elem,
+		          Parameters& params) {
     
     std::cout << "| ====================== INITIALIZING ====================== |" << std::endl;
 
@@ -148,6 +223,11 @@ struct System {
     for (int e=0; e<Nelems; e++) {
       m_element.initialize(&state[Nstate_vars_per_elem*e]);
     }
+
+    // Initialize system state data
+    elastic_strain_energy = 0.0;
+    kinetic_energy        = 0.0;
+    potential_energy      = 0.0;
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -156,7 +236,7 @@ struct System {
   // ===================================================================== //
 
   // Procedure to initialize a new contact interaction
-  void initialize_contact(int* node_ids, int* segment_connectivity, int new_Nnodes, int new_Nsegments, Parameters& params) {
+  virtual void initialize_contact(int* node_ids, int* segment_connectivity, int new_Nnodes, int new_Nsegments, Parameters& params) {
     
     // Define a new contact interaction, and initialize it
     m_contact_interactions.push_back(ContactInteraction());
@@ -166,21 +246,87 @@ struct System {
   
   // ===================================================================== //
 
+  // Procedure to initialize truss elements
+  virtual void initialize_truss_elements(int* new_truss_connectivity, int new_Ntruss, Parameters& params) {
+    
+    std::cout << "| =============== INITIALIZING TRUSS ELEMENTS ============== |" << std::endl;
+
+    std::cout << "Initializing truss element state data..." << std::endl;
+
+    // Initialize the truss element/material object
+    m_truss = Truss_T(params);
+
+    // Initialize truss totals
+    Ntruss = new_Ntruss;
+    const int Nnodes_per_truss = 2;
+    const int Ntruss_dofs = Ntruss*Nnodes_per_truss;
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    const int Nstate = Ntruss*Nstate_vars_per_truss;
+
+    // Initialize the dimensions of all arrays
+    truss_connect.resize(Ntruss_dofs);
+    truss_state.resize(Nstate);
+
+    // Initialize connectivity data for all truss elements
+    for (int i=0; i<Ntruss_dofs; i++) {
+      truss_connect[i] = new_truss_connectivity[i];
+    }
+
+    // Initialize state variable data for all truss elements
+    for (int e=0; e<Ntruss; e++) {
+      m_truss.initialize(&truss_state[Nstate_vars_per_truss*e]);
+    }
+    
+    std::cout << "| ========================================================== |" << std::endl;
+    
+  } // initialize_truss_elements()
+  
+  // ===================================================================== //
+
+  // Procedure to initialize new point masses
+  virtual void initialize_point_mass(int* new_point_ids, double* new_point_mass, int new_Npoints, Parameters& params) {
+    
+    std::cout << "| ================ INITIALIZING POINT MASSES =============== |" << std::endl;
+
+    std::cout << "Initializing point masses..." << std::endl;
+
+    // Initialize point mass totals
+    Npoints = new_Npoints;
+
+    // Initialize the dimensions of all arrays
+    point_ids.resize(Npoints);
+    point_mass.resize(Npoints);
+
+    // Initialize point mass data for all points
+    for (int i=0; i<Npoints; i++) {
+      point_ids[i]  = new_point_ids[i];
+      point_mass[i] = new_point_mass[i];
+    }
+    
+    std::cout << "| ========================================================== |" << std::endl;
+    
+  } // initialize_contact()
+  
+  // ===================================================================== //
+
   // Procedure to initialize the system state at the indicated time
-  void initialize_state(void) {
+  virtual void initialize_state(void) {
 
     // Set the initial time to zero
     m_time = 0.0;
     
     // Update accelerations and damping factors for each DoF
     update_accelerations(0.0);
+
+    // Update kinetic energy
+    update_kinetic_energy();
     
   } // initialize_state()
   
   // ===================================================================== //
 
   // Procedure to update the system state for a given time step
-  Real update_state(Real dt) {
+  virtual double update_state(Real dt) {
 
     // Update velocities to the half-step
     m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
@@ -193,6 +339,9 @@ struct System {
     
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+
+    // Update kinetic energy
+    update_kinetic_energy();
 
     // Update time step ID
     if (dt > 0.0) {
@@ -210,12 +359,13 @@ struct System {
   // ===================================================================== //
 
   // Procedure to get the current system state data
-  double get_field_data(double *ux, double *uy,
-	 	        double *vx, double *vy,
-		        double *fx, double *fy,
-			double *dual_ux, double *dual_uy,
-	 	        double *dual_vx, double *dual_vy,
-		        double *sxx, double *syy, double *sxy, double *pressure) {
+  virtual double get_field_data(double *ux, double *uy,
+	 	                double *vx, double *vy,
+		                double *fx, double *fy,
+			        double *dual_ux, double *dual_uy,
+	 	                double *dual_vx, double *dual_vy,
+		                double *sxx, double *syy, double *sxy, double *pressure,
+				double *system_state) {
 
     // Copy nodal state data
     for (int i=0; i<Nnodes; i++) {
@@ -240,10 +390,13 @@ struct System {
       pressure[e] = state[Nstate_vars_per_elem*e+3];
     }
 
+    // Copy system state data
+    system_state[0] = 
+
     // Return the current analysis time
     return m_time;
     
-  } // update_state()
+  } // get_field_data()
   
   // ===================================================================== //
 private:
@@ -259,6 +412,10 @@ private:
     std::fill(m.begin(), m.end(), 0.0);
     std::fill(f.begin(), f.end(), 0.0);
 
+    // Zero-initialize the total system elastic strain energy and potential energy
+    elastic_strain_energy = 0.0;
+    potential_energy      = 0.0;
+
     // Update the current deformed nodal coordinates
     for (int i = 0; i < Nnodes; i++) {
       xt[2*i+0] = x[2*i+0] + u[2*i+0].first;
@@ -267,7 +424,7 @@ private:
     
     const int Nstate_vars_per_elem = m_element.num_state_vars();
 
-    // Loop over all elements
+    // Loop over all solid elements
     for (int e=0; e<Nelems; e++) {
 
       // Copy (primal) local nodal displacements for each element (cast as Reals)
@@ -285,7 +442,8 @@ private:
       // Compute internal force in the current element
       Real me[8] = { 0.0 };
       Real fe[8] = { 0.0 };
-      m_element.update(xe,ue,me,fe,&state[Nstate_vars_per_elem*e],dt);
+      Real Ee = 0.0;
+      m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt);
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
@@ -297,17 +455,78 @@ private:
 	}
       }
 
-    } // End loop over all elements
+      // Sum contribution to the total elastic strain energy
+      // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
+      elastic_strain_energy += Ee;
 
+    } // End loop over all solid elements
+    
+    const int Nnodes_per_truss = 2;
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+
+    // Loop over all truss elements
+    for (int e=0; e<Ntruss; e++) {
+
+      // Copy (primal) local nodal displacements for each truss element (cast as Reals)
+      const int Ndofs_per_truss = Nnodes_per_truss*Ndofs_per_node;
+      Real xe[4];
+      Real ue[4];
+      for (int j=0; j<Nnodes_per_truss; j++) {
+	const int jnode_id = truss_connect[Nnodes_per_truss*e+j];
+	for (int i=0; i<Ndofs_per_node; i++) {
+	  xe[Ndofs_per_node*j+i] = x[Ndofs_per_node*jnode_id+i];
+	  ue[Ndofs_per_node*j+i] = u[Ndofs_per_node*jnode_id+i].first;
+	}
+      }
+
+      // Compute internal force in the current truss element
+      Real me[4] = { 0.0 };
+      Real fe[4] = { 0.0 };
+      Real Ee = 0.0;
+      m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt);
+
+      // Scatter mass and forces to the nodes
+      // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
+      for (int j=0; j<Nnodes_per_truss; j++) {
+	const int jnode_id = truss_connect[Nnodes_per_truss*e+j];
+	for (int i=0; i<Ndofs_per_node; i++) {
+	  m[Ndofs_per_node*jnode_id+i] += me[Ndofs_per_node*j+i];
+	  f[Ndofs_per_node*jnode_id+i] -= fe[Ndofs_per_node*j+i];
+	}
+      }
+
+      // Sum contribution to the total elastic strain energy
+      // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
+      elastic_strain_energy += Ee;
+
+    } // End loop over all truss elements
+
+    // Loop over all point masses
+    for (int i=0; i<Npoints; i++) {
+      // sum point mass to correponding nodal DoFs
+      m[2*point_ids[i]+0] += point_mass[i];
+      m[2*point_ids[i]+1] += point_mass[i];
+    } // End loop over all point masses
+    
     // Sum nodal forces from external nodal point loads (gravity, etc.)
     for (int i = 0; i < Nnodes; i++) {
       // Global body forces
       f[2*i+0] += m_bx*m[2*i+0];
       f[2*i+1] += m_by*m[2*i+1];
+
+      // Sum contributions to the total potential energy
+      potential_energy -= m_bx*m[2*i+0]*xt[2*i+0] + m_by*m[2*i+1]*xt[2*i+1];
     }
 
     // Sum nodal forces due to contact interactions
-    for (auto& contact : m_contact_interactions) contact.update_contact_forces(xt,f,dt);
+    for (auto& contact : m_contact_interactions) {
+      // Update contact forces
+      Real Ec = 0.0;
+      contact.update_contact_forces(xt.data(),f.data(),Ec,dt);
+
+      // Sum contribution to the total elastic strain energy
+      elastic_strain_energy += Ec;
+    }
 
     // Contact interaction with rigid wall
     for (int i = 0; i < Nnodes; i++) {
@@ -315,6 +534,9 @@ private:
 	Real contact_stiffness = 1.0e1;
 	Real du = - (x[2*i+1] + u[2*i+1].first);
 	f[2*i+1] += m_contact_stiffness*du;
+
+        // Sum contribution to the total elastic strain energy
+	elastic_strain_energy += 0.5*contact_stiffness*du*du;
       }
     }
 
@@ -334,7 +556,11 @@ private:
       alpha[i] = m_alpha;
 
       // Impose fixed boundary conditions
-      if (fixity[i]) v[i].first = 0.0;
+      if (fixity[i]) {
+	a[i].first  = 0.0;
+	a[i].second = 0.0;
+	v[i].first  = 0.0;
+      }
 
     } // End loop over all DoFs
 
@@ -346,6 +572,21 @@ private:
     //if (Real(max_val) > 0.99*std::numeric_limits<Integer>::max()) std::cout << "max val = " << max_val << " > " << 0.99*std::numeric_limits<Integer>::max() << std::endl;
     
   } // update_accelerations()
+  
+  // ===================================================================== //
+
+  // Determine the updated system kinetic energy
+  void update_kinetic_energy() {
+
+    // Zero-initialize the total system kinetic energy
+    kinetic_energy = 0.0;
+
+    // Loop over all DoFs and sum contributions to the total kinetic energy
+    for (int i=0; i<Ndofs; i++) {
+      kinetic_energy += 0.5*m[i]*v[i].first*v[i].first;
+    } // End loop over all DoFs
+    
+  } // update_kinetic_energy()
   
   // ===================================================================== //
   

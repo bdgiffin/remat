@@ -131,55 +131,131 @@ struct ContactInteraction {
       // Only apply forces if the nearest node lies within the specified search radius
       if (min_distance < m_search_radius) {
 
-	// Loop over adjoining segments
-	for (int s=0; s<2; s++) {
-	  // get the segment ID of the current segment
-	  int sid = node_segments[2*nearest+s];
-	  if (sid != -1) { // check if the segment exists
-	    // get the indices of the segment nodes
-	    int i1 = segments[2*sid+0]; // index of segment node 1
-	    int i2 = segments[2*sid+1]; // index of segment node 2
+	// Determine whether the nearest segment node has 1 or 2 adjoining segments:
+	if (node_segments[2*nearest+1] == -1) {
+	  // handle the case of only 1 adjoining segment:
+	  
+	  // get the segment ID of the single segment
+	  int sid = node_segments[2*nearest+0];
+
+	  // get the indices of the segment nodes
+	  int i1 = segments[2*sid+0]; // index of segment node 1
+	  int i2 = segments[2*sid+1]; // index of segment node 2
 	    
-	    // get the segment node coordinates (shifted by the node coordinate)
-	    Real x1 = x_segment_nodes[2*i1+0] - x0;
-	    Real y1 = x_segment_nodes[2*i1+0] - y0;
-	    Real x2 = x_segment_nodes[2*i2+0] - x0;
-	    Real y2 = x_segment_nodes[2*i2+0] - y0;
+	  // get the segment node coordinates (shifted by the node coordinate)
+	  Real x1 = x_segment_nodes[2*i1+0] - x0;
+	  Real y1 = x_segment_nodes[2*i1+1] - y0;
+	  Real x2 = x_segment_nodes[2*i2+0] - x0;
+	  Real y2 = x_segment_nodes[2*i2+1] - y0;
 
-	    // determine the segment tangent and length
-	    Real dx = x2 - x1;
-	    Real dy = y2 - y1;
-	    Real invL2 = 1.0/(dx*dx + dy*dy);
-	    Real tx = +dx*invL2;
-	    Real ty = +dy*invL2;
+	  // determine the segment tangent and length
+	  Real dx = x2 - x1;
+	  Real dy = y2 - y1;
+	  Real invL2 = 1.0/(dx*dx + dy*dy);
+	  Real tx = +dx*invL2;
+	  Real ty = +dy*invL2;
 
-	    // determine the normal vector and gap
-	    Real invL = std::sqrt(invL2);
-	    Real nx = +dy*invL;
-	    Real ny = -dx*invL;
-	    Real g  = -(x1*nx + y1*ny);
+	  // determine the normal vector and gap
+	  Real invL = std::sqrt(invL2);
+	  Real nx = +dy*invL;
+	  Real ny = -dx*invL;
+	  Real g  = -(x1*nx + y1*ny);
 
-	    // determine the projected coordinates on the segment
-	    Real xi1 = 1.0 + x1*tx + y1*ty;
-	    Real xi2 = 1.0 - xi1;
+	  // determine the projected coordinates on the segment
+	  Real xi1 = 1.0 + x1*tx + y1*ty;
+	  Real xi2 = 1.0 - xi1;
 
-	    // only enforce contact if the node's projected location lies on the segment and the gap is negative
-	    if ((xi1 >= 0.0) && (xi1 <= 1.0) && (g < 0.0)) {
-	      Real fn = m_contact_stiffness*g; // normal contact force
-	      Real fx = fn*nx; // x-component of contact force applied to node j
-	      Real fy = fn*ny; // y-component of contact force applied to node j
+	  // only enforce contact if the node's projected location lies on the segment and the gap is negative
+	  if ((xi1 >= 0.0) && (xi1 <= 1.0) && (g < 0.0)) {
+	    Real fn = m_contact_stiffness*g; // normal contact force
+	    Real fx = fn*nx; // x-component of contact force applied to node j
+	    Real fy = fn*ny; // y-component of contact force applied to node j
 
-	      // sum force contributions to node and corresponding segment nodes
-	      f_nodes[2*j+0] += fx;
-	      f_nodes[2*j+1] += fy;
-	      f_segment_nodes[2*i1+0] -= xi1*fx;
-	      f_segment_nodes[2*i1+1] -= xi1*fy;
-	      f_segment_nodes[2*i2+0] -= xi2*fx;
-	      f_segment_nodes[2*i2+1] -= xi2*fy;
+	    // sum force contributions to node and corresponding segment nodes
+	    f_nodes[2*j+0] += fx;
+	    f_nodes[2*j+1] += fy;
+	    f_segment_nodes[2*i1+0] -= xi1*fx;
+	    f_segment_nodes[2*i1+1] -= xi1*fy;
+	    f_segment_nodes[2*i2+0] -= xi2*fx;
+	    f_segment_nodes[2*i2+1] -= xi2*fy;
+	  }
+	  
+	} else {
+	  // handle the case of 2 adjoining segments:
+
+	  // get the segment IDs of the current segments
+	  int sid[2] = { node_segments[2*nearest+0], node_segments[2*nearest+1] };
+	    
+	  // get the indices of the segments' nodes
+	  int i1[2] = { segments[2*sid[0]+0], segments[2*sid[1]+0] }; // index of segments' node 1
+	  int i2[2] = { segments[2*sid[0]+1], segments[2*sid[1]+1] }; // index of segments' node 2
+	    
+	  // get the segments' node coordinates (shifted by the node coordinate)
+	  Real x1[2] = { x_segment_nodes[2*i1[0]+0] - x0, x_segment_nodes[2*i1[1]+0] - x0 };
+	  Real y1[2] = { x_segment_nodes[2*i1[0]+1] - y0, x_segment_nodes[2*i1[1]+1] - y0 };
+	  Real x2[2] = { x_segment_nodes[2*i2[0]+0] - x0, x_segment_nodes[2*i2[1]+0] - x0 };
+	  Real y2[2] = { x_segment_nodes[2*i2[0]+1] - y0, x_segment_nodes[2*i2[1]+1] - y0 };
+
+	  // determine the segments' tangent and length
+	  Real dx[2]    = { x2[0] - x1[0], x2[1] - x1[1] };
+	  Real dy[2]    = { y2[0] - y1[0], y2[1] - y1[1] };
+	  Real invL2[2] = { 1.0f/(dx[0]*dx[0] + dy[0]*dy[0]), 1.0f/(dx[1]*dx[1] + dy[1]*dy[1]) };
+	  Real tx[2]    = { +dx[0]*invL2[0], +dx[1]*invL2[1] };
+	  Real ty[2]    = { +dy[0]*invL2[0], +dy[1]*invL2[1] };
+
+	  // determine the segments' normal vector and gap
+	  Real invL[2] = { std::sqrt(invL2[0]), std::sqrt(invL2[1]) };
+	  Real nx[2]   = { +dy[0]*invL[0], +dy[1]*invL[1] };
+	  Real ny[2]   = { -dx[0]*invL[0], -dx[1]*invL[1] };
+	  Real g[2]    = { -(x1[0]*nx[0] + y1[0]*ny[0]), -(x1[1]*nx[1] + y1[1]*ny[1]) };
+
+	  // determine the projected coordinates on the segments
+	  Real xi1[2] = { 1.0f + x1[0]*tx[0] + y1[0]*ty[0], 1.0f + x1[1]*tx[1] + y1[1]*ty[1] };
+
+	  // determine whether the node lies on one or both segments
+	  bool on[2] = { (xi1[0] >= 0.0) && (xi1[0] <= 1.0), (xi1[1] >= 0.0) && (xi1[1] <= 1.0) };
+
+	  // apply contact force for a given node-to-segment interaction
+	  auto apply_contact_force = [&](int k1, int k2, Real xi, Real vx, Real vy, Real d, Real scale) {
+	    Real fn = scale*m_contact_stiffness*d; // normal contact force
+	    Real fx = fn*vx; // x-component of contact force applied to node j
+	    Real fy = fn*vy; // y-component of contact force applied to node j
+
+	    // sum force contributions to node and corresponding segment nodes
+	    f_nodes[2*j+0] += fx;
+	    f_nodes[2*j+1] += fy;
+	    f_segment_nodes[2*k1+0] -= xi*fx;
+	    f_segment_nodes[2*k1+1] -= xi*fy;
+	    f_segment_nodes[2*k2+0] -= (1.0-xi)*fx;
+	    f_segment_nodes[2*k2+1] -= (1.0-xi)*fy;
+	  };
+	  
+	  // handle different cases based on the penetrating conditions
+	  if (on[0] && on[1]) { // node lies on both segments
+	    if ((g[0] <= 0.0) && (g[1] <= 0.0)) {
+	      Real segment_weight[2];
+	      segment_weight[0] = g[1]/(g[0]+g[1]);
+	      segment_weight[1] = 1.0 - segment_weight[0];
+	      apply_contact_force(i1[0],i2[0],xi1[0],nx[0],ny[0],g[0],segment_weight[0]);
+	      apply_contact_force(i1[1],i2[1],xi1[1],nx[1],ny[1],g[1],segment_weight[1]);
 	    }
-	    
-	  } // if (sid != -1)
-	} // for (int s=0; s<2; s++)
+	  } else if (on[0]) { // node lies only on the first adjoining segment
+	    if (g[0] <= 0.0) apply_contact_force(i1[0],i2[0],xi1[0],nx[0],ny[0],g[0],1.0);
+	  } else if (on[1]) { // node lies only on the second adjoining segment
+	    if (g[1] <= 0.0) apply_contact_force(i1[1],i2[1],xi1[1],nx[1],ny[1],g[1],1.0);
+	  } else { // node lies on neither adjoining segment
+	    if ((g[0] <= 0.0) && (g[1] <= 0.0)) {
+	      // enforce contact directly with the nearest node
+	      Real gx = x_segment_nodes[Ndofs_per_node*nearest+0] - x0;
+	      Real gy = x_segment_nodes[Ndofs_per_node*nearest+1] - y0;
+	      Real gn = std::sqrt(gx*gx + gy*gy);
+	      gx /= gn;
+	      gy /= gn;
+	      apply_contact_force(nearest,nearest,1.0,gx,gy,-gn,1.0);
+	    }
+	  }
+	  
+	} // if (node_segments[2*nearest+1] == -1)
 
       } // if (min_distance < m_search_radius)
       

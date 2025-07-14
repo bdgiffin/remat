@@ -48,12 +48,18 @@ NI_POINTER_2 = np.ctypeslib.ndpointer(dtype=np.int32,
                                       flags="C")
 
 # Define all C/C++ library API function signatures
+API.set_integrator_type.argtypes = [c_char_p]
+API.set_integrator_type.restype  = None
 API.define_parameter.argtypes = [c_char_p, c_double]
 API.define_parameter.restype  = None
 API.define_geometry.argtypes = [ND_POINTER_2, ND_POINTER_2, NB_POINTER_2, NI_POINTER_2, c_size_t, c_size_t]
 API.define_geometry.restype  = None
+API.define_truss_elements.argtypes = [NI_POINTER_2, c_size_t]
+API.define_truss_elements.restype  = None
 API.define_contact_interaction.argtypes = [NI_POINTER_1, NI_POINTER_2, c_size_t, c_size_t]
 API.define_contact_interaction.restype  = None
+API.define_point_mass.argtypes = [NI_POINTER_1, ND_POINTER_1, c_size_t]
+API.define_point_mass.restype  = None
 API.initialize.argtypes = None
 API.initialize.restype  = None
 API.update_state.argtypes = [c_double, c_int]
@@ -64,7 +70,7 @@ API.get_field_data.restype  = c_double
 # ---------------------------------------------------------------------------- #
 
 # Generate mesh geometry and initialize the REMAT object prior to initialization
-def create_geometry(x,v,fixity,connectivity,filename=""):
+def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
 
     global num_nodes
     global num_elems
@@ -74,7 +80,13 @@ def create_geometry(x,v,fixity,connectivity,filename=""):
     # Call REMAT initialization API function
     API.define_geometry(x,v,fixity,connectivity,num_nodes,num_elems)
 
-# ---------------------------------------------------------------------------- #
+    # Define contacts
+    for contact in contacts:
+        num_contact_nodes = contact[0].shape[0]
+        num_contact_segs  = contact[1].shape[0]
+        API.define_contact_interaction(contact[0],contact[1],num_contact_nodes,num_contact_segs)
+
+# ............................................................................ #
 
     # If requested, create the Exodus file containing the problem info:
     if (filename != ""):
@@ -221,8 +233,8 @@ def deform_geometry(x):
     # sum displacements to nodal coordinates
     coordinates = np.zeros((num_nodes,2))
     for i in range(0,num_nodes):
-        coordinates[i,0] = x[2*i+0] + ux[i]
-        coordinates[i,1] = x[2*i+1] + uy[i]
+        coordinates[i,0] = x[i,0] + ux[i]
+        coordinates[i,1] = x[i,1] + uy[i]
 
     return coordinates, pressure
 

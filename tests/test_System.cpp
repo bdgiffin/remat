@@ -5,6 +5,8 @@
 #include "Parameters.h"
 #include "Fixed.h"
 #include "Rational.h"
+#include "Truss.h"
+#include "UniaxialMaterial.h"
 #include <vector>
 #include <iostream>
 
@@ -17,27 +19,27 @@ typedef Fixed<RADIX,EXPONENT_U> FixedU;
 
 TEST(test_System, constructors) {
   // Test creation of System object
-  System<Element<Material>,FixedV,FixedU,Rational> problem;
+  System<Element<Material>,Truss<UniaxialMaterial>,FixedV,FixedU,Rational> problem;
 } /* TEST(test_Matrix, constructors) */
 
 TEST(test_System, initialize) {
-  System<Element<Material>,FixedV,FixedU,Rational> problem;
+  System<Element<Material>,Truss<UniaxialMaterial>,FixedV,FixedU,Rational> problem;
 
   // Define test problem geometry
   const int Nnodes = 9;
   const int Ndofs_per_node = 2;
   const int Nelems = 4;
   const int Nnodes_per_elem = 4;
-  Real coordinates[18] = { 0.0, 0.0,
-                           1.0, 0.0,
-                           2.0, 0.0,
-		           0.0, 1.0,
-                           1.0, 1.0,
-                           2.0, 1.0,
-		 	   0.0, 2.0,
-                           1.0, 2.0,
-                           2.0, 2.0 };
-  Real velocities[18] = { 0.0 };
+  double coordinates[18] = { 0.0, 0.0,
+                             1.0, 0.0,
+                             2.0, 0.0,
+		             0.0, 1.0,
+                             1.0, 1.0,
+                             2.0, 1.0,
+		 	     0.0, 2.0,
+                             1.0, 2.0,
+                             2.0, 2.0 };
+  double velocities[18] = { 0.0 };
   bool fixity[18] = { false };
   int connectivity[16] = { 0, 1, 4, 3,
                            1, 2, 5, 4,
@@ -70,7 +72,7 @@ TEST(test_System, initialize) {
   // Update the time step
   std::cout << "Updating the time step ... " << std::endl;
   int Nsteps = 10;
-  Real time = 0.0;
+  double time = 0.0;
   Real dt = 1.0e-7;
   for (int i = 0; i<Nsteps; i++) {
     time = problem.update_state(dt);

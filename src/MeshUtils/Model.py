@@ -100,18 +100,18 @@ class Model:
                 fixity[i,:] = bc[1]
 
         # concatenate all element connectivities
-        connectivity = np.zeros((num_elements,num_nodes_per_element))
+        connectivity = np.zeros((num_elements,num_nodes_per_element),dtype=np.int32)
         num_elements = 0
         for part in self.parts:
             part_connectivity = part.geometry.global_connectivity()
-            for i in range(part_connectivity):
-                connectivity[num_elements+i,:] = part_connectivity[i,:]
+            for i, elem_connectivity in enumerate(part_connectivity):
+                connectivity[num_elements+i,:] = elem_connectivity
             num_elements = num_elements + part.geometry.connectivity.shape[0]
 
         # define contact interactions
         contacts = []
         for contact in self.contact_interactions:
-            contacts.append((contact[0].global_node_ids(),contact[1].global_node_ids()))
+            contacts.append((contact[0].global_node_ids().astype(np.int32),contact[1].global_node_ids().astype(np.int32)))
         
         # return the data necessary to instantiate the problem
         return coordinates, velocities, fixity, connectivity, contacts

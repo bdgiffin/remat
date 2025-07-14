@@ -68,7 +68,7 @@ class Material {
   } // initialize()
     
   // Update the material state using the current deformation gradient F
-  void update(Real (&F)[2][2], Real* state, Real dt) {
+  void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
     // Simple Neo-Hookean model:
     // J = det(F), Fbar = J^(-1/2) F, Bbar = Fbar*Fbar^T, Ibar = tr(Bbar), dev[Bbar] = Bbar - (Ibar/2)*1
     // psi = U(J) + W(Ibar)
@@ -93,9 +93,9 @@ class Material {
     Real Bbar12 = invJ*(F[0][0]*F[1][0] + F[0][1]*F[1][1]);
 
     // Compute Ibar/2 = tr(Bbar)/2, and dev[Bbar] = Bbar - (Ibar/2)*1
-    Real Ibar_half = 0.5*(Bbar11 + Bbar22);
-    Bbar11 -= Ibar_half;
-    Bbar22 -= Ibar_half;
+    Real Ibar = Bbar11 + Bbar22;
+    Bbar11 -= 0.5*Ibar;
+    Bbar22 -= 0.5*Ibar;
 
     // Compute and store the Cauchy stress: sigma = (J-1)*kappa*1 + (mu/J)*dev[Bbar]
     Real p = kappa*(J-1.0);
@@ -104,6 +104,11 @@ class Material {
     state[1] = mu_bar*Bbar22 + p; // stress_yy
     state[2] = mu_bar*Bbar12;     // stress_xy
     state[3] = p;                 // pressure
+
+    // Compute the strain energy density
+    // Real U = 0.5*kappa*(J-1.0)*(J-1.0);
+    // Real W = 0.5*mu*(Ibar - 2.0);
+    psi = 0.5*p*(J-1.0) + 0.5*mu*(Ibar - 2.0);
     
   } // update()
 

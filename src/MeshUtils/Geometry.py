@@ -64,6 +64,59 @@ class Geometry(ABC):
                     if (all(selected[self.connectivity[e,faces[f,:]]])):
                         selected_faces.append(self.connectivity[e,faces[f,:]].tolist())
         return FaceSet(self,np.array(selected_faces,dtype=int))
+
+    def select_boundary_nodes(self):
+        edge_counts = {}
+        for element in self.connectivity:
+            # Extract edges of the element
+            if (element[2] == element[3]):
+                edges = [(element[0], element[1]), (element[1], element[2]), (element[2], element[0])]
+            else:
+                edges = [(element[0], element[1]), (element[1], element[2]), (element[2], element[3]), (element[3], element[0])]
+            for edge in edges:
+                # Ensure consistent order for edge (e.g., (min_idx, max_idx))
+                orientation = +1
+                if (edge[0] > edge[1]):
+                    orientation = -1
+                sorted_edge = tuple(sorted(edge))
+                edge_counts[sorted_edge] = (edge_counts.get(sorted_edge, (0,orientation))[0] + 1, orientation)
+
+        boundary_edges = []
+        for edge, count_and_orientation in edge_counts.items():
+            if count_and_orientation[0] == 1:
+                if count_and_orientation[1] == +1:
+                    boundary_edges.append(edge)
+                elif count_and_orientation[1] == -1:
+                    boundary_edges.append((edge[1], edge[0]))
+        boundary_edges = np.array(boundary_edges,dtype=int)
+        boundary_nodes = np.unique(boundary_edges.flatten())
+        return NodeSet(self,boundary_nodes)
+
+    def select_boundary_faces(self):
+        edge_counts = {}
+        for element in self.connectivity:
+            # Extract edges of the element
+            if (element[2] == element[3]):
+                edges = [(element[0], element[1]), (element[1], element[2]), (element[2], element[0])]
+            else:
+                edges = [(element[0], element[1]), (element[1], element[2]), (element[2], element[3]), (element[3], element[0])]
+            for edge in edges:
+                # Ensure consistent order for edge (e.g., (min_idx, max_idx))
+                orientation = +1
+                if (edge[0] > edge[1]):
+                    orientation = -1
+                sorted_edge = tuple(sorted(edge))
+                edge_counts[sorted_edge] = (edge_counts.get(sorted_edge, (0,orientation))[0] + 1, orientation)
+
+        boundary_edges = []
+        for edge, count_and_orientation in edge_counts.items():
+            if count_and_orientation[0] == 1:
+                if count_and_orientation[1] == +1:
+                    boundary_edges.append(edge)
+                elif count_and_orientation[1] == -1:
+                    boundary_edges.append((edge[1], edge[0]))
+        boundary_edges = np.array(boundary_edges,dtype=int)
+        return FaceSet(self,boundary_edges)
     
     def translate(self,distance):
         for i in range(self.vertices.shape[0]):
@@ -89,7 +142,7 @@ class Geometry(ABC):
             self.connectivity = self.connectivity[:,self.inverted_topology()]
 
     def global_connectivity(self):
-        return self.conectivity + self.offset_id
+        return self.connectivity + self.offset_id
 
     @abstractmethod               
     def copy(self):
