@@ -115,6 +115,17 @@ class GeometryFactory:
                     connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[3] ]
                 Nelems = Nelems + cell_block.data.shape[0]  
 
-        return QuadGeometry(mesh.points[:,0:2],connectivity)
+        # Get coordinates of all points
+        coordinates = mesh.points[:,0:2]
+        Nnodes = coordinates.shape[0]
+
+        # Get the list of unique node IDs
+        unique_nodes, unique_indices = np.unique(connectivity.flatten(), return_inverse=True)
+
+        # Remove any nodes not appearing in the connectivity array, and renumber unique IDs
+        coordinates  = coordinates[unique_nodes,:]
+        connectivity = unique_indices.reshape((Nelems,4))
+                
+        return QuadGeometry(coordinates,connectivity)
 
         

@@ -92,7 +92,7 @@ struct ContactInteraction {
   } // initialize()
 
   // Update nodal force contributions based on the current deformed coordinates of all nodes
-  void update_contact_forces(Real* x, Real* f, Real dt) {
+  void update_contact_forces(Real* x, Real* f, Real &Ec, Real dt) {
     const int Ndofs_per_node = 2;
     
     // Zero-initialize contact forces
@@ -178,6 +178,9 @@ struct ContactInteraction {
 	    f_segment_nodes[2*i1+1] -= xi1*fy;
 	    f_segment_nodes[2*i2+0] -= xi2*fx;
 	    f_segment_nodes[2*i2+1] -= xi2*fy;
+
+	    // sum contribution to the total elastic strain energy
+	    Ec += 0.5*fn*g;
 	  }
 	  
 	} else {
@@ -228,6 +231,9 @@ struct ContactInteraction {
 	    f_segment_nodes[2*k1+1] -= xi*fy;
 	    f_segment_nodes[2*k2+0] -= (1.0-xi)*fx;
 	    f_segment_nodes[2*k2+1] -= (1.0-xi)*fy;
+
+	    // sum contribution to the total elastic strain energy
+	    Ec += 0.5*fn*d;
 	  };
 	  
 	  // handle different cases based on the penetrating conditions

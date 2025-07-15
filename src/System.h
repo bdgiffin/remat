@@ -391,7 +391,9 @@ struct System : public SystemBase {
     }
 
     // Copy system state data
-    system_state[0] = 
+    system_state[0] = elastic_strain_energy;
+    system_state[1] = kinetic_energy;
+    system_state[2] = potential_energy;
 
     // Return the current analysis time
     return m_time;
@@ -515,7 +517,7 @@ private:
       f[2*i+1] += m_by*m[2*i+1];
 
       // Sum contributions to the total potential energy
-      potential_energy -= m_bx*m[2*i+0]*xt[2*i+0] + m_by*m[2*i+1]*xt[2*i+1];
+      potential_energy -= (m_bx*m[2*i+0]*xt[2*i+0] + m_by*m[2*i+1]*xt[2*i+1]);
     }
 
     // Sum nodal forces due to contact interactions

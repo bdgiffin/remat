@@ -64,7 +64,7 @@ API.initialize.argtypes = None
 API.initialize.restype  = None
 API.update_state.argtypes = [c_double, c_int]
 API.update_state.restype  = c_double
-API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1]
+API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1]
 API.get_field_data.restype  = c_double
 
 # ---------------------------------------------------------------------------- #
@@ -171,9 +171,12 @@ def output_state():
     sxy      = np.zeros(num_elems)
     pressure = np.zeros(num_elems)
     zz       = np.zeros(num_elems)
+
+    # Pre-allocate system state data
+    system_state = np.zeros(3)
     
     # retrieve the simulation state info at the current time
-    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure)
+    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state)
     
     # create a new output time state
     exo.put_time(output_step, output_step)
@@ -226,9 +229,12 @@ def deform_geometry(x):
     syy      = np.zeros(num_elems)
     sxy      = np.zeros(num_elems)
     pressure = np.zeros(num_elems)
+
+    # Pre-allocate system state data
+    system_state = np.zeros(3)
     
     # retrieve the simulation state info at the current time
-    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure)
+    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state)
     
     # sum displacements to nodal coordinates
     coordinates = np.zeros((num_nodes,2))
@@ -236,7 +242,7 @@ def deform_geometry(x):
         coordinates[i,0] = x[i,0] + ux[i]
         coordinates[i,1] = x[i,1] + uy[i]
 
-    return coordinates, pressure
+    return coordinates, pressure, system_state
 
 # ---------------------------------------------------------------------------- #
 

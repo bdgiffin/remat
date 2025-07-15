@@ -34,6 +34,13 @@ window = pygame.display.set_mode((1000,600))
 # Set the window title and icon
 pygame.display.set_caption('Reversible Dynamics')
 
+# Initialize a new font for drawing text
+pygame.font.init()
+font_type  = 'PT Mono'
+font_size  = 16 # (pixels)
+display_font = pygame.font.SysFont(font_type, font_size)
+anti_aliasing = False
+
 # Define a clock for consistent timestepping at a fixed framerate
 clock = pygame.time.Clock()
 framerate = 60
@@ -57,7 +64,7 @@ def animate_state():
 
     # Draw the mesh in its currently deformed configuration:
     max_pressure = 0.3
-    xy_deformed, pressure = REMAT.deform_geometry(coordinates)
+    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
@@ -89,6 +96,13 @@ def animate_state():
     else:
         pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+0*bd),(bx+0.7*bd,by+0*bd),(bx+0.7*bd,by+2*bd),(bx+0*bd,by+2*bd)), 0)
         pygame.draw.polygon(window, "Grey", ((bx+1.3*bd,by+0*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd),(bx+1.3*bd,by+2*bd)), 0)
+
+    # Display system state
+    display_pos_x = 700
+    window.blit(display_font.render("    Strain energy: {:.3e}".format(system_state[0]),anti_aliasing,"Black"),(display_pos_x,1*font_size))
+    window.blit(display_font.render("   Kinetic energy: {:.3e}".format(system_state[1]),anti_aliasing,"Black"),(display_pos_x,2*font_size))
+    window.blit(display_font.render(" Potential energy: {:.3e}".format(system_state[2]),anti_aliasing,"Black"),(display_pos_x,3*font_size))
+    window.blit(display_font.render("     Total energy: {:.3e}".format(system_state[0]+system_state[1]+system_state[2]),anti_aliasing,"Black"),(display_pos_x,4*font_size))
             
     # Update the window to display the current state of the simulation
     pygame.display.update()
@@ -104,7 +118,7 @@ def animate_state():
 REMAT.API.define_parameter(b"body_force_y",       -0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 2.0e-1)
+REMAT.API.define_parameter(b"mass_damping_factor", 0.0e-1)
 REMAT.API.define_parameter(b"contact_stiffness",   5.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
 
@@ -114,7 +128,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Set the integrator type: "float" (default), or "fixed"
-REMAT.API.set_integrator_type(b"fixed")
+REMAT.API.set_integrator_type(b"float")
 
 # Pre-process mesh/geometry ------------------------------------------------
 

@@ -120,8 +120,9 @@ extern "C" {
 		        double *fx, double *fy,
 			double *dual_ux, double *dual_uy,
 	 	        double *dual_vx, double *dual_vy,
-		        double *sxx, double *syy, double *sxy, double *pressure) {
-    return remat->get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure);
+		        double *sxx, double *syy, double *sxy, double *pressure,
+			double *system_state) {
+    return remat->get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state);
   } // get_field_data()
   
   // ------------------------------------------------------------------------ //
