@@ -55,7 +55,7 @@ def animate_state():
 
     # Draw the mesh in its currently deformed configuration:
     max_pressure = 1.0
-    xy_deformed, pressure = REMAT.deform_geometry(coordinates)
+    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
@@ -127,10 +127,7 @@ for cell_block in mesh.cells:
         Nelems = Nelems + cell_block.data.shape[0]
 print("Nnodes = " + str(Nnodes))
 print("Nelems = " + str(Nelems))
-coordinates = np.zeros(2*Nnodes);
-for i, point_coordinates in enumerate(mesh.points):
-    coordinates[2*i+0] = point_coordinates[0]
-    coordinates[2*i+1] = point_coordinates[1]
+coordinates = mesh.points[:,0:1];
 connectivity = np.zeros((Nelems,4), dtype=np.int32);
 Nelems = 0
 for cell_block in mesh.cells:
@@ -141,11 +138,15 @@ for cell_block in mesh.cells:
     elif (cell_block.type == "quad"):
         for i, cell_connectivity in enumerate(cell_block.data):
             connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[3] ]
-        Nelems = Nelems + cell_block.data.shape[0]  
+        Nelems = Nelems + cell_block.data.shape[0]
+        
+# Initialize nodal velocities and fixity
+velocities = np.zeros((Nnodes,2))
+fixity = np.zeros((Nnodes,2),dtype=np.bool_)
 
 # Define the problem geometry
 filename = "output.exo"
-REMAT.create_geometry(coordinates,connectivity,Nnodes,Nelems,filename)
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,[],filename)
 
 # Run analysis -------------------------------------------------------------
 

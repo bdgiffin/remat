@@ -57,7 +57,7 @@ def animate_state():
 
     # Draw the mesh in its currently deformed configuration:
     max_pressure = 1.0
-    xy_deformed, pressure = REMAT.deform_geometry(coordinates)
+    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]

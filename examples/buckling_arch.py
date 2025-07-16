@@ -178,7 +178,7 @@ right_nodes = arch.select_nodes(Select_X_eq(10.0))
 model = Model()
 model.add_part(Part(impactor,Material(None,None)))
 model.add_part(Part(arch,Material(None,None)))
-model.add_initial_condition(impactor_nodes,[+0.0e-1,-8.0e-1])
+model.add_initial_condition(impactor_nodes,[+0.0e-1,-3.0e-1])
 model.add_boundary_condition(left_nodes,[True,True]) # fully fix the left surface ndoes
 model.add_boundary_condition(right_nodes,[True,True]) # fully fix the right surface ndoes
 model.add_contact_interaction(boundary_nodes,arch_faces)
