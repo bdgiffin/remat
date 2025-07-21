@@ -1,7 +1,7 @@
 # Module for calling the C/C++ REMAT API functions from Python
 
 # Python package for calling C/C++ functions from Python
-from ctypes import CDLL, POINTER
+from ctypes import CDLL, POINTER, CFUNCTYPE
 from ctypes import c_size_t, c_double, c_int, c_char_p
 
 # Package for reading/writing mesh files
@@ -29,6 +29,9 @@ API = CDLL(library_name)
 # C-types corresponding to pointers to int/double values
 c_int_p    = POINTER(c_int)
 c_double_p = POINTER(c_double)
+
+# C-types corresponding to a function that accepts 2 double arguments and returns 1 double
+c_function_2d = CFUNCTYPE(c_double, c_double, c_double)
 
 # C-type corresponding to 1D numpy array
 ND_POINTER_1 = np.ctypeslib.ndpointer(dtype=np.float64, 
@@ -62,9 +65,11 @@ API.define_point_mass.argtypes = [NI_POINTER_1, ND_POINTER_1, c_size_t]
 API.define_point_mass.restype  = None
 API.initialize.argtypes = None
 API.initialize.restype  = None
+API.initialize_variable_properties.argtypes = [c_function_2d]
+API.initialize_variable_properties.restype  = None
 API.update_state.argtypes = [c_double, c_int]
 API.update_state.restype  = c_double
-API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1]
+API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1]
 API.get_field_data.restype  = c_double
 
 # ---------------------------------------------------------------------------- #
@@ -74,8 +79,10 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
 
     global num_nodes
     global num_elems
+    global exo_file
     num_nodes = x.shape[0]
     num_elems = connectivity.shape[0]
+    exo_file  = filename
 
     # Call REMAT initialization API function
     API.define_geometry(x,v,fixity,connectivity,num_nodes,num_elems)
@@ -89,7 +96,7 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
 # ............................................................................ #
 
     # If requested, create the Exodus file containing the problem info:
-    if (filename != ""):
+    if (exo_file != ""):
 
         # create a new Exodus file
         try:
@@ -108,6 +115,14 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
         # put element block info for all elements
         exo.put_elem_blk_info(id=1, elemType='QUAD', numElems=num_elems, numNodesPerElem=4, numAttrsPerElem=0)
         exo.put_elem_connectivity(id=1, connectivity=connectivity, shift_indices=1, chunk_size_in_mb=128)
+
+        # set the number of output global variables and their names
+        num_global_variables = 4
+        exo.set_global_variable_number(num_global_variables)
+        exo.put_global_variable_name("elastic_strain_energy", 1)
+        exo.put_global_variable_name("kinetic_energy",        2)
+        exo.put_global_variable_name("potential_energy",      3)
+        exo.put_global_variable_name("total_energy",          4)
 
         # set the number of output node variables and their names
         num_node_variables = 15
@@ -129,7 +144,7 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
         exo.put_node_variable_name("dual_velocity_Z",     15)
         
         # set the number of output element variables and their names
-        num_elem_variables = 7
+        num_elem_variables = 8
         exo.set_element_variable_number(num_elem_variables)
         exo.put_element_variable_name("stress_XX", 1)
         exo.put_element_variable_name("stress_YY", 2)
@@ -138,6 +153,7 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
         exo.put_element_variable_name("stress_XZ", 5)
         exo.put_element_variable_name("stress_YZ", 6)
         exo.put_element_variable_name("pressure",  7)
+        exo.put_element_variable_name("stiffness_scaling_factor", 8)
         
         # Define the output step counter
         global output_step
@@ -148,65 +164,86 @@ def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
 # Write data to the Exodus file containing particle info for the current time state
 def output_state():
 
-    # Update the output step counter
-    global output_step
-    output_step = output_step + 1
-    
-    # Pre-allocate node data arrays for use during output
-    ux      = np.zeros(num_nodes)
-    uy      = np.zeros(num_nodes)
-    vx      = np.zeros(num_nodes)
-    vy      = np.zeros(num_nodes)
-    fx      = np.zeros(num_nodes)
-    fy      = np.zeros(num_nodes)
-    dual_ux = np.zeros(num_nodes)
-    dual_uy = np.zeros(num_nodes)
-    dual_vx = np.zeros(num_nodes)
-    dual_vy = np.zeros(num_nodes)
-    z       = np.zeros(num_nodes)
-    
-    # Pre-allocate element data arrays for use during output
-    sxx      = np.zeros(num_elems)
-    syy      = np.zeros(num_elems)
-    sxy      = np.zeros(num_elems)
-    pressure = np.zeros(num_elems)
-    zz       = np.zeros(num_elems)
+    if (exo_file != ""):
 
-    # Pre-allocate system state data
-    system_state = np.zeros(3)
-    
-    # retrieve the simulation state info at the current time
-    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state)
-    
-    # create a new output time state
-    exo.put_time(output_step, output_step)
-    
-    # write nodal variable values at the current time state
-    exo.put_node_variable_values("displacement_X",      output_step,      ux)
-    exo.put_node_variable_values("displacement_Y",      output_step,      uy)
-    exo.put_node_variable_values("displacement_Z",      output_step,       z)
-    exo.put_node_variable_values("velocity_X",          output_step,      vx)
-    exo.put_node_variable_values("velocity_Y",          output_step,      vy)
-    exo.put_node_variable_values("velocity_Z",          output_step,       z)
-    exo.put_node_variable_values("force_X",             output_step,      fx)
-    exo.put_node_variable_values("force_Y",             output_step,      fy)
-    exo.put_node_variable_values("force_Z",             output_step,       z)
-    exo.put_node_variable_values("dual_displacement_X", output_step, dual_ux)
-    exo.put_node_variable_values("dual_displacement_Y", output_step, dual_uy)
-    exo.put_node_variable_values("dual_displacement_Z", output_step,       z)
-    exo.put_node_variable_values("dual_velocity_X",     output_step, dual_vx)
-    exo.put_node_variable_values("dual_velocity_Y",     output_step, dual_vy)
-    exo.put_node_variable_values("dual_velocity_Z",     output_step,       z)
-    
-    # write element variable values at the current time state
-    exo.put_element_variable_values(1, "stress_XX", output_step,      sxx)
-    exo.put_element_variable_values(1, "stress_YY", output_step,      syy)
-    exo.put_element_variable_values(1, "stress_ZZ", output_step,       zz)
-    exo.put_element_variable_values(1, "stress_XY", output_step,      sxy)
-    exo.put_element_variable_values(1, "stress_XZ", output_step,       zz)
-    exo.put_element_variable_values(1, "stress_YZ", output_step,       zz)
-    exo.put_element_variable_values(1, "pressure",  output_step, pressure)
+        # Update the output step counter
+        global output_step
+        output_step = output_step + 1
 
+        # Pre-allocate node data arrays for use during output
+        ux      = np.zeros(num_nodes)
+        uy      = np.zeros(num_nodes)
+        vx      = np.zeros(num_nodes)
+        vy      = np.zeros(num_nodes)
+        fx      = np.zeros(num_nodes)
+        fy      = np.zeros(num_nodes)
+        dual_ux = np.zeros(num_nodes)
+        dual_uy = np.zeros(num_nodes)
+        dual_vx = np.zeros(num_nodes)
+        dual_vy = np.zeros(num_nodes)
+        z       = np.zeros(num_nodes)
+
+        # Pre-allocate element data arrays for use during output
+        sxx      = np.zeros(num_elems)
+        syy      = np.zeros(num_elems)
+        sxy      = np.zeros(num_elems)
+        pressure = np.zeros(num_elems)
+        stiffness_scaling_factor = np.zeros(num_elems)
+        zz       = np.zeros(num_elems)
+
+        # Pre-allocate system state data
+        system_state = np.zeros(4)
+
+        # retrieve the simulation state info at the current time
+        time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state)
+
+        # create a new output time state
+        exo.put_time(output_step, output_step)
+
+        # write global variable values at the current time state
+        exo.put_global_variable_value("elastic_strain_energy", output_step, system_state[0])
+        exo.put_global_variable_value("kinetic_energy",        output_step, system_state[1])
+        exo.put_global_variable_value("potential_energy",      output_step, system_state[2])
+        exo.put_global_variable_value("total_energy",          output_step, system_state[3])
+
+        # write nodal variable values at the current time state
+        exo.put_node_variable_values("displacement_X",      output_step,      ux)
+        exo.put_node_variable_values("displacement_Y",      output_step,      uy)
+        exo.put_node_variable_values("displacement_Z",      output_step,       z)
+        exo.put_node_variable_values("velocity_X",          output_step,      vx)
+        exo.put_node_variable_values("velocity_Y",          output_step,      vy)
+        exo.put_node_variable_values("velocity_Z",          output_step,       z)
+        exo.put_node_variable_values("force_X",             output_step,      fx)
+        exo.put_node_variable_values("force_Y",             output_step,      fy)
+        exo.put_node_variable_values("force_Z",             output_step,       z)
+        exo.put_node_variable_values("dual_displacement_X", output_step, dual_ux)
+        exo.put_node_variable_values("dual_displacement_Y", output_step, dual_uy)
+        exo.put_node_variable_values("dual_displacement_Z", output_step,       z)
+        exo.put_node_variable_values("dual_velocity_X",     output_step, dual_vx)
+        exo.put_node_variable_values("dual_velocity_Y",     output_step, dual_vy)
+        exo.put_node_variable_values("dual_velocity_Z",     output_step,       z)
+
+        # write element variable values at the current time state
+        exo.put_element_variable_values(1, "stress_XX", output_step,      sxx)
+        exo.put_element_variable_values(1, "stress_YY", output_step,      syy)
+        exo.put_element_variable_values(1, "stress_ZZ", output_step,       zz)
+        exo.put_element_variable_values(1, "stress_XY", output_step,      sxy)
+        exo.put_element_variable_values(1, "stress_XZ", output_step,       zz)
+        exo.put_element_variable_values(1, "stress_YZ", output_step,       zz)
+        exo.put_element_variable_values(1, "pressure",  output_step, pressure)
+        exo.put_element_variable_values(1, "stiffness_scaling_factor",  output_step, stiffness_scaling_factor)
+
+# ---------------------------------------------------------------------------- #
+
+# Define spatially varying properties
+def define_variable_properties(py_function_xy):
+
+    # Convert python function to C callback
+    c_function_xy = c_function_2d(py_function_xy)
+
+    # Call REMAT API function to adjust variable properties
+    API.initialize_variable_properties(c_function_xy)
+    
 # ---------------------------------------------------------------------------- #
 
 # Request the deformed coordinates of all nodes of all elements
@@ -229,12 +266,13 @@ def deform_geometry(x):
     syy      = np.zeros(num_elems)
     sxy      = np.zeros(num_elems)
     pressure = np.zeros(num_elems)
+    stiffness_scaling_factor = np.zeros(num_elems)
 
     # Pre-allocate system state data
-    system_state = np.zeros(3)
+    system_state = np.zeros(4)
     
     # retrieve the simulation state info at the current time
-    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state)
+    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state)
     
     # sum displacements to nodal coordinates
     coordinates = np.zeros((num_nodes,2))

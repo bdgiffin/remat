@@ -54,7 +54,7 @@ class Material {
   }
     
   // Return the number of state variables for allocation purposes
-  int num_state_vars(void) { return 4; }
+  int num_state_vars(void) { return 5; }
 
   // Return the density
   Real density(void) { return rho; }
@@ -65,7 +65,14 @@ class Material {
     state[1] = 0.0; // stress_yy
     state[2] = 0.0; // stress_xy
     state[3] = 0.0; // pressure
+    state[4] = 1.0; // stiffness_scaling_factor
   } // initialize()
+
+  // Initialize variable material properties
+  void initialize_variable_properties(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
+    // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
+    state[4] = function_xy(x[0],x[1]);
+  } // initialize_variable_properties()
     
   // Update the material state using the current deformation gradient F
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
@@ -98,8 +105,8 @@ class Material {
     Bbar22 -= 0.5*Ibar;
 
     // Compute and store the Cauchy stress: sigma = (J-1)*kappa*1 + (mu/J)*dev[Bbar]
-    Real p = kappa*(J-1.0);
-    Real mu_bar = mu*invJ;
+    Real p = state[4]*kappa*(J-1.0);
+    Real mu_bar = state[4]*mu*invJ;
     state[0] = mu_bar*Bbar11 + p; // stress_xx
     state[1] = mu_bar*Bbar22 + p; // stress_yy
     state[2] = mu_bar*Bbar12;     // stress_xy
@@ -108,7 +115,7 @@ class Material {
     // Compute the strain energy density
     // Real U = 0.5*kappa*(J-1.0)*(J-1.0);
     // Real W = 0.5*mu*(Ibar - 2.0);
-    psi = 0.5*p*(J-1.0) + 0.5*mu*(Ibar - 2.0);
+    psi = 0.5*p*(J-1.0) + 0.5*state[4]*mu*(Ibar - 2.0);
     
   } // update()
 

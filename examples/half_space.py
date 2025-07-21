@@ -49,6 +49,7 @@ def animate_state():
         if event.type == pygame.QUIT:
             # If the user quit, stop the simulation from running:
             # (this will terminate the event loop and end the program)
+            REMAT.finalize()
             simulation_running = False
             quit()
         
@@ -113,6 +114,9 @@ REMAT.API.define_parameter(b"density",        1.0)
 REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
+# Set the integrator type: "float" (default), or "fixed"
+REMAT.API.set_integrator_type(b"float")
+
 # Pre-process mesh/geometry ------------------------------------------------
 
 # Create geometry factory
@@ -128,7 +132,7 @@ with pygmsh.geo.Geometry() as geom:
     impactor_nodes = impactor.select_nodes(Select_all())
 
 # create half-space
-grid = geom_factory.cartesian_grid([0.0,0.0],[10.0,3.0],[100,30])
+grid = geom_factory.cartesian_grid([0.0,0.0],[10.0,3.0],[200,60])
 top_faces = grid.select_faces(Select_Y_eq(3.0))
 bottom_nodes = grid.select_nodes(Select_Y_eq(0.0))
 left_nodes = grid.select_nodes(Select_X_eq(0.0))
@@ -150,13 +154,15 @@ Nnodes = coordinates.shape[0]
 Nelems = connectivity.shape[0]
         
 # Define the problem geometry
-REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts)
+filename = "half_space.exo"
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,filename)
 
 # Run analysis -------------------------------------------------------------
 
 # initialization
 time = 0.0 # [s] starting time
 REMAT.API.initialize()
+REMAT.output_state()
 
 # set analysis time-stepping parameters
 dt = 1.0e-2 # [s] time increment
@@ -174,11 +180,13 @@ while simulation_running:
     if (keys[pygame.K_LEFT] and (step_id > 0)):
         step_id = step_id - 1
         time = REMAT.API.update_state(-dt,Nsub_steps)
+        REMAT.output_state()
     
     # Update the simulation state forward-in-time
     if (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
         step_id = step_id + 1
         time = REMAT.API.update_state(+dt,Nsub_steps)
+        REMAT.output_state()
         
     # Animate the current state
     animate_state()

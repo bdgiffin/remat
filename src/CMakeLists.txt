@@ -53,4 +53,5 @@ blt_add_library(
     SHARED      TRUE
     )
 set_target_properties(REMAT PROPERTIES SUFFIX ".so")
+target_compile_options(REMAT PRIVATE -O2)
 #target_link_libraries(REMAT LINK_PUBLIC ${Boost_LIBRARIES})

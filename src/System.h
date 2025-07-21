@@ -13,6 +13,14 @@
 
 // Declare a non-templated base class to enable instantiation with variably typed 
 struct SystemBase {
+
+  // Common data
+  const char* global_variable_names[4] = {
+    "elastic_strain_energy",
+    "kinetic_energy",
+    "potential_energy",
+    "total_energy"
+  };
   
   // default constructor method for a system object
   SystemBase() { }
@@ -41,6 +49,11 @@ struct SystemBase {
   
   // ===================================================================== //
 
+  // Procedure to initialize variable material stiffness properties
+  virtual void initialize_variable_properties(double (*function_xy)(double,double)) = 0;
+  
+  // ===================================================================== //
+
   // Procedure to initialize the system state at the indicated time
   virtual void initialize_state(void) = 0;
   
@@ -57,7 +70,8 @@ struct SystemBase {
 		                double *fx, double *fy,
 			        double *dual_ux, double *dual_uy,
 	 	                double *dual_vx, double *dual_vy,
-			        double *sxx, double *syy, double *sxy, double *pressure,
+			        double *sxx, double *syy, double *sxy,
+				double *pressure, double *stiffness_scaling_factor,
 				double *system_state) = 0;
   
   // ===================================================================== //
@@ -138,6 +152,7 @@ struct System : public SystemBase {
   Real elastic_strain_energy;
   Real kinetic_energy;
   Real potential_energy;
+  Real total_energy;
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
@@ -228,6 +243,7 @@ struct System : public SystemBase {
     elastic_strain_energy = 0.0;
     kinetic_energy        = 0.0;
     potential_energy      = 0.0;
+    total_energy          = 0.0;
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -309,6 +325,33 @@ struct System : public SystemBase {
   
   // ===================================================================== //
 
+  // Procedure to initialize variable material stiffness properties
+  virtual void initialize_variable_properties(double (*function_xy)(double,double)) {
+
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
+
+    // Loop over all solid elements
+    for (int e=0; e<Nelems; e++) {
+
+      // Copy (primal) local nodal positions for each element
+      const int Ndofs_per_elem = Nnodes_per_elem*Ndofs_per_node;
+      Real xe[8];
+      for (int j=0; j<Nnodes_per_elem; j++) {
+	const int jnode_id = connect[Nnodes_per_elem*e+j];
+	for (int i=0; i<Ndofs_per_node; i++) {
+	  xe[Ndofs_per_node*j+i] = x[Ndofs_per_node*jnode_id+i];
+	}
+      }
+
+      // Initialize variable material properties for each element
+      m_element.initialize_variable_properties(xe,&state[Nstate_vars_per_elem*e],function_xy);
+
+    } // End loop over all solid elements
+    
+  } // initialize_variable_properties()
+  
+  // ===================================================================== //
+
   // Procedure to initialize the system state at the indicated time
   virtual void initialize_state(void) {
 
@@ -364,7 +407,8 @@ struct System : public SystemBase {
 		                double *fx, double *fy,
 			        double *dual_ux, double *dual_uy,
 	 	                double *dual_vx, double *dual_vy,
-		                double *sxx, double *syy, double *sxy, double *pressure,
+		                double *sxx, double *syy, double *sxy,
+				double *pressure, double *stiffness_scaling_factor,
 				double *system_state) {
 
     // Copy nodal state data
@@ -384,16 +428,18 @@ struct System : public SystemBase {
     // Copy element state data
     const int Nstate_vars_per_elem = m_element.num_state_vars();
     for (int e=0; e<Nelems; e++) {
-      sxx[e]      = state[Nstate_vars_per_elem*e+0];
-      syy[e]      = state[Nstate_vars_per_elem*e+1];
-      sxy[e]      = state[Nstate_vars_per_elem*e+2];
-      pressure[e] = state[Nstate_vars_per_elem*e+3];
+      sxx[e]                      = state[Nstate_vars_per_elem*e+0];
+      syy[e]                      = state[Nstate_vars_per_elem*e+1];
+      sxy[e]                      = state[Nstate_vars_per_elem*e+2];
+      pressure[e]                 = state[Nstate_vars_per_elem*e+3];
+      stiffness_scaling_factor[e] = state[Nstate_vars_per_elem*e+4];
     }
 
     // Copy system state data
     system_state[0] = elastic_strain_energy;
     system_state[1] = kinetic_energy;
     system_state[2] = potential_energy;
+    system_state[3] = total_energy;
 
     // Return the current analysis time
     return m_time;
@@ -587,6 +633,9 @@ private:
     for (int i=0; i<Ndofs; i++) {
       kinetic_energy += 0.5*m[i]*v[i].first*v[i].first;
     } // End loop over all DoFs
+
+    // Update the total system energy
+    total_energy = elastic_strain_energy + kinetic_energy + potential_energy;
     
   } // update_kinetic_energy()
   

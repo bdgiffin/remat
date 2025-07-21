@@ -42,6 +42,54 @@ public:
     
   } // initialize()
     
+  // Initialize variable material properties for the current element
+  void initialize_variable_properties(Real (&x)[8], Real* state, double (*function_xy)(double,double)) {
+    
+    const Real sqrt_third = 1.0/std::sqrt(3.0);
+      
+    // Define parent nodal coordinates
+    Real xi[4]   = { -1.0, +1.0, +1.0, -1.0 };
+    Real eta[4]  = { -1.0, -1.0, +1.0, +1.0 };
+
+    // zero-initialize element-averaged state
+    const int num_state_vars = m_model.num_state_vars();
+    for (int i=0; i<num_state_vars; i++) {
+      state[i] = 0.0;
+    }
+      
+    // loop over integration points
+    for (int q = 0; q < 4; q++) {
+
+      // Set quadrature point position
+      Real xiq  = xi[q]*sqrt_third;
+      Real etaq = eta[q]*sqrt_third;
+	
+      // Compute shape function values at the current quadrature point (phi)
+      Real phi[4];
+      for (int i = 0; i < 4; i++) {
+	phi[i] = 0.25*(1.0+xiq*xi[i])*(1.0+etaq*eta[i]);
+      }
+
+      // Compute interpolated coordinates of the current quadrature point (xq)
+      Real xq[2] = {0.0, 0.0};
+      for (int i = 0; i < 4; i++) {
+	xq[0] += x[2*i+0] * phi[i];
+	xq[1] += x[2*i+1] * phi[i];
+      }
+
+      // Initialize variable material properties for the current material point
+      Real* model_state = &state[(q+1)*num_state_vars];
+      Real psi;
+      m_model.initialize_variable_properties(xq,model_state,function_xy);
+
+      // sum contributions to element-averaged state
+      for (int i=0; i<num_state_vars; i++) {
+	state[i] += 0.25*model_state[i];
+      }
+	
+    }
+  } // initialize_variable_properties()
+    
   // Update the element state using the current nodal displacements
   void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real &E, Real* state, Real dt) {
 

@@ -1,4 +1,10 @@
 *~
 build
 install
+examples/Snaps
+examples/Snaps_fixed
+examples/potential_well_fixed
+examples/potential_well_mixed
+examples/seismic_wave
+examples/*.exo
 *.DS_Store

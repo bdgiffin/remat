@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 
 # (Optional) use PyGame to visualize the problem as it is running
 import pygame
+import pygame_widgets
+from pygame_widgets.progressbar import ProgressBar
 
 # Import GMSH for meshing
 import pygmsh
@@ -37,9 +39,9 @@ pygame.display.set_caption('Reversible Dynamics')
 # Initialize a new font for drawing text
 pygame.font.init()
 font_type  = 'PT Mono'
-font_size  = 16 # (pixels)
+font_size  = 32 # (pixels)
 display_font = pygame.font.SysFont(font_type, font_size)
-anti_aliasing = False
+anti_aliasing = True
 
 # Define a clock for consistent timestepping at a fixed framerate
 clock = pygame.time.Clock()
@@ -51,7 +53,8 @@ simulation_running = True
 # Local function to animate the current deformed state of the mesh
 def animate_state():
     # Loop through any/all simulation "events":
-    for event in pygame.event.get():
+    events = pygame.event.get()
+    for event in events:
         # Check if the user has closed the window to "QUIT" the simulation:
         if event.type == pygame.QUIT:
             # If the user quit, stop the simulation from running:
@@ -68,28 +71,36 @@ def animate_state():
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
-        pygame.draw.polygon(window, "LightGrey", points)
-        pygame.draw.polygon(window, "Black", points, 1)
+        if (e < 16):
+            pygame.draw.polygon(window, "Light Blue", points)
+            pygame.draw.polygon(window, "Dark Blue", points, 1)
+        else:
+            pygame.draw.polygon(window, "Light Grey", points)
+            pygame.draw.polygon(window, "Grey", points, 1)
 
     # Draw Play, Pause, and Rewind buttons
     bx = 20
-    by = 20
+    by = 520
     bd = 30
+    color = "Dark Blue"
     if (keys[pygame.K_LEFT] and (step_id > 0)):
-        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+1*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, color, ((bx+0*bd,by+1*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd)), 0)
     elif (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
-        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+0*bd),(bx+2*bd,by+1*bd),(bx+0*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, color, ((bx+0*bd,by+0*bd),(bx+2*bd,by+1*bd),(bx+0*bd,by+2*bd)), 0)
     else:
-        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+0*bd),(bx+0.7*bd,by+0*bd),(bx+0.7*bd,by+2*bd),(bx+0*bd,by+2*bd)), 0)
-        pygame.draw.polygon(window, "Grey", ((bx+1.3*bd,by+0*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd),(bx+1.3*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, color, ((bx+0*bd,by+0*bd),(bx+0.7*bd,by+0*bd),(bx+0.7*bd,by+2*bd),(bx+0*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, color, ((bx+1.3*bd,by+0*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd),(bx+1.3*bd,by+2*bd)), 0)
         
     # Display system state
-    display_pos_x = 700
-    window.blit(display_font.render("    Strain energy: {:.3e}".format(system_state[0]),anti_aliasing,"Black"),(display_pos_x,1*font_size))
-    window.blit(display_font.render("   Kinetic energy: {:.3e}".format(system_state[1]),anti_aliasing,"Black"),(display_pos_x,2*font_size))
-    window.blit(display_font.render(" Potential energy: {:.3e}".format(system_state[2]),anti_aliasing,"Black"),(display_pos_x,3*font_size))
-    window.blit(display_font.render("     Total energy: {:.3e}".format(system_state[0]+system_state[1]+system_state[2]),anti_aliasing,"Black"),(display_pos_x,4*font_size))
+    display_pos_x = 300
+    window.blit(display_font.render("    Strain energy: {:.4f}".format(system_state[0]),anti_aliasing,"Black"),(display_pos_x,1*font_size))
+    window.blit(display_font.render("   Kinetic energy: {:.4f}".format(system_state[1]),anti_aliasing,"Black"),(display_pos_x,2*font_size))
+    window.blit(display_font.render(" Potential energy: {:.4f}".format(system_state[2]),anti_aliasing,"Black"),(display_pos_x,3*font_size))
+    window.blit(display_font.render("     Total energy: {:.4f}".format(system_state[0]+system_state[1]+system_state[2]),anti_aliasing,"Blue"),(display_pos_x,4*font_size))
             
+    # Draw different widgets within the game window:
+    pygame_widgets.update(events)
+    
     # Update the window to display the current state of the simulation
     pygame.display.update()
 
@@ -104,7 +115,7 @@ def animate_state():
 REMAT.API.define_parameter(b"body_force_y",       -1.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 2.0e-2)
+REMAT.API.define_parameter(b"mass_damping_factor", 4.0e-2)
 REMAT.API.define_parameter(b"contact_stiffness",   5.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
 
@@ -114,7 +125,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 50.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Set the integrator type: "float" (default), or "fixed"
-REMAT.API.set_integrator_type(b"float")
+REMAT.API.set_integrator_type(b"fixed")
 
 # Pre-process mesh/geometry ------------------------------------------------
 
@@ -122,11 +133,11 @@ REMAT.API.set_integrator_type(b"float")
 geom_factory = GeometryFactory()
 
 # create block
-block = geom_factory.cartesian_grid([1.0,4.5],[2.0,5.5],[3,3],0.1)
+block = geom_factory.cartesian_grid([1.0,4.5],[2.0,5.5],[4,4],0.0)
 boundary_nodes = block.select_boundary_nodes()
 
 with pygmsh.geo.Geometry() as geom:
-    lcar = 1.0
+    lcar = 0.5
     p1 = geom.add_point([0.0,  5.0], lcar)
     c2 = geom.add_point([4.0,  0.25], lcar)
     p2 = geom.add_point([0.0,  0.0], lcar)
@@ -177,8 +188,22 @@ REMAT.API.initialize()
 # set analysis time-stepping parameters
 dt = 1.0e-2 # [s] time increment
 step_id = 0
-Nsteps = 200
-Nsub_steps = 100
+Nsteps = 220
+Nsub_steps = 80
+
+# Create a progress bar to show advancement of time forward or backward
+progressBarColour1=(0,0,200)
+progressBarColour2=(158,128,220)
+progressBar = ProgressBar(window, 100, 570, 800, 10,
+                          lambda: step_id / Nsteps, curved=True,
+                          completedColour=progressBarColour1,incompletedColour=progressBarColour2)
+
+# Ensure we have somewhere for the frames
+try:
+    os.makedirs("potential_well_fixed")
+except OSError:
+    pass
+file_num = 0
 
 # perform the reversible analysis
 while simulation_running:
@@ -198,6 +223,13 @@ while simulation_running:
         
     # Animate the current state
     animate_state()
+
+    # Update file number
+    file_num = file_num + 1
+
+    # Save every frame
+    screenshot_filename = "potential_well_fixed/%04d.png" % file_num
+    pygame.image.save(window, screenshot_filename)
 
 # --------------------------------------------------------------------------
 

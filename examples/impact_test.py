@@ -4,6 +4,8 @@ sys.path.append("../install/package/")
 
 # Load the REMAT package
 import REMAT
+from GeometryFactory import *
+from Model import *
 
 # Python package for reading/writing data in the Exodus mesh database format
 # NOTE: PYEXODUS V0.1.5 NEEDS TO BE MODIFIED TO WORK CORRECTLY WITH PYTHON 3.12
@@ -89,21 +91,8 @@ REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Pre-process mesh/geometry ------------------------------------------------
 
-#Nnodes = 9
-#Nelems = 4
-#coordinates = np.array([ 1.0, 1.1,
-#                         2.0, 1.0,
-#                         3.0, 0.9,
-#		         1.0, 2.0,
-#                         2.0, 2.0,
-#                         3.0, 2.0,
-#		 	 1.0, 3.0,
-#                         2.0, 3.0,
-#                         3.0, 3.0 ])
-#connectivity = np.array([[ 0, 1, 4, 3 ],
-#                         [ 1, 2, 5, 4 ],
-#                         [ 3, 4, 7, 6 ],
-#                         [ 4, 5, 8, 7 ]], dtype=np.int32);
+# Create geometry factory
+geom_factory = GeometryFactory()
 
 with pygmsh.geo.Geometry() as geom:
         #obj = geom.add_rectangle(1.0, 2.0, 1.0, 2.0, 1.0, 0.1)
@@ -117,32 +106,16 @@ with pygmsh.geo.Geometry() as geom:
             mesh_size=0.5,
         )
         geom.set_recombined_surfaces([obj.surface])
-        mesh = geom.generate_mesh(dim=2)
+        mesh = geom_factory.from_meshio(geom.generate_mesh(dim=2))
 
-# Initialize the coordinates and connectivity arrays
-Nnodes = mesh.points.shape[0]
-Nelems = 0
-for cell_block in mesh.cells:
-    if ((cell_block.type == "triangle") or (cell_block.type == "quad")):
-        Nelems = Nelems + cell_block.data.shape[0]
-print("Nnodes = " + str(Nnodes))
-print("Nelems = " + str(Nelems))
-coordinates = mesh.points[:,0:1];
-connectivity = np.zeros((Nelems,4), dtype=np.int32);
-Nelems = 0
-for cell_block in mesh.cells:
-    if (cell_block.type == "triangle"):
-        for i, cell_connectivity in enumerate(cell_block.data):
-            connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[2] ]
-        Nelems = Nelems + cell_block.data.shape[0]
-    elif (cell_block.type == "quad"):
-        for i, cell_connectivity in enumerate(cell_block.data):
-            connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[3] ]
-        Nelems = Nelems + cell_block.data.shape[0]
-        
-# Initialize nodal velocities and fixity
-velocities = np.zeros((Nnodes,2))
-fixity = np.zeros((Nnodes,2),dtype=np.bool_)
+# Create Model object
+model = Model()
+model.add_part(Part(mesh,Material(None,None)))
+
+# Generate the problem data from the Model object
+coordinates, velocities, fixity, connectivity, contacts = model.generate_problem()
+Nnodes = coordinates.shape[0]
+Nelems = connectivity.shape[0]
 
 # Define the problem geometry
 filename = "output.exo"

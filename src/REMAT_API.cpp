@@ -12,22 +12,25 @@
 #include "System.h"
 #include "Truss.h"
 #include "UniaxialMaterial.h"
+#include "UniaxialViscoplasticity.h"
+#include <chrono>
 #include <iostream>
 #include <stdio.h>
 
-// Declare standard Fixed-precision numbers
-const int          RADIX = 10;
-const int     EXPONENT_V = -6;
-const int     EXPONENT_U = -6;
-typedef Fixed<RADIX,EXPONENT_V> FixedV;
-typedef Fixed<RADIX,EXPONENT_U> FixedU;
+// Declare element and material types
+typedef Element<Material> ElementT;
+typedef Truss<UniaxialViscoplasticity<Real,Real> >        TrussT_float;
+typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
+//typedef Truss<UniaxialMaterial> TrussT_float;
+//typedef Truss<UniaxialMaterial> TrussT_fixed;
 
 // global parameter list
 Parameters params;
 
 // global instance of the system object
-System<Element<Material>,Truss<UniaxialMaterial>,Real,Real,Real>         remat_float;
-System<Element<Material>,Truss<UniaxialMaterial>,FixedV,FixedU,Rational> remat_fixed;
+System<ElementT,TrussT_float,Real,Real,Real>           remat_float;
+System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed;
+System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Real>     remat_mixed;
 SystemBase* remat = &remat_float;
 
 // ======================================================================== //
@@ -44,6 +47,8 @@ extern "C" {
       remat = &remat_float;
     } else if (integrator_type_string == "fixed") {
       remat = &remat_fixed;
+    } else if (integrator_type_string == "mixed") {
+      remat = &remat_mixed;
     } else {
       std::cerr << "Invalid integrator type specified!" << std::endl;
       exit(EXIT_FAILURE);
@@ -96,6 +101,13 @@ extern "C" {
   
   // ------------------------------------------------------------------------ //
 
+  // Initialize variable material properties
+  void initialize_variable_properties(double (*function_xy)(double,double)) {
+    remat->initialize_variable_properties(function_xy);
+  } // initialize_variable_properties()
+  
+  // ------------------------------------------------------------------------ //
+
   // Initialize the System state at the inidicated initial analysis time
   void initialize() {
     remat->initialize_state();
@@ -105,11 +117,27 @@ extern "C" {
 
   // Update the System state
   double update_state(double dt, int Nsub_steps) {
+    // Record the starting wall time
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     double time;
     for (int i=0; i<Nsub_steps; i++) {
       time = remat->update_state(dt);
     }
+    
+    // Record the ending wall time
+    auto end_time = std::chrono::high_resolution_clock::now();
+
+    // Calculate the elapsed wall time duration
+    auto elapsed_duration = end_time - start_time;
+
+    // Convert to milliseconds and get the count
+    auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
+
+    std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
+    
     return time;
+    
   } // update_state()
   
   // ------------------------------------------------------------------------ //
@@ -120,9 +148,11 @@ extern "C" {
 		        double *fx, double *fy,
 			double *dual_ux, double *dual_uy,
 	 	        double *dual_vx, double *dual_vy,
-		        double *sxx, double *syy, double *sxy, double *pressure,
+		        double *sxx, double *syy, double *sxy,
+			double *pressure, double *stiffness_scaling_factor,
 			double *system_state) {
-    return remat->get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,system_state);
+    return remat->get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,
+				 sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state);
   } // get_field_data()
   
   // ------------------------------------------------------------------------ //

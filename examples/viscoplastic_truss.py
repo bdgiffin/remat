@@ -2,8 +2,10 @@
 import sys
 sys.path.append("../install/package/")
 
-# Load the REMAT package
+# Load the REMAT and MeshUtils packages
 import REMAT
+from GeometryFactory import *
+from Model import *
 
 # Python package for reading/writing data in the Exodus mesh database format
 # NOTE: PYEXODUS V0.1.5 NEEDS TO BE MODIFIED TO WORK CORRECTLY WITH PYTHON 3.12
@@ -23,7 +25,6 @@ import pygmsh
 
 # --------------------------------------------------------------------------
 
-# (consider using this to show reversibility in a step-by-step fashion)
 # (include a "progress bar" or a clock to show advancement of time forward or backward)
 
 # Initialize pygame window for interactive visualization
@@ -54,17 +55,54 @@ def animate_state():
     # "Erase" the content of the display window
     window.fill("WhiteSmoke") # reset window to display a full white screen
 
+    # Draw the original shape for comparison
+    if (step_id == 0):
+        # Draw truss elements
+        for e in range(0,Ntruss):
+            points = 100*coordinates[truss_connectivity[e,:],:]
+            points[:,1] = 600 - points[:,1]
+            pygame.draw.line(window, "LightBlue", points[0,:], points[1,:], 4)
+
     # Draw the mesh in its currently deformed configuration:
-    max_pressure = 1.0
+    max_pressure = 0.3
     xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
-        p1 = max(-pressure[e],0)/max_pressure
-        p2 = max(+pressure[e],0)/max_pressure
+        p1 = min(max(-pressure[e],0)/max_pressure,1.0)
+        p2 = min(max(+pressure[e],0)/max_pressure,1.0)
         color = (255*(1.0-p2),255*(1.0-p1-p2),255*(1.0-p1))
         pygame.draw.polygon(window, color, points)
         pygame.draw.polygon(window, "Black", points, 1)
+
+    # Draw truss elements
+    for e in range(0,Ntruss):
+        points = 100*xy_deformed[truss_connectivity[e,:],:]
+        points[:,1] = 600 - points[:,1]
+        pygame.draw.line(window, "Grey", points[0,:], points[1,:], 4)
+
+    # Draw contact interactions (primarily for debugging purposes):
+    for contact in contacts:
+        points = 100*xy_deformed[contact[0],:]
+        points[:,1] = 600 - points[:,1]
+        for point in points:
+            pygame.draw.circle(window, "Red", point, 5, 2)
+        for segment in contact[1]:
+            points = 100*xy_deformed[segment,:]
+            points[:,1] = 600 - points[:,1]
+            pygame.draw.line(window, "Green", points[0,:], points[1,:], 2)
+
+    # Draw Play, Pause, and Rewind buttons
+    bx = 20
+    by = 20
+    bd = 30
+    if (keys[pygame.K_LEFT] and (step_id > 0)):
+        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+1*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd)), 0)
+    elif (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
+        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+0*bd),(bx+2*bd,by+1*bd),(bx+0*bd,by+2*bd)), 0)
+    else:
+        pygame.draw.polygon(window, "Grey", ((bx+0*bd,by+0*bd),(bx+0.7*bd,by+0*bd),(bx+0.7*bd,by+2*bd),(bx+0*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, "Grey", ((bx+1.3*bd,by+0*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd),(bx+1.3*bd,by+2*bd)), 0)
             
     # Update the window to display the current state of the simulation
     pygame.display.update()
@@ -77,79 +115,41 @@ def animate_state():
 # Call C/C++ library API functions from Python:
 
 # Define global parameters
-REMAT.API.define_parameter(b"body_force_y",       -1.0e-1)
-REMAT.API.define_parameter(b"initial_velocity_x", +3.0e-1)
-REMAT.API.define_parameter(b"initial_velocity_y", -3.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 1.0e-1)
-REMAT.API.define_parameter(b"contact_stiffness",   2.0e+0)
+REMAT.API.define_parameter(b"body_force_y",       -0.0e-1)
+REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
+REMAT.API.define_parameter(b"initial_velocity_y", -2.0e+0)
+REMAT.API.define_parameter(b"mass_damping_factor", 0.0e-2)
+REMAT.API.define_parameter(b"contact_stiffness",   1.0e+3)
 
 # Define material parameters
-REMAT.API.define_parameter(b"density",        1.0)
-REMAT.API.define_parameter(b"youngs_modulus", 1.0)
+REMAT.API.define_parameter(b"density",         1.0)
+REMAT.API.define_parameter(b"youngs_modulus", 1000.0)
+REMAT.API.define_parameter(b"yield_stress",   10.0)
+REMAT.API.define_parameter(b"viscosity",      10.0)
+REMAT.API.define_parameter(b"area",            1.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
+
+# Set the integrator type: "float" (default), or "fixed"
+REMAT.API.set_integrator_type(b"fixed")
 
 # Pre-process mesh/geometry ------------------------------------------------
 
-#Nnodes = 9
-#Nelems = 4
-#coordinates = np.array([ 1.0, 1.1,
-#                         2.0, 1.0,
-#                         3.0, 0.9,
-#		         1.0, 2.0,
-#                         2.0, 2.0,
-#                         3.0, 2.0,
-#		 	 1.0, 3.0,
-#                         2.0, 3.0,
-#                         3.0, 3.0 ])
-#connectivity = np.array([[ 0, 1, 4, 3 ],
-#                         [ 1, 2, 5, 4 ],
-#                         [ 3, 4, 7, 6 ],
-#                         [ 4, 5, 8, 7 ]], dtype=np.int32);
-
-with pygmsh.geo.Geometry() as geom:
-        #obj = geom.add_rectangle(1.0, 2.0, 1.0, 2.0, 1.0, 0.1)
-        obj = geom.add_polygon(
-            [
-                [1.0, 1.0],
-                [5.0, 1.2],
-                [5.1, 5.2],
-                [1.1, 4.0],
-            ],
-            mesh_size=0.5,
-        )
-        geom.set_recombined_surfaces([obj.surface])
-        mesh = geom.generate_mesh(dim=2)
-
-# Initialize the coordinates and connectivity arrays
-Nnodes = mesh.points.shape[0]
+# Manually define nodal coordinates and element geometry
+Nnodes = 3
 Nelems = 0
-for cell_block in mesh.cells:
-    if ((cell_block.type == "triangle") or (cell_block.type == "quad")):
-        Nelems = Nelems + cell_block.data.shape[0]
-print("Nnodes = " + str(Nnodes))
-print("Nelems = " + str(Nelems))
-coordinates = np.zeros((Nnodes,2))
-for i, node in enumerate(mesh.points):
-    coordinates[i,0] = node[0]
-    coordinates[i,1] = node[1]
-connectivity = np.zeros((Nelems,4), dtype=np.int32)
-Nelems = 0
-for cell_block in mesh.cells:
-    if (cell_block.type == "triangle"):
-        for i, cell_connectivity in enumerate(cell_block.data):
-            connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[2] ]
-        Nelems = Nelems + cell_block.data.shape[0]
-    elif (cell_block.type == "quad"):
-        for i, cell_connectivity in enumerate(cell_block.data):
-            connectivity[Nelems+i,:] = [ cell_connectivity[0], cell_connectivity[1], cell_connectivity[2], cell_connectivity[3] ]
-        Nelems = Nelems + cell_block.data.shape[0]
-
-# Initialize nodal velocities and fixity
-velocities = np.zeros((Nnodes,2))
-fixity     = np.zeros((Nnodes,2),dtype=np.bool_)
+Ntruss = 3
+coordinates  = np.array([[5.0, 1.0],[6.0,2.25],[5.0,3.5]])
+velocities   = np.zeros((3,2))
+fixity       = np.zeros((3,2),dtype=np.bool_)
+connectivity = np.empty((0,0),dtype=np.int32)
+truss_connectivity = np.array([[0,1],[1,2],[2,0]],dtype=np.int32)
+contacts = []
         
 # Define the problem geometry
-REMAT.create_geometry(coordinates,velocities,fixity,connectivity,[])
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts)
+
+# Define truss elements
+REMAT.API.define_truss_elements(truss_connectivity,Ntruss)
 
 # Run analysis -------------------------------------------------------------
 
@@ -158,10 +158,10 @@ time = 0.0 # [s] starting time
 REMAT.API.initialize()
 
 # set analysis time-stepping parameters
-dt = 2.0e-2 # [s] time increment
+dt = 1.0e-2 # [s] time increment
 step_id = 0
-Nsteps = 100
-Nsub_steps = 25
+Nsteps = 66
+Nsub_steps = 1
 
 # perform the reversible analysis
 while simulation_running:

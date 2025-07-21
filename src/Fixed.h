@@ -46,4 +46,18 @@ private:
   
 }; // Fixed
 
+// Declare standard Fixed-precision numbers
+typedef Fixed<10,-6> Fixed_V;
+typedef Fixed<10,-6> Fixed_U;
+typedef Fixed<10,-6> Fixed_E;
+
+// Declare conversion to/from a Real value
+void load_from_Real(Real value, Fixed_E &load_value) { 
+  std::memcpy(&(load_value.mantissa),&value,sizeof(Integer));
+}
+void save_as_Real(Fixed_E value, Real& save_value) {
+  std::memcpy(&save_value,&(value.mantissa),sizeof(Integer));
+}
+
+
 #endif // FIXED_H
