@@ -44,15 +44,31 @@ set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/types.h
     PARENT_SCOPE
     )
-  
-blt_add_library(
-    NAME        REMAT
-    SOURCES     ${REMAT_sources}
-    HEADERS     ${REMAT_headers}
-    INCLUDES    ${REMAT_include_dirs}
-    DEPENDS_ON  ${REMAT_dependencies}
-    SHARED      TRUE
-    )
-set_target_properties(REMAT PROPERTIES SUFFIX ".so")
-target_compile_options(REMAT PRIVATE -O2)
-#target_link_libraries(REMAT LINK_PUBLIC ${Boost_LIBRARIES})
+
+if (EMSCRIPTEN)
+    message(STATUS "This is an Emscripten build.")
+    # Add Emscripten-specific build settings or flags here
+    blt_add_library(
+        NAME        REMAT
+        SOURCES     ${REMAT_sources}
+        HEADERS     ${REMAT_headers}
+        INCLUDES    ${REMAT_include_dirs}
+        DEPENDS_ON  ${REMAT_dependencies}
+        SHARED      TRUE
+        )
+    set_target_properties(REMAT PROPERTIES LINK_FLAGS "-s WASM=1")
+else ()
+    message(STATUS "This is NOT an Emscripten build.")
+    # Add non-Emscripten-specific build settings here
+    blt_add_library(
+        NAME        REMAT
+        SOURCES     ${REMAT_sources}
+        HEADERS     ${REMAT_headers}
+        INCLUDES    ${REMAT_include_dirs}
+        DEPENDS_ON  ${REMAT_dependencies}
+        SHARED      TRUE
+        ) 
+    set_target_properties(REMAT PROPERTIES SUFFIX ".so")
+    target_compile_options(REMAT PRIVATE -O2)
+    #target_link_libraries(REMAT LINK_PUBLIC ${Boost_LIBRARIES})
+endif ()
