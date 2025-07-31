@@ -119,6 +119,12 @@ class Material {
     
   } // update()
 
+  // Conditionally load material history parameters from memory
+  bool load_state(Real* state, Real* overflow_state)  { return false; }
+
+  // Conditionally store material history parameters in memory
+  bool store_state(Real* state, Real* overflow_state) { return false; }
+
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(pmod/rho); }
 

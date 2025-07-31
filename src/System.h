@@ -6,6 +6,7 @@
 #include "Dual.h"
 #include "Integrator.h"
 #include "Parameters.h"
+#include <limits>
 #include <vector>
 #include <algorithm> // For std::fill
 #include <iostream>
@@ -72,7 +73,7 @@ struct SystemBase {
 	 	                double *dual_vx, double *dual_vy,
 			        double *sxx, double *syy, double *sxy,
 				double *pressure, double *stiffness_scaling_factor,
-				double *system_state) = 0;
+				double *system_state, double *eqps, bool *is_dead) = 0;
   
   // ===================================================================== //
 
@@ -87,6 +88,10 @@ struct System : public SystemBase {
 
   // Time step ID
   int m_time_step;
+
+  // Overflow counter and maximum number of steps
+  int m_overflow_counter;
+  int m_overflow_limit = std::numeric_limits<int>::max();
 
   // Analysis time
   Real m_time;
@@ -125,6 +130,7 @@ struct System : public SystemBase {
   std::vector<Real>           xt; // The (primal) system current position degrees of freedom
   std::vector<Dual<FixedU> >   u; // The (primal/dual) system displacement degrees of freedom
   std::vector<Dual<FixedV> >   v; // The (primal/dual) system velocity degrees of freedom
+  std::vector<std::vector<FixedV> > v_overflow; // Additional storage for velocity overflow
   std::vector<Real>            m; // The (primal) system masses for each DoF
   std::vector<Real>            f; // The (primal) system forces for each DoF
   std::vector<Dual<Real> >     a; // The (primal) system accelerations for each DoF
@@ -142,6 +148,7 @@ struct System : public SystemBase {
   int                 Ntruss = 0; // The total number of truss elements
   std::vector<int> truss_connect; // The nodal connectivity array for all truss elements
   std::vector<Real>  truss_state; // Truss element state variable data
+  std::vector<std::vector<Real> > truss_state_overflow; // Truss element state variable overflow data
 
   // Point mass data
   int              Npoints = 0; // The total number of point masses
@@ -183,6 +190,7 @@ struct System : public SystemBase {
     if (params.count("dt_scale_factor") > 0) m_dt_scale_factor = params["dt_scale_factor"];
     if (params.count("mass_damping_factor") > 0) m_alpha = params["mass_damping_factor"];
     if (params.count("contact_stiffness") > 0) m_contact_stiffness = params["contact_stiffness"];
+    if (params.count("overflow_limit") > 0) m_overflow_limit = int(params["overflow_limit"]);
 
     // Initialize the element/material object
     m_element = Element_T(params);
@@ -227,6 +235,11 @@ struct System : public SystemBase {
     for (int i = 0; i < Nnodes; i++) {
       if (m_vx0 != 0.0) v[2*i+0] = Dual<FixedV>(m_vx0,0.0);
       if (m_vy0 != 0.0) v[2*i+1] = Dual<FixedV>(m_vy0,0.0);
+    }
+
+    // Initialize dual DoFs
+    for (int i=0; i<Ndofs; i++) {
+      v[i].second = smallest_value(v[i].first);
     }
 
     // Initialize connectivity data for all elements
@@ -282,6 +295,7 @@ struct System : public SystemBase {
     // Initialize the dimensions of all arrays
     truss_connect.resize(Ntruss_dofs);
     truss_state.resize(Nstate);
+    truss_state_overflow.resize(Ntruss);
 
     // Initialize connectivity data for all truss elements
     for (int i=0; i<Ntruss_dofs; i++) {
@@ -357,6 +371,9 @@ struct System : public SystemBase {
 
     // Set the initial time to zero
     m_time = 0.0;
+
+    // Set the overflow counter
+    m_overflow_counter = 0;
     
     // Update accelerations and damping factors for each DoF
     update_accelerations(0.0);
@@ -370,6 +387,34 @@ struct System : public SystemBase {
 
   // Procedure to update the system state for a given time step
   virtual double update_state(Real dt) {
+
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+
+    // Update the time step ID and conditionally load overflow dual velocities
+    if (dt < 0.0) {
+      m_time_step--;
+      if (m_overflow_counter == 0) {
+	m_overflow_counter = m_overflow_limit;
+	std::vector<FixedV>& last_v_overflow = v_overflow.back();
+	for (int i=0; i<Ndofs; i++) {
+	  v[i].second = last_v_overflow[i];
+	}
+	v_overflow.pop_back();
+	std::cout << "Loading velocity overflow: count = " << v_overflow.size() << std::endl;
+      }
+      m_overflow_counter--;
+
+      // Conditionally load material history parameters from memory
+      for (int e=0; e<Ntruss; e++) {
+	if (truss_state_overflow[e].size() > 0) {
+	  if (m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],&truss_state_overflow[e].back())) {
+	    truss_state_overflow[e].pop_back();
+	    std::cout << "Loading state overflow: count = " << truss_state_overflow[e].size() << std::endl;
+	  }
+	}
+      }
+      
+    }
 
     // Update velocities to the half-step
     m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
@@ -386,12 +431,33 @@ struct System : public SystemBase {
     // Update kinetic energy
     update_kinetic_energy();
 
-    // Update time step ID
+    // Update time step ID and conditionally store overflow dual velocities
     if (dt > 0.0) {
       m_time_step++;
-    } else if (dt < 0.0) {
-      m_time_step--;
+      m_overflow_counter++;
+      if (m_overflow_counter == m_overflow_limit) {
+	m_overflow_counter = 0;
+	std::vector<FixedV> new_v_overflow(Ndofs,FixedV(0.0));
+	for (int i=0; i<Ndofs; i++) {
+	  //if ((v[i].first == FixedV(0.0)) and !fixity[i]) exit(1);
+	  new_v_overflow[i] = v[i].second;
+	  v[i].second = smallest_value(v[i].second);
+	}
+	v_overflow.push_back(new_v_overflow);
+	std::cout << "Storing velocity overflow: count = " << v_overflow.size() << std::endl;
+      }
+
+      // Conditionally store material history parameters in memory
+      for (int e=0; e<Ntruss; e++) {
+	Real new_state_overflow;
+	if (m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],&new_state_overflow)) {
+	  truss_state_overflow[e].push_back(new_state_overflow);
+	  std::cout << "Storing state overflow: count = " << truss_state_overflow[e].size() << std::endl;
+	}
+      }
+      
     }
+    
     std::cout << "Time step: " << m_time_step << " at time: " << m_time << std::endl;
 
     // Return the updated analysis time
@@ -409,7 +475,7 @@ struct System : public SystemBase {
 	 	                double *dual_vx, double *dual_vy,
 		                double *sxx, double *syy, double *sxy,
 				double *pressure, double *stiffness_scaling_factor,
-				double *system_state) {
+				double *system_state, double *eqps, bool *is_dead) {
 
     // Copy nodal state data
     for (int i=0; i<Nnodes; i++) {
@@ -440,6 +506,13 @@ struct System : public SystemBase {
     system_state[1] = kinetic_energy;
     system_state[2] = potential_energy;
     system_state[3] = total_energy;
+    
+    // Copy truss state data
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    for (int e=0; e<Ntruss; e++) {
+      eqps[e]    = m_truss.get_state_variable(&truss_state[Nstate_vars_per_truss*e],"eqps");
+      is_dead[e] = m_truss.is_dead(&truss_state[Nstate_vars_per_truss*e]);
+    }
 
     // Return the current analysis time
     return m_time;
@@ -466,8 +539,8 @@ private:
 
     // Update the current deformed nodal coordinates
     for (int i = 0; i < Nnodes; i++) {
-      xt[2*i+0] = x[2*i+0] + u[2*i+0].first;
-      xt[2*i+1] = x[2*i+1] + u[2*i+1].first;
+      xt[2*i+0] = x[2*i+0] + Real(u[2*i+0].first);
+      xt[2*i+1] = x[2*i+1] + Real(u[2*i+1].first);
     }
     
     const int Nstate_vars_per_elem = m_element.num_state_vars();
@@ -578,13 +651,13 @@ private:
 
     // Contact interaction with rigid wall
     for (int i = 0; i < Nnodes; i++) {
-      if (x[2*i+1] + u[2*i+1].first < 0.0) {
-	Real contact_stiffness = 1.0e1;
-	Real du = - (x[2*i+1] + u[2*i+1].first);
+      Real yt = x[2*i+1] + Real(u[2*i+1].first);
+      if (yt < 0.0) {
+	Real du = - yt;
 	f[2*i+1] += m_contact_stiffness*du;
 
         // Sum contribution to the total elastic strain energy
-	elastic_strain_energy += 0.5*contact_stiffness*du*du;
+	elastic_strain_energy += 0.5*m_contact_stiffness*du*du;
       }
     }
 
@@ -595,7 +668,7 @@ private:
       a[i].first = f[i]/m[i];
 
       // Determine fictitious dual nodal accelerations (directly proportional to the dual displacements)
-      a[i].second = 0.0*u[i].second;
+      a[i].second = 0.0*Real(u[i].second);
 
       // Determine the (mass-proportional) damping factor "alpha" in terms of a target frequency and damping ratio
       //Real frequency = 1.0;
@@ -608,6 +681,7 @@ private:
 	a[i].first  = 0.0;
 	a[i].second = 0.0;
 	v[i].first  = 0.0;
+	v[i].second = 0.0;
       }
 
     } // End loop over all DoFs
@@ -631,7 +705,8 @@ private:
 
     // Loop over all DoFs and sum contributions to the total kinetic energy
     for (int i=0; i<Ndofs; i++) {
-      kinetic_energy += 0.5*m[i]*v[i].first*v[i].first;
+      Real vi = v[i].first;
+      kinetic_energy += 0.5*m[i]*vi*vi;
     } // End loop over all DoFs
 
     // Update the total system energy

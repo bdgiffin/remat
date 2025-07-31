@@ -15,6 +15,7 @@ import pyexodus
 # Other needed Python packages
 from math import *
 import numpy as np
+import time as timer
 
 # Import GMSH for meshing
 import pygmsh
@@ -27,9 +28,10 @@ import pygmsh
 REMAT.API.define_parameter(b"body_force_y",       -0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 0.0e-1)
+REMAT.API.define_parameter(b"mass_damping_factor", 1.0e-0)
 REMAT.API.define_parameter(b"contact_stiffness",   0.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
+REMAT.API.define_parameter(b"overflow_limit",      1001.0) # steps
 
 # Define material parameters
 REMAT.API.define_parameter(b"density",        1.0)
@@ -61,12 +63,12 @@ model.add_boundary_condition(left_nodes,[True,True]) # fully fix the left surfac
 model.add_boundary_condition(right_nodes,[True,True]) # fully fix the right surface ndoes
 
 # Generate the problem data from the Model object
-coordinates, velocities, fixity, connectivity, contacts = model.generate_problem()
+coordinates, velocities, fixity, connectivity, contacts, _ = model.generate_problem()
 Nnodes = coordinates.shape[0]
 Nelems = connectivity.shape[0]
         
 # Define the problem geometry
-filename = "seismic_wave.exo"
+filename = "seismic_wave_float.exo"
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,filename)
 
 # Define variable material properties
@@ -85,6 +87,8 @@ step_id = 0
 Nsteps = 100
 Nsub_steps = 10
 
+start_time = timer.time()
+
 # perform the reversible analysis
 while (step_id < Nsteps):
     step_id = step_id + 1
@@ -95,6 +99,10 @@ while (step_id > 0):
     step_id = step_id - 1
     time = REMAT.API.update_state(-dt,Nsub_steps)
     REMAT.output_state()
+
+end_time = timer.time()
+elapsed_time = end_time - start_time
+print(f"Elapsed time: {elapsed_time:.4f} seconds")
 
 REMAT.finalize()
 

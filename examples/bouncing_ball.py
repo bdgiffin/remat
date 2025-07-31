@@ -19,6 +19,9 @@ import matplotlib.pyplot as plt
 
 # (Optional) use PyGame to visualize the problem as it is running
 import pygame
+from pygame import gfxdraw # for anti-aliasing
+import pygame_widgets
+from pygame_widgets.progressbar import ProgressBar
 
 # Import GMSH for meshing
 import pygmsh
@@ -33,6 +36,13 @@ window = pygame.display.set_mode((1000,600))
 
 # Set the window title and icon
 pygame.display.set_caption('Reversible Dynamics')
+
+# Initialize a new font for drawing text
+pygame.font.init()
+font_type  = 'PT Mono'
+font_size  = 16 # (pixels)
+display_font = pygame.font.SysFont(font_type, font_size)
+anti_aliasing = False
 
 # Define a clock for consistent timestepping at a fixed framerate
 clock = pygame.time.Clock()
@@ -56,18 +66,15 @@ def animate_state():
     window.fill("WhiteSmoke") # reset window to display a full white screen
 
     # Draw the mesh in its currently deformed configuration:
-    max_pressure = 1.0
-    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
+    max_pressure = 0.3
+    xy_deformed, pressure, system_state, _, _ = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
-        p1 = max(-pressure[e],0)/max_pressure
-        p2 = max(+pressure[e],0)/max_pressure
-        color = (255*(1.0-p2),255*(1.0-p1-p2),255*(1.0-p1))
-        pygame.draw.polygon(window, color, points)
-        pygame.draw.polygon(window, "Black", points, 1)
+        pygame.draw.polygon(window, "Dark Red", points)
+        #pygame.draw.polygon(window, "Black", points, 1)
 
-    # Draw contact interactions:
+    # Draw contact interactions (primarily for debugging purposes):
     for contact in contacts:
         points = 100*xy_deformed[contact[0],:]
         points[:,1] = 600 - points[:,1]
@@ -77,6 +84,41 @@ def animate_state():
             points = 100*xy_deformed[segment,:]
             points[:,1] = 600 - points[:,1]
             pygame.draw.line(window, "Green", points[0,:], points[1,:], 2)
+
+    # Draw point masses
+    for e in range(0,Npoints):
+        point    = 100*xy_deformed[point_ids[e],:]
+        point[1] = 600 - point[1]
+        # create tracers
+        if (keys[pygame.K_LEFT] and (step_id > 0)):
+            #tracer.pop()
+            reverse_tracer.append(point)
+        elif (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
+            if (step_id == 1):
+                tracer.clear()
+                reverse_tracer.clear()
+            tracer.append(point)
+
+    # Draw tracers
+    if (len(tracer) > 2):
+        pygame.draw.aalines(window, "Blue", False, tracer)
+    if (len(reverse_tracer) > 2):
+        pygame.draw.aalines(window, "Magenta", False, reverse_tracer)
+    #for e in range(0,len(tracer)-1):
+        #pygame.gfxdraw.line(window, "Blue", tracer[e], tracer[e+1], 2)
+        #pygame.draw.line(window, "Blue", tracer[e], tracer[e+1], 2)
+
+    # Draw Play, Pause, and Rewind buttons
+    bx = 20
+    by = 20
+    bd = 30
+    if (keys[pygame.K_LEFT] and (step_id > 0)):
+        pygame.draw.polygon(window, "Magenta", ((bx+0*bd,by+1*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd)), 0)
+    elif (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
+        pygame.draw.polygon(window, "Dark Blue", ((bx+0*bd,by+0*bd),(bx+2*bd,by+1*bd),(bx+0*bd,by+2*bd)), 0)
+    else:
+        pygame.draw.polygon(window, "Dark Grey", ((bx+0*bd,by+0*bd),(bx+0.7*bd,by+0*bd),(bx+0.7*bd,by+2*bd),(bx+0*bd,by+2*bd)), 0)
+        pygame.draw.polygon(window, "Dark Grey", ((bx+1.3*bd,by+0*bd),(bx+2*bd,by+0*bd),(bx+2*bd,by+2*bd),(bx+1.3*bd,by+2*bd)), 0)
             
     # Update the window to display the current state of the simulation
     pygame.display.update()
@@ -89,13 +131,13 @@ def animate_state():
 # Call C/C++ library API functions from Python:
 
 # Define global parameters
-REMAT.API.define_parameter(b"body_force_y",       -1.0e-1)
-REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
-REMAT.API.define_parameter(b"initial_velocity_y", -2.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 2.0e-1)
+REMAT.API.define_parameter(b"body_force_y",       -1.0e-2)
+REMAT.API.define_parameter(b"initial_velocity_x", +1.5e-1)
+REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
+REMAT.API.define_parameter(b"mass_damping_factor", 2.0e-2)
 REMAT.API.define_parameter(b"contact_stiffness",   5.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
-REMAT.API.define_parameter(b"overflow_limit",      10000.0) # steps
+REMAT.API.define_parameter(b"overflow_limit",      5000.0) # steps
 
 # Define material parameters
 REMAT.API.define_parameter(b"density",        1.0)
@@ -110,46 +152,36 @@ REMAT.API.set_integrator_type(b"fixed")
 # Create geometry factory
 geom_factory = GeometryFactory()
 
+# create impactor
 with pygmsh.geo.Geometry() as geom:
-    # create rectangular object
-    obj = geom.add_rectangle(1.6+2, 2.6+2, 4.0, 5.0, 1.0, 0.45)
-    #obj = geom.add_circle([2.5,4.0],1.0,mesh_size=2.0)
-    geom.set_recombined_surfaces([obj.surface])
-    rect = geom_factory.from_meshio(geom.generate_mesh(dim=2))
-    #bottom_nodes = rect.select_nodes(Select_Y_eq(4.0))
-    bottom_nodes = rect.select_boundary_nodes()
-    all_nodes    = rect.select_nodes(Select_all())
-
-with pygmsh.geo.Geometry() as geom:
-    # create polygonal object
-    obj = geom.add_polygon(
-        [
-            [1.0+2, 1.0],
-            [3.0+2, 1.0],
-            [3.0+2, 3.0],
-            [1.0+2, 3.0],
-        ],
-        mesh_size=0.35,
-    )
-    geom.set_recombined_surfaces([obj.surface])
-    poly = geom_factory.from_meshio(geom.generate_mesh(dim=2))
-    #top_faces = poly.select_faces(Select_Y_eq(3.0))
-    top_faces = poly.select_boundary_faces()
+    cx = 1.5
+    cy = 5.4
+    cr = 0.06
+    obj = geom.add_circle([cx,cy],0.5,mesh_size=0.15,compound=True,num_sections=4,make_surface=True)
+    print(obj)
+    #geom.set_recombined_surfaces([obj.surface])
+    impactor = geom_factory.from_meshio(geom.generate_mesh(dim=2))
+    boundary_nodes = impactor.select_boundary_nodes()
+    impactor_nodes = impactor.select_nodes(Select_all())
+    tracer_nodes   = impactor.select_nodes(Select_XY_window([cx-cr,cy-cr],[cx+cr,cy+cr]))
 
 # Create Model object
 model = Model()
-model.add_part(Part(rect,Material(None,None)))
-model.add_part(Part(poly,Material(None,None)))
-model.add_initial_condition(all_nodes,[+3.0e-1,-2.0e-1])
-model.add_contact_interaction(bottom_nodes,top_faces)
+model.add_part(Part(impactor,Material(None,None)))
 
 # Generate the problem data from the Model object
-coordinates, velocities, fixity, connectivity, contacts, _ = model.generate_problem()
+coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = model.generate_problem()
 Nnodes = coordinates.shape[0]
 Nelems = connectivity.shape[0]
         
 # Define the problem geometry
-REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts)
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
+
+# Define point masses
+point_ids = tracer_nodes.vertex_ids
+Npoints = point_ids.shape[0]
+tracer = []
+reverse_tracer = []
 
 # Run analysis -------------------------------------------------------------
 
@@ -158,10 +190,17 @@ time = 0.0 # [s] starting time
 REMAT.API.initialize()
 
 # set analysis time-stepping parameters
-dt = 0.25e-2 # [s] time increment
+dt = 1.0e-2 # [s] time increment
 step_id = 0
 Nsteps = 300
 Nsub_steps = 100
+
+# Ensure we have somewhere for the frames
+try:
+    os.makedirs("bouncing_ball")
+except OSError:
+    pass
+file_num = 0
 
 # perform the reversible analysis
 while simulation_running:
@@ -181,6 +220,13 @@ while simulation_running:
         
     # Animate the current state
     animate_state()
+
+    # Update file number
+    file_num = file_num + 1
+
+    # Save every frame
+    screenshot_filename = "bouncing_ball/%04d.png" % file_num
+    pygame.image.save(window, screenshot_filename)
 
 # --------------------------------------------------------------------------
 

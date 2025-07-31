@@ -3,6 +3,7 @@
 
 #include "Parameters.h"
 #include <vector>
+#include <string>
 #include <math.h>
 
 template<typename Material_T>
@@ -106,6 +107,17 @@ public:
     }
 
   } // update()
+
+  // Conditionally load material history parameters from memory
+  bool load_state(Real* state, Real* overflow_state)  { return m_model.load_state(state,overflow_state);  }
+
+  // Conditionally store material history parameters in memory
+  bool store_state(Real* state, Real* overflow_state) { return m_model.store_state(state,overflow_state); }
+
+  Real get_state_variable(Real* state, std::string state_variable_name) { return m_model.get_state_variable(state,state_variable_name); }
+  
+  // Report the element death status of the current element
+  bool is_dead(Real* state) { return m_model.is_dead(state); }
     
   // Return the number of nodes per element
   constexpr int num_nodes(void) { return 2; }

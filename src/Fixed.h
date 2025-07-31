@@ -4,11 +4,13 @@
 #include "types.h"
 #include <iostream>
 #include <math.h>
+#include <cmath>
 
 template<int RADIX = 10, int EXPONENT = 0>
 struct Fixed {
   inline static Real     decimal = std::pow(RADIX,+EXPONENT);
   inline static Real inv_decimal = std::pow(RADIX,-EXPONENT);
+  inline static Fixed<RADIX,EXPONENT> smallest = Fixed<RADIX,EXPONENT>(Integer(0));
   Integer mantissa;
 
   // constructor method for a Fixed-precision number
@@ -17,8 +19,9 @@ struct Fixed {
   // implicit type-cast to a floating point number
   operator Real() const { return mantissa*decimal; }
 
+  // WARNING: the summation operation is no longer commutative! (but it is reversible?)
   // basic arithmetic operations between two Fixed-precision numbers with the same radix and exponent
-  Fixed<RADIX,EXPONENT> operator+(Fixed<RADIX,EXPONENT> const summand)    const { return Fixed<RADIX,EXPONENT>(mantissa + summand.mantissa);    }
+  Fixed<RADIX,EXPONENT> operator+(Fixed<RADIX,EXPONENT> const summand)    const { return Fixed<RADIX,EXPONENT>(mantissa + summand.mantissa); }
   Fixed<RADIX,EXPONENT> operator-(Fixed<RADIX,EXPONENT> const subtrahend) const { return Fixed<RADIX,EXPONENT>(mantissa - subtrahend.mantissa); }
 
   // basic arithmetic operations between a Fixed-precision number and an Integer
@@ -39,9 +42,20 @@ struct Fixed {
   bool operator==(Fixed<RADIX,EXPONENT> const other) const { return (mantissa == other.mantissa); }
   bool operator!=(Fixed<RADIX,EXPONENT> const other) const { return (mantissa != other.mantissa); }
 
+  // Modify the a value with the sign of the provided argument
+  //copysign(Fixed<RADIX,EXPONENT> value) {
+  //  if        (value.mantissa < 0) {
+  //    return Fixed<RADIX,EXPONENT>(-std::abs(mantissa));
+  //  } else if (value.mantissa > 0) {
+  //    return Fixed<RADIX,EXPONENT>( std::abs(mantissa));
+  //  } else { // if the incoming value is zero, keep the sign of the mantissa
+  //    return Fixed<RADIX,EXPONENT>(mantissa);
+  //  }
+  //}
+
 private:
   
-  // private constructor method for a Fixed-precision number given its mantissa
+  // private constructor method for a Fixed-precision number given a signed Integer
   Fixed(Integer n) : mantissa(n) { }
   
 }; // Fixed
@@ -52,12 +66,27 @@ typedef Fixed<10,-6> Fixed_U;
 typedef Fixed<10,-6> Fixed_E;
 
 // Declare conversion to/from a Real value
-void load_from_Real(Real value, Fixed_E &load_value) { 
-  std::memcpy(&(load_value.mantissa),&value,sizeof(Integer));
+void load_from_Real(Real value, Fixed_E &load_value) {
+  //std::memcpy(&(load_value.mantissa),&value,sizeof(Integer));
+  load_value.mantissa = Integer(value);
 }
 void save_as_Real(Fixed_E value, Real& save_value) {
-  std::memcpy(&save_value,&(value.mantissa),sizeof(Integer));
+  //std::memcpy(&save_value,&(value.mantissa),sizeof(Integer));
+  save_value = value.mantissa;
 }
 
+// Declare function to return the smallest representable value with the sign of the incoming argument
+inline Fixed<10,-6> smallest_value(Fixed<10,-6> signed_value) { return copysign(Fixed<10,-6>::smallest,signed_value); }
+
+// Return a value with the magnitude of the first argument and the sign of the second argument
+inline Fixed<10,-6> copysign(Fixed<10,-6> magnitude, Fixed<10,-6> signed_value) {
+  Fixed<10,-6> signed_magnitude = magnitude;
+  if        (signed_value.mantissa < 0) {
+    signed_magnitude.mantissa = -std::abs(signed_magnitude.mantissa);
+  } else if (signed_value.mantissa > 0) {
+    signed_magnitude.mantissa =  std::abs(signed_magnitude.mantissa);
+  } // if the incoming signed_value is zero, keep the sign of the first argument
+  return signed_magnitude;
+}
 
 #endif // FIXED_H

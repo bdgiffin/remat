@@ -150,9 +150,10 @@ extern "C" {
 	 	        double *dual_vx, double *dual_vy,
 		        double *sxx, double *syy, double *sxy,
 			double *pressure, double *stiffness_scaling_factor,
-			double *system_state) {
+			double *system_state, double *eqps, bool *is_dead) {
     return remat->get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,
-				 sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state);
+				 sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state,
+				 eqps,is_dead);
   } // get_field_data()
   
   // ------------------------------------------------------------------------ //

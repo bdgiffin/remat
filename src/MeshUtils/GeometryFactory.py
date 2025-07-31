@@ -3,6 +3,7 @@ import sys
 import os
 import pyexodus
 from Geometry import *
+from frame_maker_file_io import read_dxf
 
 class GeometryFactory:
     
@@ -70,6 +71,33 @@ class GeometryFactory:
                         connectivity[elemID,6] = index+1+(subdivisions[0]+1)+(subdivisions[1]+1)*(subdivisions[0]+1)
                         connectivity[elemID,7] = index  +(subdivisions[0]+1)+(subdivisions[1]+1)*(subdivisions[0]+1)
             return HexGeometry(vertices,connectivity)
+
+    def from_dxf(self,filename,layer_names):
+        # read the DXF file, and return:
+        # 1.) the list of nodal coordinates
+        # 2.) element connectivities (grouped by layer)
+        # 3.) the list of layer names
+        points, layer_connectivity, layer_names = read_dxf(filename,layer_names)
+
+        # get mesh totals
+        Nnodes = points.shape[0]
+        Nelems = layer_connectivity[0].shape[0]
+
+        # get node coordinates
+        coordinates = np.zeros((Nnodes,2))
+        for i in range(0,Nnodes):
+            coordinates[i,0] = points[i,0]
+            coordinates[i,1] = points[i,1]
+
+        # get element connectivity
+        first_layer = layer_connectivity[0]
+        connectivity = np.zeros((Nelems,2),dtype=int)
+        for i in range(0,Nelems):
+            connectivity[i,0] = first_layer[i,0]
+            connectivity[i,1] = first_layer[i,1]
+
+        # assume that the first layer is the only layer
+        return TrussGeometry(coordinates,connectivity)
 
     def from_exodus(self,filename,block_id):
         # This assumes each Exodus file contains only one element block

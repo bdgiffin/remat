@@ -40,6 +40,9 @@ ND_POINTER_1 = np.ctypeslib.ndpointer(dtype=np.float64,
 ND_POINTER_2 = np.ctypeslib.ndpointer(dtype=np.float64, 
                                       ndim=2,
                                       flags="C")
+NB_POINTER_1 = np.ctypeslib.ndpointer(dtype=np.bool_, 
+                                      ndim=1,
+                                      flags="C")
 NB_POINTER_2 = np.ctypeslib.ndpointer(dtype=np.bool_, 
                                       ndim=2,
                                       flags="C")
@@ -69,23 +72,29 @@ API.initialize_variable_properties.argtypes = [c_function_2d]
 API.initialize_variable_properties.restype  = None
 API.update_state.argtypes = [c_double, c_int]
 API.update_state.restype  = c_double
-API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1]
+API.get_field_data.argtypes = [ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, ND_POINTER_1, NB_POINTER_1]
 API.get_field_data.restype  = c_double
 
 # ---------------------------------------------------------------------------- #
 
 # Generate mesh geometry and initialize the REMAT object prior to initialization
-def create_geometry(x,v,fixity,connectivity,contacts,filename=""):
+def create_geometry(x,v,fixity,connectivity,contacts,truss_connectivity,filename=""):
 
     global num_nodes
     global num_elems
+    global num_truss
     global exo_file
     num_nodes = x.shape[0]
     num_elems = connectivity.shape[0]
+    num_truss = truss_connectivity.shape[0]
     exo_file  = filename
 
     # Call REMAT initialization API function
     API.define_geometry(x,v,fixity,connectivity,num_nodes,num_elems)
+    
+    # Conditionally define truss elements
+    if (num_truss > 0):
+        API.define_truss_elements(truss_connectivity,num_truss)
 
     # Define contacts
     for contact in contacts:
@@ -194,8 +203,12 @@ def output_state():
         # Pre-allocate system state data
         system_state = np.zeros(4)
 
+        # Pre-allocate truss state data
+        eqps    = np.zeros(num_truss)
+        is_dead = np.zeros(num_truss,dtype=np.bool_)
+
         # retrieve the simulation state info at the current time
-        time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state)
+        time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state,eqps,is_dead)
 
         # create a new output time state
         exo.put_time(output_step, output_step)
@@ -271,8 +284,12 @@ def deform_geometry(x):
     # Pre-allocate system state data
     system_state = np.zeros(4)
     
+    # Pre-allocate truss state data
+    eqps    = np.zeros(num_truss)
+    is_dead = np.zeros(num_truss,dtype=np.bool_)
+    
     # retrieve the simulation state info at the current time
-    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state)
+    time = API.get_field_data(ux,uy,vx,vy,fx,fy,dual_ux,dual_uy,dual_vx,dual_vy,sxx,syy,sxy,pressure,stiffness_scaling_factor,system_state,eqps,is_dead)
     
     # sum displacements to nodal coordinates
     coordinates = np.zeros((num_nodes,2))
@@ -280,7 +297,7 @@ def deform_geometry(x):
         coordinates[i,0] = x[i,0] + ux[i]
         coordinates[i,1] = x[i,1] + uy[i]
 
-    return coordinates, pressure, system_state
+    return coordinates, pressure, system_state, eqps, is_dead
 
 # ---------------------------------------------------------------------------- #
 

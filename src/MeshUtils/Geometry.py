@@ -193,3 +193,22 @@ class QuadGeometry(Geometry):
 
     def inverted_topology(self):
         return np.array([3,2,1,0],dtype=int)
+
+class TrussGeometry(Geometry):
+
+    def __init__(self,vertices,connectivity):
+        self.vertices     = vertices
+        self.connectivity = connectivity
+        global geometry_count
+        self.geometry_id = geometry_count
+        self.offset_id = 0
+        geometry_count = geometry_count + 1
+                    
+    def copy(self):
+        return TrussGeometry(self.vertices.copy(),self.connectivity.copy())
+
+    def face_topology(self):
+        return np.array([[0,1]],dtype=int)
+
+    def inverted_topology(self):
+        return np.array([1,0],dtype=int)

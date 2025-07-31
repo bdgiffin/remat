@@ -2,9 +2,14 @@
 build
 install
 examples/Snaps
+examples/Snaps_truss
+examples/Snaps_truss_float
+examples/bouncing_ball
 examples/Snaps_fixed
 examples/potential_well_fixed
 examples/potential_well_mixed
 examples/seismic_wave
+examples/seismic_wave_float_vs_fixed
+examples/seismic_wave_mixed_vs_fixed
 examples/*.exo
 *.DS_Store

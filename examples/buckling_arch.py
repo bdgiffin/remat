@@ -64,7 +64,7 @@ def animate_state():
 
     # Draw the mesh in its currently deformed configuration:
     max_pressure = 0.3
-    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
+    xy_deformed, pressure, system_state, _, _ = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
@@ -115,12 +115,13 @@ def animate_state():
 # Call C/C++ library API functions from Python:
 
 # Define global parameters
-REMAT.API.define_parameter(b"body_force_y",       -0.0e-1)
+REMAT.API.define_parameter(b"body_force_y",       -0.0e-3)
 REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 0.0e-1)
+REMAT.API.define_parameter(b"mass_damping_factor", 5.0e-2)
 REMAT.API.define_parameter(b"contact_stiffness",   5.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
+REMAT.API.define_parameter(b"overflow_limit",      5000.0) # steps
 
 # Define material parameters
 REMAT.API.define_parameter(b"density",        1.0)
@@ -128,7 +129,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Set the integrator type: "float" (default), or "fixed"
-REMAT.API.set_integrator_type(b"float")
+REMAT.API.set_integrator_type(b"fixed")
 
 # Pre-process mesh/geometry ------------------------------------------------
 
@@ -137,7 +138,7 @@ geom_factory = GeometryFactory()
 
 # create impactor
 with pygmsh.geo.Geometry() as geom:
-    obj = geom.add_circle([5.0,5.0],0.75,mesh_size=0.3,compound=True,num_sections=4,make_surface=True)
+    obj = geom.add_circle([5.0,5.0],0.5,mesh_size=0.3,compound=True,num_sections=4,make_surface=True)
     print(obj)
     #geom.set_recombined_surfaces([obj.surface])
     impactor = geom_factory.from_meshio(geom.generate_mesh(dim=2))
@@ -145,18 +146,21 @@ with pygmsh.geo.Geometry() as geom:
     impactor_nodes = impactor.select_nodes(Select_all())
 
 with pygmsh.geo.Geometry() as geom:
+    elev   = 2.0
+    height = 3.5
+    thick  = 0.25
     lcar = 0.125
-    p1  = geom.add_point([0.0,  1.0], lcar)
-    c1  = geom.add_point([2.0,  1.0], lcar)
-    c13 = geom.add_point([5.0,  2.5], lcar)
-    c3  = geom.add_point([8.0,  1.0], lcar)
-    p3  = geom.add_point([10.0, 1.0], lcar)
+    p1  = geom.add_point([0.0,  elev], lcar)
+    c1  = geom.add_point([2.0,  elev], lcar)
+    c13 = geom.add_point([5.0,  elev+height], lcar)
+    c3  = geom.add_point([8.0,  elev], lcar)
+    p3  = geom.add_point([10.0, elev], lcar)
     
-    p2  = geom.add_point([0.0,  1.25], lcar)
-    c2  = geom.add_point([2.0,  1.25], lcar)
-    c24 = geom.add_point([5.0,  2.75], lcar)
-    c4  = geom.add_point([8.0,  1.25], lcar)
-    p4  = geom.add_point([10.0, 1.25], lcar)
+    p2  = geom.add_point([0.0,  elev+thick], lcar)
+    c2  = geom.add_point([2.0,  elev+thick], lcar)
+    c24 = geom.add_point([5.0,  elev+thick+height], lcar)
+    c4  = geom.add_point([8.0,  elev+thick], lcar)
+    p4  = geom.add_point([10.0, elev+thick], lcar)
     
     s1 = geom.add_bspline([p1, c1, c13, c3, p3])
     s2 = geom.add_line(p3, p4)
@@ -178,18 +182,19 @@ right_nodes = arch.select_nodes(Select_X_eq(10.0))
 model = Model()
 model.add_part(Part(impactor,Material(None,None)))
 model.add_part(Part(arch,Material(None,None)))
-model.add_initial_condition(impactor_nodes,[+0.0e-1,-3.0e-1])
+#model.add_initial_condition(impactor_nodes,[+0.0e-1,-5.0e-1])
+model.add_initial_condition(impactor_nodes,[+0.0e-1,-4.2e-1])
 model.add_boundary_condition(left_nodes,[True,True]) # fully fix the left surface ndoes
 model.add_boundary_condition(right_nodes,[True,True]) # fully fix the right surface ndoes
 model.add_contact_interaction(boundary_nodes,arch_faces)
 
 # Generate the problem data from the Model object
-coordinates, velocities, fixity, connectivity, contacts = model.generate_problem()
+coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = model.generate_problem()
 Nnodes = coordinates.shape[0]
 Nelems = connectivity.shape[0]
         
 # Define the problem geometry
-REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts)
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
 # Run analysis -------------------------------------------------------------
 

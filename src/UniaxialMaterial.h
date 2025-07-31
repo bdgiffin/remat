@@ -76,6 +76,17 @@ class UniaxialMaterial {
     
   } // update()
 
+  // Conditionally load material history parameters from memory
+  bool load_state(Real* state, Real* overflow_state)  { return false; }
+
+  // Conditionally store material history parameters in memory
+  bool store_state(Real* state, Real* overflow_state) { return false; }
+
+  Real get_state_variable(Real* state, std::string state_variable_name) { return Real(0.0); }
+
+  // Report the element death status of the current material point
+  bool is_dead(Real* state) { return false; }
+
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(E/rho); }
 

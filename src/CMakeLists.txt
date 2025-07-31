@@ -24,6 +24,7 @@ set(REMAT_python
     ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/NodeSet.py
     ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Part.py
     ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Selector.py
+    ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/frame_maker_file_io.py
     PARENT_SCOPE
     )
 
