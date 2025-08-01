@@ -1,8 +1,10 @@
 from Part import *
-import sys
+import sys, platform
 import os
-import pyexodus
 import numpy as np
+
+if (not sys.platform == "emscripten"):
+    import pyexodus
 
 class Model:
 

@@ -51,18 +51,18 @@ blt_add_library(
     HEADERS     ${REMAT_headers}
     INCLUDES    ${REMAT_include_dirs}
     DEPENDS_ON  ${REMAT_dependencies}
-    SHARED
+    SHARED      TRUE
     )
 target_compile_options(REMAT PRIVATE -O2)
-
 if (EMSCRIPTEN)
     message(STATUS "This is an Emscripten build.")
     # Add Emscripten-specific build settings or flags here
-    set_target_properties(REMAT PROPERTIES LINK_FLAGS "-s WASM=1 -s SIDE_MODULE=1" SUFFIX ".wasm")
-    target_link_options(REMAT PRIVATE "-s STANDALONE_WASM")
+    #set_target_properties(REMAT PROPERTIES LINK_FLAGS "-s SIDE_MODULE=1")
+    set_target_properties(REMAT PROPERTIES SUFFIX ".wasm")
+    #target_link_options(REMAT PRIVATE "-s STANDALONE_WASM")
 else ()
     message(STATUS "This is NOT an Emscripten build.")
     # Add non-Emscripten-specific build settings here
-    set_target_properties(REMAT PROPERTIES SUFFIX ".so")
+    #set_target_properties(REMAT PROPERTIES SUFFIX ".so")
     #target_link_libraries(REMAT LINK_PUBLIC ${Boost_LIBRARIES})
 endif ()

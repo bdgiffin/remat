@@ -1,9 +1,11 @@
-import sys
+import sys, platform
 import os
 import math
 import numpy as np
 import ezdxf
-import pyexodus
+
+if (not sys.platform == "emscripten"):
+    import pyexodus
 
 def read_dxf(filename,layer_names):
     # attempt to open the DXF file

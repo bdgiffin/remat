@@ -1,21 +1,25 @@
 # Append the location of the locally installed REMAT package to sys.path
-import sys
-sys.path.append("../install/package/")
+import sys, platform
+
+# Import the "asyncio" Python package
+import asyncio
+
+# Append location of REMAT install package directory
+if (not sys.platform == "emscripten"):
+    sys.path.append("../install/package/")
 
 # Load the REMAT and MeshUtils packages
+#import package
 import REMAT
 from GeometryFactory import *
 from Model import *
 
 # Python package for reading/writing data in the Exodus mesh database format
-# NOTE: PYEXODUS V0.1.5 NEEDS TO BE MODIFIED TO WORK CORRECTLY WITH PYTHON 3.12
-# https://pypi.org/project/pyexodus/
-import pyexodus
+#import pyexodus
 
 # Other needed Python packages
 from math import *
 import numpy as np
-import matplotlib.pyplot as plt
 
 # (Optional) use PyGame to visualize the problem as it is running
 import pygame
@@ -57,7 +61,7 @@ def animate_state():
 
     # Draw the mesh in its currently deformed configuration:
     max_pressure = 1.0
-    xy_deformed, pressure, system_state = REMAT.deform_geometry(coordinates)
+    xy_deformed, pressure, system_state, eqps, is_dead = REMAT.deform_geometry(coordinates)
     for e in range(0,Nelems):
         points = 100*xy_deformed[connectivity[e,:],:]
         points[:,1] = 600 - points[:,1]
@@ -144,43 +148,52 @@ model.add_initial_condition(all_nodes,[+3.0e-1,-2.0e-1])
 model.add_contact_interaction(bottom_nodes,top_faces)
 
 # Generate the problem data from the Model object
-coordinates, velocities, fixity, connectivity, contacts, _ = model.generate_problem()
+coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = model.generate_problem()
 Nnodes = coordinates.shape[0]
 Nelems = connectivity.shape[0]
         
 # Define the problem geometry
-REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts)
+REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
 # Run analysis -------------------------------------------------------------
 
-# initialization
-time = 0.0 # [s] starting time
-REMAT.API.initialize()
+# Encapsulate the simulation loop inside of an anync function called "main()"
+async def main():
 
-# set analysis time-stepping parameters
-dt = 0.25e-2 # [s] time increment
-step_id = 0
-Nsteps = 300
-Nsub_steps = 100
+    # initialization
+    time = 0.0 # [s] starting time
+    REMAT.API.initialize()
 
-# perform the reversible analysis
-while simulation_running:
+    # set analysis time-stepping parameters
+    dt = 0.25e-2 # [s] time increment
+    step_id = 0
+    Nsteps = 300
+    Nsub_steps = 100
 
-    # Get the "pressed" status of all keys on the keyboard:
-    keys = pygame.key.get_pressed()
-    
-    # Update the simulation state backward-in-time
-    if (keys[pygame.K_LEFT] and (step_id > 0)):
-        step_id = step_id - 1
-        time = REMAT.API.update_state(-dt,Nsub_steps)
-    
-    # Update the simulation state forward-in-time
-    if (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
-        step_id = step_id + 1
-        time = REMAT.API.update_state(+dt,Nsub_steps)
-        
-    # Animate the current state
-    animate_state()
+    # perform the reversible analysis
+    while simulation_running:
+
+        # Get the "pressed" status of all keys on the keyboard:
+        keys = pygame.key.get_pressed()
+
+        # Update the simulation state backward-in-time
+        if (keys[pygame.K_LEFT] and (step_id > 0)):
+            step_id = step_id - 1
+            time = REMAT.API.update_state(-dt,Nsub_steps)
+
+        # Update the simulation state forward-in-time
+        if (keys[pygame.K_RIGHT] and (step_id < Nsteps)):
+            step_id = step_id + 1
+            time = REMAT.API.update_state(+dt,Nsub_steps)
+
+        # Animate the current state
+        animate_state()
+
+        # Call "asyncio.sleep(0)" within the simulation loop
+        await asyncio.sleep(0)
+
+# Use asyncio to run your "main()" simulation loop
+asyncio.run(main())
 
 # --------------------------------------------------------------------------
 

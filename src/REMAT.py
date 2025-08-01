@@ -4,9 +4,6 @@
 from ctypes import CDLL, POINTER, CFUNCTYPE
 from ctypes import c_size_t, c_double, c_int, c_char_p
 
-# Package for reading/writing mesh files
-import pyexodus
-
 # Other needed Python packages
 import sys, platform
 import os
@@ -16,13 +13,21 @@ from datetime import timedelta
 import numpy as np
 from argparse import ArgumentParser
 
+# Package for reading/writing mesh files
+if (not sys.platform == "emscripten"):
+    import pyexodus
+
 # ---------------------------------------------------------------------------- #
 
 # Module initialization:
 
 # Load the pre-compiled external C/C++ "shared object" libraries
 if sys.platform == "emscripten":
-    library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.wasm')
+    library_name = './libREMAT.wasm'
+elif sys.platform == "darwin":
+    library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.dylib')
+elif sys.platform == "win32":
+    library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.dll')
 else:
     library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.so')
 API = CDLL(library_name)

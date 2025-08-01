@@ -38,6 +38,18 @@ set(ENABLE_ALL_WARNINGS ON CACHE BOOL "")
 include(${BLT_SOURCE_DIR}/SetupBLT.cmake)
 
 #------------------------------------------------------------------------------
+# For Emscripten builds, enable linking for SHARED .wasm library targets
+#------------------------------------------------------------------------------
+
+# Fix from: https://github.com/emscripten-core/emscripten/issues/15276#issuecomment-1039349267
+if (EMSCRIPTEN)
+   set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
+   set(CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS "-s SIDE_MODULE=1")
+   set(CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS "-s SIDE_MODULE=1")
+   set(CMAKE_STRIP FALSE)  # used by default in pybind11 on .so modules
+endif ()
+
+#------------------------------------------------------------------------------
 # Setup Macros and dependencies
 #------------------------------------------------------------------------------
 

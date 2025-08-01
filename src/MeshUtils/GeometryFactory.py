@@ -1,9 +1,12 @@
 import numpy as np
-import sys
+import sys, platform
 import os
-import pyexodus
 from Geometry import *
-from frame_maker_file_io import read_dxf
+
+# Packages for reading/writing mesh files
+if (not sys.platform == "emscripten"):
+    import pyexodus
+    from frame_maker_file_io import read_dxf
 
 class GeometryFactory:
     

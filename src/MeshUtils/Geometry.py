@@ -1,9 +1,12 @@
 from NodeSet import *
 from FaceSet import *
 from Selector import *
-from scipy.spatial.transform import Rotation as Rot
 import numpy as np
 from abc import ABC, abstractmethod
+import sys, platform
+
+if (not sys.platform == "emscripten"):
+    from scipy.spatial.transform import Rotation as Rot
 
 # The total number of created Geometry objects
 geometry_count = 0
