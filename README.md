@@ -2,9 +2,13 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14851878.svg)](https://doi.org/10.5281/zenodo.14851878)
 
-[Documentation](https://bdgiffin.github.io/remat/)
+**Documentation:** https://bdgiffin.github.io/remat/
+
+---
 
 REMAT is a proof-of-concept reversible physics library predicated on the use of fixed-precision numerics and integer arithmetic operations to ensure that all computations are exactly bit-reversible. Consequently, prior solution states may be precisely *rematerialized* through direct reversal of the forward-in-time operations. This is useful for the purpose of computing adjoint sensitivities of a time-dependent simulation without the need for solution checkpointing.
+
+---
 
 A central concept underpinning the developed bit-reversible computations pertains to the use of "dual" numbers which preserve information (bits) that would otherwise be lost due to finite precision rounding errors. In particular, consider the following example involving integer addition:
 
@@ -42,6 +46,8 @@ $$x=y\times5+y^{\*} \\, \text{mod} \\, 5=7 \qquad x^{\*}=y^{\*}\div5=n$$
 
 This concept is applied such that any persistent stable variables $x$ are endowed with corresponding dual (adjoint) state variables $x^{\*}$ subject to an extended set of rules for all basic arithmetic operations which ensure that the pairing of $x$ and $x^{\*}$ efficiently preserves all bits that would otherwise be erased due to round-off.
 
+---
+
 ## Dependencies
 
 The core functionality of REMAT is primarily written in C++. A Python API wrapper module (implemented using [ctypes](https://docs.python.org/3/library/ctypes.html)) is provided to facilitate the use of REMAT in Python projects. Additional pre- and post-processing utilities are provided in Python, and demonstrated through several accompanying examples. While the underlying C++ framework does not have any dependencies apart from the standard library, the following Python packages are used by the API wrapper module and pre/post-processing utilities:
@@ -58,6 +64,8 @@ The accompanying `examples` additionally make use of the following Python packag
  - [pygame_widgets](https://pygamewidgets.readthedocs.io/en/latest/)
 
 Many of the `examples` can be compiled for execution in a web browser using [Emscripten](https://emscripten.org) to compile the underlying C++ library into WebAssembly, and [pygbag](https://pypi.org/project/pygbag/) to package the pygame-based visualizations.
+
+---
 
 ## Getting started
 
