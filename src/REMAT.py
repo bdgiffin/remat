@@ -8,7 +8,7 @@ from ctypes import c_size_t, c_double, c_int, c_char_p
 import pyexodus
 
 # Other needed Python packages
-import sys
+import sys, platform
 import os
 import math
 import time as timer
@@ -21,7 +21,10 @@ from argparse import ArgumentParser
 # Module initialization:
 
 # Load the pre-compiled external C/C++ "shared object" libraries
-library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.so')
+if sys.platform == "emscripten":
+    library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.wasm')
+else:
+    library_name = os.path.join(os.path.dirname(__file__), 'libREMAT.so')
 API = CDLL(library_name)
 
 # Define types to convert Numpy arrays into C arrays:

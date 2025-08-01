@@ -68,7 +68,7 @@ add_subdirectory(tests)
 install(TARGETS REMAT
 	LIBRARY DESTINATION lib)
 install(TARGETS REMAT
-	LIBRARY DESTINATION package)
+	DESTINATION package)
 install(FILES ${REMAT_python}
 	DESTINATION package)
 install(FILES ${REMAT_headers}
