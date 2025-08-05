@@ -82,6 +82,17 @@ class UniaxialViscoplasticity {
   // Return the number of state variables for allocation purposes
   int num_state_vars(void) { return 7; }
 
+  // Return the names of all fields
+  std::vector<std::string> get_field_names(void) {
+    return std::vector<std::string>({ "axial_force",
+                                      "axial_strain",
+	                              "plastic_strain",
+	                              "dual_plastic_strain",
+	                              "overflow_counter",
+	                              "equivalent_plastic_strain",
+	                              "steps_since_element_death" });
+  }
+
   // Return the (mass per unit length) = (cross-sectional area) * (density)
   Real mass_per_unit_length(void) { return area*rho; }
   
@@ -238,6 +249,18 @@ class UniaxialViscoplasticity {
     } else {
       return Real(0.0);
     }
+  }
+
+  // Copy state variable data to field data
+  void get_fields(Real* state, double* field_data) {
+    FixedE temp;
+    field_data[0] = state[0]; // axial_force
+    field_data[1] = state[1]; // axial_strain
+    load_from_Real(state[2],temp); field_data[2] = Real(temp); // plastic_strain
+    load_from_Real(state[3],temp); field_data[3] = Real(temp); // dual_plastic_strain
+    field_data[4] = state[4]; // overflow_counter
+    load_from_Real(state[5],temp); field_data[5] = Real(temp); // equivalent_plastic_strain
+    field_data[6] = state[6]; // steps_since_element_death
   }
 
   // Report the element death status of the current material point

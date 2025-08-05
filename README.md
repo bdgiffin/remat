@@ -1,5 +1,4 @@
-# REMAT
-
+# <img width="300" src="/docs/sphinx/source/_static/remat_logo.png?raw=true" alt="REMAT">
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14851878.svg)](https://doi.org/10.5281/zenodo.14851878)
 
 **Documentation:** https://bdgiffin.github.io/remat/
@@ -34,7 +33,7 @@ and thus the division may be reversed through the following correction involving
 
 $$x=y\times5+r=7$$
 
-Ordinarily, the remainders of all such multiplication operations would need to be stored until the operation is later reversed, but this may entail intractable memory requirements if many such operations are carried out. To reduce memory overheads, a similar approach to that of [Maclaurin (2015)](https://proceedings.mlr.press/v37/maclaurin15.html) is adopted, whereby the dual variables $x^{\*}$ and $y^{\*}$ are introduced such that:
+Ordinarily, the remainders of all such multiplication operations would need to be stored until the operation is later reversed, but this may entail intractable memory requirements if many such operations are carried out. To reduce memory overheads, a similar approach to that of [Maclaurin (2015)](https://proceedings.mlr.press/v37/maclaurin15.html) is adopted, whereby the ancillary variables $x^{\*}$ and $y^{\*}$ are introduced such that:
 
 $$x=7 \qquad x^{\*}=n$$
 
@@ -44,7 +43,7 @@ and
 
 $$x=y\times5+y^{\*} \\, \text{mod} \\, 5=7 \qquad x^{\*}=y^{\*}\div5=n$$
 
-This concept is applied such that any persistent stable variables $x$ are endowed with corresponding dual (adjoint) state variables $x^{\*}$ subject to an extended set of rules for all basic arithmetic operations which ensure that the pairing of $x$ and $x^{\*}$ efficiently preserves all bits that would otherwise be erased due to round-off.
+This concept is applied such that any persistent stable variables $x$ are endowed with corresponding ancillary state variables $x^{\*}$ subject to an extended set of rules for all basic arithmetic operations which ensure that the pairing of $x$ and $x^{\*}$ efficiently preserves all bits that would otherwise be erased due to round-off.
 
 ---
 
@@ -57,19 +56,21 @@ The core functionality of REMAT is primarily written in C++. A Python API wrappe
  - [ezdxf](https://ezdxf.mozman.at/docs/)
  - [pyexodus](https://salvushub.github.io/pyexodus/)
 
-REMAT utilizes a [CMake](https://cmake.org)-based build framework in combination with the funtionality provided by [BLT](https://computing.llnl.gov/projects/blt-build-link-test).
+REMAT utilizes a [CMake](https://cmake.org)-based build framework in combination with the funtionality provided by [BLT](https://computing.llnl.gov/projects/blt-build-link-test). CMake version 3.14+ is required to build/install REMAT from source, whereas BLT is included as a git submodule.
 
 The accompanying `examples` additionally make use of the following Python packages to enable interactive visualization:
  - [pygame](https://pypi.org/project/pygame/)
  - [pygame_widgets](https://pygamewidgets.readthedocs.io/en/latest/)
 
-Many of the `examples` can be compiled for execution in a web browser using [Emscripten](https://emscripten.org) to compile the underlying C++ library into WebAssembly, and [pygbag](https://pypi.org/project/pygbag/) to package the pygame-based visualizations.
+If you intend to export recorded animations using the functionality provided in the ``Animation.py`` module, you will need to install the command line utility `ffmpeg <https://ffmpeg.org>`_.
+
+Many of the `examples` can be built for execution in a web browser using [Emscripten](https://emscripten.org) to compile the underlying C++ library into WebAssembly, and [pygbag](https://pypi.org/project/pygbag/) to package the pygame-based visualizations.
 
 ---
 
 ## Getting started
 
-To build REMAT, you will first need to clone this repository and build the underlying C++ shared object library files from source. If you are cloning a new repository, you will need to obtain all required submodules via:
+To build REMAT, you will first need to clone this repository and build the underlying C++ shared object library files from source. If you are cloning a new repository, you will need to obtain all required submodules (BLT) via:
 ```
 git submodule update --init --recursive
 ```
@@ -97,4 +98,4 @@ import REMAT
 ```
 The `examples` subdirectory provides further illustrative cases of invocations of the library within the context of a Python workflow.
 
-When packaging a pygame project that uses REMAT using pygbag for execution in a web browser, make sure that you have compiled the REMAT library using Emscripten (see above note on configuring CMake using `emcmake`), and include the `install/package` files within the local directory for your project. The provided `examples` offer a demonstration of how this can be accomplished, with the appropriate invocations of pygbag included in the `examples/Makefile`.
+When packaging a pygame project that uses REMAT using pygbag for execution in a web browser, make sure that you have compiled the REMAT library using Emscripten (see above note on configuring CMake using `emcmake`), and include the `install/package` files directly within the local directory for your project. The provided `examples` offer a demonstration of how this can be accomplished, with the appropriate invocations of pygbag included in the `examples/Makefile`.

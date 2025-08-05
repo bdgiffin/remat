@@ -19,7 +19,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Examples" href="examples.html" />
+    <link rel="next" title="Examples" href="examples/index.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -47,8 +47,8 @@
 <li class="toctree-l1"><a class="reference internal" href="index.html">Home</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Organization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
-<li class="toctree-l1"><a class="reference internal" href="resources.html">Resources</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="background.html">Background</a></li>
 </ul>
 
         </div>
@@ -77,7 +77,22 @@
              
   <section id="organization">
 <span id="id1"></span><h1>Organization<a class="headerlink" href="#organization" title="Link to this heading"></a></h1>
-<p>REMAT is primarily written as a C++ library, but comes equipped with a Python API to facilitate integration with other packages and application-driven workflows.</p>
+<p>REMAT is primarily written as a C++ library, but comes equipped with a Python API to facilitate integration with other packages and application-driven workflows. The provided <a class="reference internal" href="examples/index.html#examples"><span class="std std-ref">Examples</span></a> offer an illustration of how these modules can be used to create and run various problems.</p>
+<p>The accompanying Python modules are separated by their provided functionality, as follows:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">REMAT.py</span></code>: The main API module providing Python bindings and wrapper utilities to interface with REMAT’s underlying C++ framework.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Animation.py</span></code>: A graphical UI module that enables real-time interactive simulations using REMAT, primarily intended for demonstration and debugging purposes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExodusIO.py</span></code>: An output module enabling the export of REMAT simulation data to the Exodus file format.</p></li>
+</ul>
+</div></blockquote>
+<p>Additionally, several Python-based pre-processing modules are included with REMAT to facilitate mesh generation and problem setup:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">GeometryFactory.py</span></code>: A mesh management module that enables simple meshing, and importing mesh data from <a class="reference external" href="https://sandialabs.github.io/seacas-docs/sphinx/html/index.html#exodus">Exodus</a>, <a class="reference external" href="https://help.autodesk.com/view/OARX/2024/ENU/?guid=GUID-235B22E0-A567-4CF6-92D3-38A2306D73F3">DXF</a> (for truss/frame structures), and <a class="reference external" href="https://github.com/nschloe/meshio">meshio</a> sources (compatible with mesh data produced by <a class="reference external" href="https://pypi.org/project/pygmsh/">pygmsh</a>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Model.py</span></code>: A model management module, allowing for the definition of multiple mesh Parts, boundary and initial conditions, and contact interactions.</p></li>
+</ul>
+</div></blockquote>
 </section>
 
 
@@ -85,7 +100,7 @@
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="examples.html" class="btn btn-neutral float-right" title="Examples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="examples/index.html" class="btn btn-neutral float-right" title="Examples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

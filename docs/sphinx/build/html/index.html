@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>REMAT &mdash; REMAT 1.0 documentation</title>
+  <title>REversible Physics and MATerial Model Library &mdash; REMAT 1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
 
@@ -16,6 +16,7 @@
       <script src="_static/documentation_options.js?v=f2a433a1"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -46,8 +47,8 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Home</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="organization.html">Organization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
-<li class="toctree-l1"><a class="reference internal" href="resources.html">Resources</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="background.html">Background</a></li>
 </ul>
 
         </div>
@@ -64,7 +65,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">REMAT</li>
+      <li class="breadcrumb-item active"><em>RE</em>versible Physics and <em>MAT</em>erial Model Library</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -74,11 +75,14 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="remat">
-<h1>REMAT<a class="headerlink" href="#remat" title="Link to this heading"></a></h1>
+  <a class="reference internal image-reference" href="_images/remat_logo.png"><img alt="_images/remat_logo.png" src="_images/remat_logo.png" style="width: 640px;" />
+</a>
+<section id="reversible-physics-and-material-model-library">
+<h1><em>RE</em>versible Physics and <em>MAT</em>erial Model Library<a class="headerlink" href="#reversible-physics-and-material-model-library" title="Link to this heading"></a></h1>
 <p><strong>Author</strong>: <a class="reference external" href="https://github.com/bdgiffin">Brian Doran Giffin</a> (<a class="reference external" href="mailto:brian&#46;giffin&#37;&#52;&#48;okstate&#46;edu">brian<span>&#46;</span>giffin<span>&#64;</span>okstate<span>&#46;</span>edu</a>)</p>
-<p>REMAT is written in C++. Several simple <a class="reference internal" href="examples.html#examples"><span class="std std-ref">Examples</span></a> are provided to demonstrate some of the core capabilities of REMAT.</p>
-<p>Information regarding the <a class="reference internal" href="installation.html#installation"><span class="std std-ref">Installation</span></a> of REMAT and additional <a class="reference internal" href="resources.html#resources"><span class="std std-ref">Resources</span></a> may be found within the accompanying documentation pages.</p>
+<p>REMAT is a proof-of-concept reversible physics library predicated on the use of fixed-precision numerics and integer arithmetic operations to ensure that all computations are exactly bit-reversible. Consequently, prior solution states may be precisely <em>rematerialized</em> through direct reversal of the forward-in-time operations. This is useful for the purpose of computing adjoint sensitivities of a time-dependent simulation without the need for solution checkpointing.</p>
+<p>The core functionality of REMAT is primarily written in C++, with a Python API wrapper module provided to facilitate the use of REMAT in Python projects. Several interactive <a class="reference internal" href="examples/index.html#examples"><span class="std std-ref">Examples</span></a> are provided to demonstrate some of the core capabilities of REMAT.</p>
+<p>Information regarding the <a class="reference internal" href="installation.html#installation"><span class="std std-ref">Installation</span></a> of REMAT and additional <a class="reference internal" href="background.html#background"><span class="std std-ref">Background</span></a> may be found within the accompanying documentation pages.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The documentation for REMAT is under active development. Please check back periodically for updates.</p>
@@ -87,10 +91,24 @@
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Home</a></li>
-<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#dependencies">Dependencies</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="organization.html">Organization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
-<li class="toctree-l1"><a class="reference internal" href="resources.html">Resources</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/index.html">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="examples/bouncing_ball.html">Bouncing Ball</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/contact.html">Contacting Blocks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/potential_well.html">Potential Well</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/seismic_wave.html">Seismic Wave</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/triple_pendulum.html">Triple Pendulum</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/viscoplastic_truss.html">Viscoplastic Truss</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="background.html">Background</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="background.html#reversible-integer-arithmetic">Reversible Integer Arithmetic</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </section>

@@ -14,3 +14,64 @@
   url = 	 {https://proceedings.mlr.press/v37/maclaurin15.html},
   abstract = 	 {Tuning hyperparameters of learning algorithms is hard because gradients are usually unavailable. We compute exact gradients of cross-validation performance with respect to all hyperparameters by chaining derivatives backwards through the entire training procedure. These gradients allow us to optimize thousands of hyperparameters, including step-size and momentum schedules, weight initialization distributions, richly parameterized regularization schemes, and neural network architectures. We compute hyperparameter gradients by exactly reversing the dynamics of stochastic gradient descent with momentum.}
 }
+
+@misc{stam_2022,
+      title={An Exact Bitwise Reversible Integrator}, 
+      author={Jos Stam},
+      year={2022},
+      eprint={2207.07695},
+      archivePrefix={arXiv},
+      primaryClass={cs.GR},
+      url={https://arxiv.org/abs/2207.07695}, 
+}
+
+@book{hoover_2012,
+  title={Time reversibility, computer simulation, algorithms, chaos},
+  author={Hoover, William Graham and Hoover, Carol Griswold},
+  volume={13},
+  year={2012},
+  publisher={World Scientific}
+}
+
+@book{morita_2017,
+  title={Theory of reversible computing},
+  author={Morita, Kenichi},
+  year={2017},
+  publisher={Springer}
+}
+
+@article{levesque_1993,
+  title={Molecular dynamics and time reversibility},
+  author={Levesque, Daniel and Verlet, Loup},
+  journal={Journal of Statistical Physics},
+  volume={72},
+  pages={519--537},
+  year={1993},
+  publisher={Springer}
+}
+
+@article{kum_1994,
+  title={Time-reversible continuum mechanics},
+  author={Oyeon Kum and William Graham Hoover},
+  journal={Journal of Statistical Physics},
+  year={1994},
+  volume={76},
+  pages={1075-1081},
+  url={https://api.semanticscholar.org/CorpusID:121548872}
+}
+
+@article{rein_2017,
+    author = {Rein, Hanno and Tamayo, Daniel},
+    title = "{JANUS: a bit-wise reversible integrator for N-body dynamics}",
+    journal = {Monthly Notices of the Royal Astronomical Society},
+    volume = {473},
+    number = {3},
+    pages = {3351-3357},
+    year = {2017},
+    month = {09},
+    abstract = "{Hamiltonian systems such as the gravitational N-body problem have time-reversal symmetry. However, all numerical N-body integration schemes, including symplectic ones, respect this property only approximately. In this paper, we present the new N-body integrator janus, for which we achieve exact time-reversal symmetry by combining integer and floating point arithmetic. janus is explicit, formally symplectic and satisfies Liouville's theorem exactly. Its order is even and can be adjusted between two and ten. We discuss the implementation of janus and present tests of its accuracy and speed by performing and analysing long-term integrations of the Solar system. We show that janus is fast and accurate enough to tackle a broad class of dynamical problems. We also discuss the practical and philosophical implications of running exactly time-reversible simulations.}",
+    issn = {0035-8711},
+    doi = {10.1093/mnras/stx2479},
+    url = {https://doi.org/10.1093/mnras/stx2479},
+    eprint = {https://academic.oup.com/mnras/article-pdf/473/3/3351/21750579/stx2479.pdf},
+}

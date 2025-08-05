@@ -7,9 +7,8 @@
 
 template<typename Material_T>
 class Element {
-protected:
-  Material_T m_model; // material model
 public:
+  Material_T m_model; // material model
 
   // Empty constructor
   Element(void) { }
@@ -192,10 +191,10 @@ public:
 
 	// Compute P = sigma*cofJ relative to the parent element configuration
 	Real P[2][2];
-	P[0][0] = model_state[0]*cofJ[0][0] + model_state[2]*cofJ[1][0];
-	P[0][1] = model_state[0]*cofJ[0][1] + model_state[2]*cofJ[1][1];
-	P[1][0] = model_state[2]*cofJ[0][0] + model_state[1]*cofJ[1][0];
-	P[1][1] = model_state[2]*cofJ[0][1] + model_state[1]*cofJ[1][1];
+	P[0][0] = model_state[0]*cofJ[0][0] + model_state[5]*cofJ[1][0];
+	P[0][1] = model_state[0]*cofJ[0][1] + model_state[5]*cofJ[1][1];
+	P[1][0] = model_state[5]*cofJ[0][0] + model_state[1]*cofJ[1][0];
+	P[1][1] = model_state[5]*cofJ[0][1] + model_state[1]*cofJ[1][1];
 
 	// sum nodal forces by stress divergence: P.dphi/dxi d[]
 	for (int i = 0; i < num_nodes(); i++) {

@@ -8,9 +8,8 @@
 
 template<typename Material_T>
 class Truss {
-protected:
-  Material_T m_model; // material model
 public:
+  Material_T m_model; // material model
 
   // Empty constructor
   Truss(void) { }

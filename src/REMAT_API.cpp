@@ -157,6 +157,58 @@ extern "C" {
   } // get_field_data()
   
   // ------------------------------------------------------------------------ //
+
+  // Request the number of spatial dimensions
+  int get_num_dim(void) { return remat->get_num_dim(); }
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the number of entities of the specified type
+  int get_num_entities(const char* entity_type) {
+    return remat->get_num_entities(entity_type);
+  } // get_num_entities()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the number of fields defined for entities of the specified type
+  int get_num_fields(const char* entity_type) {
+    return remat->get_num_fields(entity_type);
+  } // get_num_fields()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the name of the indicated field ID for entities of the specified type
+  const char* get_field_name(const char* entity_type, int field_id) {
+    return remat->get_field_name(entity_type,field_id);
+  } // get_field_name()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the coordinates of all nodes
+  void get_node_coords(double* coords, bool deformed) {
+    remat->get_node_coords(coords,deformed);
+  } // get_node_coords()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the connectivity data for all entities of the specified type
+  void get_connectivity(const char* entity_type, int* connectivity) {
+    remat->get_connectivity(entity_type,connectivity);
+  } // get_connectivity()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request data defining all fields for all entities of the specified type
+  void get_fields(const char* entity_type, double* field_data) {
+    remat->get_fields(entity_type,field_data);
+  } // get_fields()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Request the current analysis time
+  double get_time(void) { return remat->get_time(); }
+  
+  // ------------------------------------------------------------------------ //
   
 } // extern "C"
 

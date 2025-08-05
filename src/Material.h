@@ -54,7 +54,19 @@ class Material {
   }
     
   // Return the number of state variables for allocation purposes
-  int num_state_vars(void) { return 5; }
+  int num_state_vars(void) { return 8; }
+
+  // Return the names of all fields
+  std::vector<std::string> get_field_names(void) {
+    return std::vector<std::string>({ "stress_xx",
+                                      "stress_yy",
+	                              "stress_zz",
+	                              "stress_yz",
+	                              "stress_zx",
+	                              "stress_xy",
+	                              "pressure",
+	                              "stiffness_scaling_factor" });
+  }
 
   // Return the density
   Real density(void) { return rho; }
@@ -63,15 +75,18 @@ class Material {
   void initialize(Real* state) {
     state[0] = 0.0; // stress_xx
     state[1] = 0.0; // stress_yy
-    state[2] = 0.0; // stress_xy
-    state[3] = 0.0; // pressure
-    state[4] = 1.0; // stiffness_scaling_factor
+    state[2] = 0.0; // stress_zz
+    state[3] = 0.0; // stress_yz
+    state[4] = 0.0; // stress_zx
+    state[5] = 0.0; // stress_xy
+    state[6] = 0.0; // pressure
+    state[7] = 1.0; // stiffness_scaling_factor
   } // initialize()
 
   // Initialize variable material properties
   void initialize_variable_properties(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
-    state[4] = function_xy(x[0],x[1]);
+    state[7] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
     
   // Update the material state using the current deformation gradient F
@@ -105,17 +120,18 @@ class Material {
     Bbar22 -= 0.5*Ibar;
 
     // Compute and store the Cauchy stress: sigma = (J-1)*kappa*1 + (mu/J)*dev[Bbar]
-    Real p = state[4]*kappa*(J-1.0);
-    Real mu_bar = state[4]*mu*invJ;
+    Real stiffness_scaling_factor = state[7];
+    Real p = stiffness_scaling_factor*kappa*(J-1.0);
+    Real mu_bar = stiffness_scaling_factor*mu*invJ;
     state[0] = mu_bar*Bbar11 + p; // stress_xx
     state[1] = mu_bar*Bbar22 + p; // stress_yy
-    state[2] = mu_bar*Bbar12;     // stress_xy
-    state[3] = p;                 // pressure
+    state[5] = mu_bar*Bbar12;     // stress_xy
+    state[6] = p;                 // pressure
 
     // Compute the strain energy density
     // Real U = 0.5*kappa*(J-1.0)*(J-1.0);
     // Real W = 0.5*mu*(Ibar - 2.0);
-    psi = 0.5*p*(J-1.0) + 0.5*state[4]*mu*(Ibar - 2.0);
+    psi = 0.5*p*(J-1.0) + 0.5*stiffness_scaling_factor*mu*(Ibar - 2.0);
     
   } // update()
 
@@ -124,6 +140,18 @@ class Material {
 
   // Conditionally store material history parameters in memory
   bool store_state(Real* state, Real* overflow_state) { return false; }
+
+  // Copy state variable data to field data
+  void get_fields(Real* state, double* field_data) {
+    field_data[0] = state[0]; // stress_xx
+    field_data[1] = state[1]; // stress_yy
+    field_data[2] = state[2]; // stress_zz
+    field_data[3] = state[3]; // stress_yz
+    field_data[4] = state[4]; // stress_zx
+    field_data[5] = state[5]; // stress_xy
+    field_data[6] = state[6]; // pressure
+    field_data[7] = state[7]; // stiffness_scaling_factor
+  }
 
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(pmod/rho); }

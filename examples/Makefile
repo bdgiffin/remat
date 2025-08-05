@@ -1,17 +1,19 @@
 # Build select examples for execution in a web environment
 
 REMAT_INSTALL=../install/package
-TARGETS=double_pendulum-web # contact-web
+TARGETS=seismic_wave-web potential_well-web contact-web buckling_arch-web bouncing_ball-web viscoplastic_truss-web triple_pendulum-web
 
 all: $(TARGETS)
 
 .PHONY: clean $(TARGETS)
 
-$(TARGETS): %-web: %.py
-# Make new directory
+$(TARGETS): %-web: %
+# Make new sub-directory
 	mkdir -p $@
-# Copy the indicated example file into the sub-directory and rename as main.py
-	cp $< $@/main.py
+# Copy any needed files from the base sub-directory
+	cp -r $*/* $@/
+# Rename the indicated example file as main.py
+	mv $@/$*.py $@/main.py
 # Copy the contents of the install/package directory to the sub-directory
 	cp $(REMAT_INSTALL)/* $@
 # Call pygbag to package project

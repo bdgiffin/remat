@@ -14,6 +14,8 @@ set(REMAT_sources
 
 set(REMAT_python
     ${CMAKE_CURRENT_LIST_DIR}/__init__.py
+    ${CMAKE_CURRENT_LIST_DIR}/Animation.py
+    ${CMAKE_CURRENT_LIST_DIR}/ExodusIO.py
     ${CMAKE_CURRENT_LIST_DIR}/REMAT.py
     ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/FaceSet.py
     ${CMAKE_CURRENT_LIST_DIR}/MeshUtils/Geometry.py

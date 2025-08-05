@@ -14,14 +14,6 @@
 
 // Declare a non-templated base class to enable instantiation with variably typed 
 struct SystemBase {
-
-  // Common data
-  const char* global_variable_names[4] = {
-    "elastic_strain_energy",
-    "kinetic_energy",
-    "potential_energy",
-    "total_energy"
-  };
   
   // default constructor method for a system object
   SystemBase() { }
@@ -74,6 +66,46 @@ struct SystemBase {
 			        double *sxx, double *syy, double *sxy,
 				double *pressure, double *stiffness_scaling_factor,
 				double *system_state, double *eqps, bool *is_dead) = 0;
+  
+  // ===================================================================== //
+  
+  // Request the number of spatial dimensions
+  virtual int get_num_dim(void) = 0;
+  
+  // ===================================================================== //
+
+  // Request the number of entities of the specified type
+  virtual int get_num_entities(std::string entity_type) = 0;
+  
+  // ===================================================================== //
+
+  // Request the number of fields defined for entities of the specified type
+  virtual int get_num_fields(std::string entity_type) = 0;
+  
+  // ===================================================================== //
+
+  // Request the name of the indicated field ID for entities of the specified type
+  virtual const char* get_field_name(std::string entity_type, int field_id) = 0;
+  
+  // ===================================================================== //
+  
+  // Request the coordinates of all nodes
+  virtual void get_node_coords(double* coords, bool deformed) = 0;
+  
+  // ===================================================================== //
+  
+  // Request the connectivity data for all entities of the specified type
+  virtual void get_connectivity(std::string entity_type, int* connectivity) = 0;
+  
+  // ===================================================================== //
+
+  // Request data defining all fields for all entities of the specified type
+  virtual void get_fields(std::string entity_type, double* field_data) = 0;
+  
+  // ===================================================================== //
+
+  // Request the current analysis time
+  virtual double get_time(void) = 0;
   
   // ===================================================================== //
 
@@ -135,6 +167,7 @@ struct System : public SystemBase {
   std::vector<Real>            f; // The (primal) system forces for each DoF
   std::vector<Dual<Real> >     a; // The (primal) system accelerations for each DoF
   std::vector<Real>        alpha; // The system damping factors for each DoF
+  std::vector<std::string> node_field_names;
 
   // Solid element data
   Element_T            m_element; // Solid element class
@@ -142,6 +175,7 @@ struct System : public SystemBase {
   int            Nnodes_per_elem; // The total number of nodes per solid element
   std::vector<int>       connect; // The nodal connectivity array for all solid elements
   std::vector<Real>        state; // Solid element state variable data
+  std::vector<std::string> element_field_names;
 
   // Truss element data
   Truss_T                m_truss; // Truss element class
@@ -149,17 +183,20 @@ struct System : public SystemBase {
   std::vector<int> truss_connect; // The nodal connectivity array for all truss elements
   std::vector<Real>  truss_state; // Truss element state variable data
   std::vector<std::vector<Real> > truss_state_overflow; // Truss element state variable overflow data
+  std::vector<std::string> truss_field_names;
 
   // Point mass data
   int              Npoints = 0; // The total number of point masses
   std::vector<int>   point_ids; // Node IDs of point massess
   std::vector<Real> point_mass; // Discrete mass associated with correponding nodal points
+  std::vector<std::string> point_field_names;
 
   // Total system state data
   Real elastic_strain_energy;
   Real kinetic_energy;
   Real potential_energy;
   Real total_energy;
+  std::vector<std::string> global_field_names;
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
@@ -204,6 +241,7 @@ struct System : public SystemBase {
     const int Nelem_dofs = Nelems*Nnodes_per_elem;
     const int Nstate_vars_per_elem = m_element.num_state_vars();
     const int Nstate = Nelems*Nstate_vars_per_elem;
+    if (Nelems > 0) element_field_names = m_element.m_model.get_field_names();
 
     // Initialize the dimensions of all arrays
     connect.resize(Nelem_dofs);
@@ -217,6 +255,23 @@ struct System : public SystemBase {
     a.resize(Ndofs,Dual<Real>(0.0,0.0));
     alpha.resize(Ndofs);
     state.resize(Nstate);
+
+    // Populate ordered nodal field names
+    node_field_names.push_back("displacement_X");
+    node_field_names.push_back("displacement_Y");
+    node_field_names.push_back("displacement_Z");
+    node_field_names.push_back("velocity_X");
+    node_field_names.push_back("velocity_Y");
+    node_field_names.push_back("velocity_Z");
+    node_field_names.push_back("force_X");
+    node_field_names.push_back("force_Y");
+    node_field_names.push_back("force_Z");
+    node_field_names.push_back("dual_displacement_X");
+    node_field_names.push_back("dual_displacement_Y");
+    node_field_names.push_back("dual_displacement_Z");
+    node_field_names.push_back("dual_velocity_X");
+    node_field_names.push_back("dual_velocity_Y");
+    node_field_names.push_back("dual_velocity_Z");
 
     // Initialize data for all DoFs
     for (int i=0; i<Ndofs; i++) {
@@ -253,10 +308,10 @@ struct System : public SystemBase {
     }
 
     // Initialize system state data
-    elastic_strain_energy = 0.0;
-    kinetic_energy        = 0.0;
-    potential_energy      = 0.0;
-    total_energy          = 0.0;
+    elastic_strain_energy = 0.0; global_field_names.push_back("elastic_strain_energy");
+    kinetic_energy        = 0.0; global_field_names.push_back("kinetic_energy");
+    potential_energy      = 0.0; global_field_names.push_back("potential_energy");
+    total_energy          = 0.0; global_field_names.push_back("total_energy");
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -291,6 +346,7 @@ struct System : public SystemBase {
     const int Ntruss_dofs = Ntruss*Nnodes_per_truss;
     const int Nstate_vars_per_truss = m_truss.num_state_vars();
     const int Nstate = Ntruss*Nstate_vars_per_truss;
+    if (Ntruss > 0) truss_field_names = m_truss.m_model.get_field_names();
 
     // Initialize the dimensions of all arrays
     truss_connect.resize(Ntruss_dofs);
@@ -332,6 +388,7 @@ struct System : public SystemBase {
       point_ids[i]  = new_point_ids[i];
       point_mass[i] = new_point_mass[i];
     }
+    if (Npoints > 0) point_field_names.push_back("mass");
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -518,6 +575,134 @@ struct System : public SystemBase {
     return m_time;
     
   } // get_field_data()
+  
+  // ===================================================================== //
+  
+  // Request the number of spatial dimensions
+  virtual int get_num_dim(void) { return 2; }
+  
+  // ===================================================================== //
+
+  // Request the number of entities of the specified type
+  virtual int get_num_entities(std::string entity_type) {
+    if      (entity_type == "global")  { return 1;       }
+    else if (entity_type == "node")    { return Nnodes;  }
+    else if (entity_type == "element") { return Nelems;  }
+    else if (entity_type == "truss")   { return Ntruss;  }
+    else if (entity_type == "point")   { return Npoints; }
+    else                               { return 0;       }
+  } // get_num_entitites()
+  
+  // ===================================================================== //
+
+  // Request the number of fields defined for entities of the specified type
+  virtual int get_num_fields(std::string entity_type) {
+    if      (entity_type == "global")  { return global_field_names.size();  }
+    else if (entity_type == "node")    { return node_field_names.size();    }
+    else if (entity_type == "element") { return element_field_names.size(); }
+    else if (entity_type == "truss")   { return truss_field_names.size();   }
+    else if (entity_type == "point")   { return point_field_names.size();   }
+    else                               { return 0;                          }
+  } // get_num_fields()
+  
+  // ===================================================================== //
+
+  // Request the name of the indicated field ID for entities of the specified type
+  virtual const char* get_field_name(std::string entity_type, int field_id) {
+    if      (entity_type == "global")  { return global_field_names[field_id].c_str();  }
+    else if (entity_type == "node")    { return node_field_names[field_id].c_str();    }
+    else if (entity_type == "element") { return element_field_names[field_id].c_str(); }
+    else if (entity_type == "truss")   { return truss_field_names[field_id].c_str();   }
+    else if (entity_type == "point")   { return point_field_names[field_id].c_str();   }
+    else                               { return nullptr;                               }
+  } // get_field_name()
+  
+  // ===================================================================== //
+  
+  // Request the coordinates of all nodes
+  virtual void get_node_coords(double* coords, bool deformed) {
+    if (deformed) { // return the currently deformed coordinates of all nodes
+      for (int i=0; i<Ndofs; i++) { coords[i] = xt[i]; }
+    } else {        // return the initial (undeformed) coordinates of all nodes
+      for (int i=0; i<Ndofs; i++) { coords[i] = x[i];  }
+    }
+  } // get_node_coords()
+  
+  // ===================================================================== //
+  
+  // Request the connectivity data for all entities of the specified type
+  virtual void get_connectivity(std::string entity_type, int* connectivity) {
+    if        (entity_type == "element") {
+      for (int i=0; i<Nelems; i++) {
+	for (int j=0; j<Nnodes_per_elem; j++) {
+	  connectivity[Nnodes_per_elem*i+j] = connect[Nnodes_per_elem*i+j];
+	}
+      }
+    } else if (entity_type == "truss")   {
+      for (int i=0; i<Ntruss; i++) {
+	for (int j=0; j<2; j++) {
+	  connectivity[2*i+j] = truss_connect[2*i+j];
+	}
+      }
+    } else if (entity_type == "point")   {
+      for (int i=0; i<Npoints; i++) {
+	connectivity[i] = point_ids[i];
+      }
+    }
+  } // get_connectivity()
+  
+  // ===================================================================== //
+
+  // Request data defining all fields for all entities of the specified type
+  virtual void get_fields(std::string entity_type, double* field_data) {
+    if        (entity_type == "global")  {
+      field_data[0] = elastic_strain_energy;
+      field_data[1] = kinetic_energy;
+      field_data[2] = potential_energy;
+      field_data[3] = total_energy;
+    } else if (entity_type == "node")    {
+      const int Nstate = get_num_fields(entity_type);
+      for (int i=0; i<Nnodes; i++) {
+	field_data[Nstate*i+ 0] = u[2*i+0].first;
+	field_data[Nstate*i+ 1] = u[2*i+1].first;
+	field_data[Nstate*i+ 2] = 0.0;
+	field_data[Nstate*i+ 3] = v[2*i+0].first;
+	field_data[Nstate*i+ 4] = v[2*i+1].first;
+	field_data[Nstate*i+ 5] = 0.0;
+	field_data[Nstate*i+ 6] = f[2*i+0];
+	field_data[Nstate*i+ 7] = f[2*i+1];
+	field_data[Nstate*i+ 8] = 0.0;
+	field_data[Nstate*i+ 9] = u[2*i+0].second;
+	field_data[Nstate*i+10] = u[2*i+1].second;
+	field_data[Nstate*i+11] = 0.0;
+	field_data[Nstate*i+12] = v[2*i+0].second;
+	field_data[Nstate*i+13] = v[2*i+1].second;
+	field_data[Nstate*i+14] = 0.0;
+      }
+    } else if (entity_type == "element") {
+      const int Nstate = m_element.num_state_vars();
+      const int Nmat_state = get_num_fields(entity_type);
+      for (int e=0; e<Nelems; e++) {
+        m_element.m_model.get_fields(&state[Nstate*e],&field_data[Nmat_state*e]);
+      }
+    } else if (entity_type == "truss")   {
+      const int Nstate = m_truss.num_state_vars();
+      const int Nmat_state = m_truss.m_model.num_state_vars();
+      for (int e=0; e<Ntruss; e++) {
+        m_truss.m_model.get_fields(&truss_state[Nstate*e],&field_data[Nmat_state*e]);
+      }
+    } else if (entity_type == "point")   {
+      const int Nstate = get_num_fields(entity_type);
+      for (int i=0; i<Npoints; i++) {
+	field_data[Nstate*i+0] = point_mass[i];
+      }
+    }
+  } // get_fields()
+  
+  // ===================================================================== //
+
+  // Request the current analysis time
+  virtual double get_time(void) { return m_time; }
   
   // ===================================================================== //
 private:
