@@ -1,13 +1,19 @@
 cff-version: 1.2.0
-title: "REMAT v1.0"
-version: 1.0
+title: REMAT v1.0
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
 type: software
-message: "Initial release version 1.0 of REMAT"
 authors:
-- given-names: Brian
-  family-names: Doran Giffin
-  affiliation: Oklahoma State University
-  orcid: "https://orcid.org/0000-0002-0458-8492"
-date-released: 2025-08-05
+  - given-names: Brian
+    family-names: Doran Giffin
+    email: brian.giffin@okstate.edu
+    affiliation: Oklahoma State University
+    orcid: 'https://orcid.org/0000-0002-0458-8492'
+repository-code: 'https://github.com/bdgiffin/remat/tree/v1.0'
+url: 'https://bdgiffin.github.io/remat/'
+abstract: Initial release version 1.0 of REMAT.
 license: MIT
-repository-code: https://github.com/bdgiffin/remat/tree/v1.0
+commit: 47ad8ce
+version: v1.0
+date-released: '2025-08-05'
