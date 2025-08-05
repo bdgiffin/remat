@@ -1,5 +1,6 @@
 # <img width="300" src="/docs/logo/remat_logo.png?raw=true" alt="REMAT">
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14851878.svg)](https://doi.org/10.5281/zenodo.14851878)
+[![CMake on multiple platforms](https://github.com/bdgiffin/remat/actions/workflows/cmake-multi-platform.yml/badge.svg?branch=main&event=push)](https://github.com/bdgiffin/remat/actions/workflows/cmake-multi-platform.yml)
 
 **Documentation:** https://bdgiffin.github.io/remat/
 
