@@ -1,4 +1,4 @@
-# <img width="300" src="/docs/sphinx/source/_static/remat_logo.png?raw=true" alt="REMAT">
+# <img width="300" src="/docs/logo/remat_logo.png?raw=true" alt="REMAT">
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14851878.svg)](https://doi.org/10.5281/zenodo.14851878)
 
 **Documentation:** https://bdgiffin.github.io/remat/
