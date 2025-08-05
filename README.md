@@ -62,7 +62,7 @@ The accompanying `examples` additionally make use of the following Python packag
  - [pygame](https://pypi.org/project/pygame/)
  - [pygame_widgets](https://pygamewidgets.readthedocs.io/en/latest/)
 
-If you intend to export recorded animations using the functionality provided in the ``Animation.py`` module, you will need to install the command line utility `ffmpeg <https://ffmpeg.org>`_.
+If you intend to export recorded animations using the functionality provided in the ``Animation.py`` module, you will need to install the command line utility [ffmpeg](https://ffmpeg.org).
 
 Many of the `examples` can be built for execution in a web browser using [Emscripten](https://emscripten.org) to compile the underlying C++ library into WebAssembly, and [pygbag](https://pypi.org/project/pygbag/) to package the pygame-based visualizations.
 
