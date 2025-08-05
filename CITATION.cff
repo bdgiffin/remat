@@ -14,7 +14,7 @@ repository-code: 'https://github.com/bdgiffin/remat/tree/v1.0'
 url: 'https://bdgiffin.github.io/remat/'
 abstract: Initial release version 1.0 of REMAT.
 license: MIT
-commit: 47ad8ce
+commit: ca6fd38
 version: v1.0
 date-released: '2025-08-06'
 doi: 10.5281/zenodo.16749131
