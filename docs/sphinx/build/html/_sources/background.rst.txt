@@ -41,6 +41,6 @@ A more detailed explanation of the motivation for REMAT and the concepts underpi
 
 .. image:: https://img.youtube.com/vi/pld1zsDSUgs/maxresdefault.jpg
     :alt: Exactly Bit-Reversible Computational Methods for Dissipative Dynamic Systems
-    :target: https://www.youtube.com/watch?v=pld1zsDSUgs
+    :target: https://www.youtube.com//watch?v=pld1zsDSUgs
    
 .. footbibliography::
