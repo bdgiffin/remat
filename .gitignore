@@ -2,3 +2,4 @@
 /build
 /install
 *.DS_Store
+.venv/
