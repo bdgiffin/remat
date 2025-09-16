@@ -1,12 +1,12 @@
-#ifndef MATERIAL_H
-#define MATERIAL_H
+#ifndef VISCOELASTICITY_H
+#define VISCOELASTICITY_H
 
 #include <math.h>
 #include <iostream>
 #include <stdlib.h> // exit
 #include "Parameters.h"
 
-class Material {
+class ViscoElasticity {
  protected:
   Real rho;   // Mass density
   Real E;     // Young's modulus
@@ -19,10 +19,10 @@ class Material {
  public:
 
   // Empty constructor
-  Material(void) { }
+  ViscoElasticity(void) { }
 
   // Parameterized constructor
-  Material(Parameters& params) {
+  ViscoElasticity(Parameters& params) {
     // Get material density
     if (params.count("density") > 0) {
       rho = params["density"];
@@ -158,4 +158,4 @@ class Material {
 
 }; /* Material */
 
-#endif /* MATERIAL_H */
+#endif // VISCOELASTICITY_H
