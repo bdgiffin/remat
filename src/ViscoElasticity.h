@@ -14,9 +14,9 @@ class ViscoElasticity {
   Real mu;    // Shear modulus
   Real mu2;   // Twice the shear modulus
   Real lam;   // Lame parameter
-  Real kappa; // Bulk modulus
-  Real pmod;  // P-wave modulus
-// Viscous parameters
+  //Real kappa; // Bulk modulus
+  //Real pmod;  // P-wave modulus
+  // Viscous parameters
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
  public:
@@ -52,12 +52,13 @@ class ViscoElasticity {
     mu2   = E/(1.0+nu);
     mu    = 0.5*mu2;
     lam   = mu2*nu/(1.0-2.0*nu);
-    kappa = lam+0.5*mu2;
-    pmod  = lam+mu2;
+    //kappa = lam+0.5*mu2;
+    //pmod  = lam+mu2;
 
     // Visco parameters
-    // Get relatxation_time if provided
-    // Otherwise, relatxation_time = viscosity / G
+    // Gets either relatxation_time or viscosity
+    // relatxation_time = viscosity / G
+    // If both provided, relaxation_time wins
     if (params.count("relaxation_time") > 0) {
       tau = params["relaxation_time"];
     } else {
@@ -65,7 +66,7 @@ class ViscoElasticity {
         eta = params["viscosity"];
         tau = eta / mu;
       } else {      
-        std::cout << "Missing visco parameters: relaxation_time" << std::endl;
+        std::cout << "Missing viscous parameters: relaxation_time" << std::endl;
         exit(EXIT_FAILURE);
       }
     }
@@ -114,10 +115,10 @@ class ViscoElasticity {
   } // initialize_variable_properties()
 
   // Update the material state using the current deformation gradient F
-  void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
+  void update(Real (&F)[2][2], Real* state, Real dt) {
     // Update at a material point.
     // Input: F (2x2), dt. Small strain: eps = sym(F - I).
-    // Output: Updated states (and we potentially can have psi, elastic energy density.)
+    // Output: Updated states means updated viscous strain and stress values
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
       std::cout << "ERROR: negative Jacobian" << std::endl;
@@ -160,6 +161,8 @@ class ViscoElasticity {
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy;
     Real stress_xy = C66*elastic_strain_xy;
 
+    // Becasue of being in 2D, explicitly set them to zero
+    state[2]=0.0; state[3]=0.0; state[4]=0.0;
     // Update the states with final results
     state[0] = stress_xx;
     state[1] = stress_yy;
@@ -197,7 +200,7 @@ class ViscoElasticity {
   }
 
   // Return the initial sound speed
-  Real initial_sound_speed(void) { return sqrt(pmod/rho); }
+  //Real initial_sound_speed(void) { return sqrt(pmod/rho); }
 
 }; /* ViscoElasticity */
 
