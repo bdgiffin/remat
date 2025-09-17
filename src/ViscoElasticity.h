@@ -76,18 +76,15 @@ class ViscoElasticity {
   }
     
   // Return the number of state variables for allocation purposes
-  int num_state_vars(void) { return 8; }
+ int num_state_vars(void) { return 12; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
-    return std::vector<std::string>({ "stress_xx",
-                                      "stress_yy",
-	                              "stress_zz",
-	                              "stress_yz",
-	                              "stress_zx",
-	                              "stress_xy",
-	                              "pressure",
-	                              "stiffness_scaling_factor" });
+    return std::vector<std::string>({
+      "stress_xx","stress_yy","stress_zz","stress_yz","stress_zx","stress_xy",
+      "strain_xx","strain_yy","strain_xy",
+      "strain_v_xx","strain_v_yy","strain_v_xy"
+    });
   }
 
   // Return the density
@@ -95,14 +92,18 @@ class ViscoElasticity {
     
   // Initialize the material state
   void initialize(Real* state) {
-    state[0] = 0.0; // stress_xx
-    state[1] = 0.0; // stress_yy
-    state[2] = 0.0; // stress_zz
-    state[3] = 0.0; // stress_yz
-    state[4] = 0.0; // stress_zx
-    state[5] = 0.0; // stress_xy
-    state[6] = 0.0; // pressure
-    state[7] = 1.0; // stiffness_scaling_factor
+    state[0] = 0.0;   // stress_xx
+    state[1] = 0.0;   // stress_yy
+    state[2] = 0.0;   // stress_zz
+    state[3] = 0.0;   // stress_yz
+    state[4] = 0.0;   // stress_zx
+    state[5] = 0.0;   // stress_xy
+    state[6] = 0.0;   // strain_xx
+    state[7] = 0.0;   // strain_yy
+    state[8] = 0.0;   // strain_xy
+    state[9] = 0.0;   // strain_v_xx
+    state[10] = 0.0;  // strain_v_yy
+    state[11] = 0.0;  // strain_v_xy
   } // initialize()
 
   // Initialize variable material properties
