@@ -83,7 +83,7 @@ class ViscoElasticity {
     return std::vector<std::string>({
       "stress_xx","stress_yy","stress_zz","stress_yz","stress_zx","stress_xy",
       "strain_xx","strain_yy","strain_xy",
-      "strain_v_xx","strain_v_yy","strain_v_xy"
+      "viscous_strain_xx","viscous_strain_yy","viscous_strain_xy"
     });
   }
 
@@ -101,28 +101,23 @@ class ViscoElasticity {
     state[6] = 0.0;   // strain_xx
     state[7] = 0.0;   // strain_yy
     state[8] = 0.0;   // strain_xy
-    state[9] = 0.0;   // strain_v_xx
-    state[10] = 0.0;  // strain_v_yy
-    state[11] = 0.0;  // strain_v_xy
+    state[9] = 0.0;   // viscous_strain_xx
+    state[10] = 0.0;  // viscous_strain_yy
+    state[11] = 0.0;  // viscous_strain_xy
   } // initialize()
 
+  // Do we have to keep this?
   // Initialize variable material properties
   void initialize_variable_properties(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
-    state[7] = function_xy(x[0],x[1]);
+    // state[7] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
-    
+
   // Update the material state using the current deformation gradient F
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
-    // Simple Neo-Hookean model:
-    // J = det(F), Fbar = J^(-1/2) F, Bbar = Fbar*Fbar^T, Ibar = tr(Bbar), dev[Bbar] = Bbar - (Ibar/2)*1
-    // psi = U(J) + W(Ibar)
-    // tau = J*(dU/dJ)*1 + 2*(dW/dIbar)*dev[Bbar]
-    // U = (kappa/2)*(J-1)^2 => dU/dJ    = (J-1)*kappa
-    // W = (mu/2)*(Ibar - 2) => dW/dIbar = mu/2
-    // sigma = (J-1)*kappa*1 + (mu/J)*dev[Bbar]
-
-    // Compute the determinant of the deformation gradient J = det(F)
+    // Update at a material point.
+    // Input: F (2x2), dt. Small strain: eps = sym(F - I).
+    // Output: psi (elastic energy density). State updated in-place.
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
       std::cout << "ERROR: negative Jacobian" << std::endl;
@@ -179,6 +174,6 @@ class ViscoElasticity {
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(pmod/rho); }
 
-}; /* Material */
+}; /* ViscoElasticity */
 
 #endif // VISCOELASTICITY_H
