@@ -117,12 +117,13 @@ class ViscoElasticity {
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
     // Update at a material point.
     // Input: F (2x2), dt. Small strain: eps = sym(F - I).
-    // Output: Updated states (and we potentially can have psi, elastic energy density.
+    // Output: Updated states (and we potentially can have psi, elastic energy density.)
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
       std::cout << "ERROR: negative Jacobian" << std::endl;
       exit(EXIT_FAILURE);
     }
+
     // 1) 2D small strain (engineering shear)
     Real strain_xx = F[0][0] - 1.0;
     Real strain_yy = F[1][1] - 1.0;
@@ -137,12 +138,10 @@ class ViscoElasticity {
     dev_strain[1] = strain_yy - 0.5*tr2;
     dev_strain[2] = strain_xy;
 
-    
-
     // 3) Viscous strain update
     Real A = std::exp(-std::fabs(dt)/tau);
     Real viscous_strain[3] = { state[9], state[10], state[11] }; // Previous step, step n
-    
+
     // Solve for Viscous strain for step n+1
     viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
     viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
@@ -155,7 +154,7 @@ class ViscoElasticity {
 
     Real elastic_strain_xx = strain[0] - viscous_strain[0];
     Real elastic_strain_yy = strain[1] - viscous_strain[1];
-    Real elastic_strain_xy  = strain[2] - viscous_strain[2];
+    Real elastic_strain_xy = strain[2] - viscous_strain[2];
 
     Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy;
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy;
@@ -170,10 +169,9 @@ class ViscoElasticity {
     state[7] = strain[1];
     state[8] = strain[2];
 
-    state[9] = viscous_strain[0];
+    state[9]  = viscous_strain[0];
     state[10] = viscous_strain[1];
     state[11] = viscous_strain[2];
-
   } // update()
 
   // Conditionally load material history parameters from memory
@@ -184,14 +182,18 @@ class ViscoElasticity {
 
   // Copy state variable data to field data
   void get_fields(Real* state, double* field_data) {
-    field_data[0] = state[0]; // stress_xx
-    field_data[1] = state[1]; // stress_yy
-    field_data[2] = state[2]; // stress_zz
-    field_data[3] = state[3]; // stress_yz
-    field_data[4] = state[4]; // stress_zx
-    field_data[5] = state[5]; // stress_xy
-    field_data[6] = state[6]; // pressure
-    field_data[7] = state[7]; // stiffness_scaling_factor
+    field_data[0]  = state[0]  // stress_xx
+    field_data[1]  = state[1]  // stress_yy
+    field_data[2]  = state[2]  // stress_zz
+    field_data[3]  = state[3]  // stress_yz
+    field_data[4]  = state[4]  // stress_zx
+    field_data[5]  = state[5]  // stress_xy
+    field_data[6]  = state[6]  // strain_xx
+    field_data[7]  = state[7]  // strain_yy
+    field_data[8]  = state[8]  // strain_xy
+    field_data[9]  = state[9]  // viscous_strain_xx
+    field_data[10] = state[10] // viscous_strain_yy
+    field_data[11] = state[11] // viscous_strain_xy
   }
 
   // Return the initial sound speed
