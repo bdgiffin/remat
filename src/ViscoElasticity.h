@@ -182,18 +182,18 @@ class ViscoElasticity {
 
   // Copy state variable data to field data
   void get_fields(Real* state, double* field_data) {
-    field_data[0]  = state[0]  // stress_xx
-    field_data[1]  = state[1]  // stress_yy
-    field_data[2]  = state[2]  // stress_zz
-    field_data[3]  = state[3]  // stress_yz
-    field_data[4]  = state[4]  // stress_zx
-    field_data[5]  = state[5]  // stress_xy
-    field_data[6]  = state[6]  // strain_xx
-    field_data[7]  = state[7]  // strain_yy
-    field_data[8]  = state[8]  // strain_xy
-    field_data[9]  = state[9]  // viscous_strain_xx
-    field_data[10] = state[10] // viscous_strain_yy
-    field_data[11] = state[11] // viscous_strain_xy
+    field_data[0]  = state[0];  // stress_xx
+    field_data[1]  = state[1];  // stress_yy
+    field_data[2]  = state[2];  // stress_zz
+    field_data[3]  = state[3];  // stress_yz
+    field_data[4]  = state[4];  // stress_zx
+    field_data[5]  = state[5];  // stress_xy
+    field_data[6]  = state[6];  // strain_xx
+    field_data[7]  = state[7];  // strain_yy
+    field_data[8]  = state[8];  // strain_xy
+    field_data[9]  = state[9];  // viscous_strain_xx
+    field_data[10] = state[10]; // viscous_strain_yy
+    field_data[11] = state[11]; // viscous_strain_xy
   }
 
   // Return the initial sound speed
