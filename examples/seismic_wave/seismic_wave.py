@@ -37,7 +37,7 @@ from Animation import *
 REMAT.API.define_parameter(b"body_force_y",       -0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_x", +0.0e-1)
 REMAT.API.define_parameter(b"initial_velocity_y", -0.0e-1)
-REMAT.API.define_parameter(b"mass_damping_factor", 1.0e-0)
+#REMAT.API.define_parameter(b"mass_damping_factor", 1.0e-0)
 REMAT.API.define_parameter(b"contact_stiffness",   0.0e+0)
 REMAT.API.define_parameter(b"search_radius",       1.0e+0)
 REMAT.API.define_parameter(b"overflow_limit",      1001.0) # steps
@@ -87,7 +87,7 @@ coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = mo
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
 # Define variable material properties
-REMAT.define_variable_properties(lambda x, y: 1.0 - 0.5*(y > 0.5 + 0.07*(x-5.0)) + 0.4*(y > 1.0 - 0.07**(x-5.0)) - 0.5*(y > 1.5 + 0.1*(x-5.0)) + 0.25*(y > 2.0 + 0.05*(x-5.0)) + 0.5*(y > 2.5 - 0.02*(x-5.0)))
+#REMAT.define_variable_properties(lambda x, y: 1.0 - 0.5*(y > 0.5 + 0.07*(x-5.0)) + 0.4*(y > 1.0 - 0.07**(x-5.0)) - 0.5*(y > 1.5 + 0.1*(x-5.0)) + 0.25*(y > 2.0 + 0.05*(x-5.0)) + 0.5*(y > 2.5 - 0.02*(x-5.0)))
 
 # Run analysis -------------------------------------------------------------
 
