@@ -16,6 +16,9 @@ class ViscoElasticity {
   Real lam;   // Lame parameter
   Real kappa; // Bulk modulus
   Real pmod;  // P-wave modulus
+// Viscous parameters
+  Real tau;    // relaxation time
+  Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
  public:
 
   // Empty constructor
@@ -51,6 +54,25 @@ class ViscoElasticity {
     lam   = mu2*nu/(1.0-2.0*nu);
     kappa = lam+0.5*mu2;
     pmod  = lam+mu2;
+
+    // Visco parameters
+    // Get relatxation_time if provided
+    // Otherwise, relatxation_time = viscosity / G
+    if (params.count("relaxation_time") > 0) {
+      tau = params["relaxation_time"];
+    } else {
+      if (params.count("viscosity") > 0) {
+        eta = params["viscosity"];
+        tau = eta / mu;
+      } else {      
+        std::cout << "Missing visco parameters: relaxation_time" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+    if (tau<=0.0) {
+      std::cout << "ViscoElasticity: need a positive relaxation_time" << std::endl;
+      exit(EXIT_FAILURE);
+    }
   }
     
   // Return the number of state variables for allocation purposes
