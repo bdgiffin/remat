@@ -3,6 +3,8 @@
 #  "pygame_widgets"
 # ]
 # ///
+import sys
+sys.path.append("../../install/package")
 
 # Other needed Python packages
 from math import *
@@ -44,6 +46,9 @@ REMAT.API.define_parameter(b"overflow_limit",      1001.0) # steps
 REMAT.API.define_parameter(b"density",        1.0)
 REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
+
+# Define viscous parameters
+REMAT.API.define_parameter(b"relaxation_time", 0.1)
 
 # Set the integrator type: "float" (default), or "fixed"
 REMAT.API.set_integrator_type(b"float")
