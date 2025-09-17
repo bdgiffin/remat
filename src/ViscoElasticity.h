@@ -117,40 +117,25 @@ class ViscoElasticity {
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {
     // Update at a material point.
     // Input: F (2x2), dt. Small strain: eps = sym(F - I).
-    // Output: psi (elastic energy density). State updated in-place.
+    // Output: Updated states (and we potentially can have psi, elastic energy density.
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
       std::cout << "ERROR: negative Jacobian" << std::endl;
       exit(EXIT_FAILURE);
     }
+    // 1) 2D small strain (engineering shear)
+    Real strain_xx = F[0][0] - 1.0;
+    Real strain_yy = F[1][1] - 1.0;
+    Real strain_xy = 2*0.5*(F[0][1] + F[1][0]); // engineering gamma_xy                 
+    Real strain[3] = { strain_xx, strain_yy, strain_xy };
 
-    // Compute inverse of J
-    Real invJ = 1.0/J;
-
-    // Compute the left finger deformation tensor Bbar = Fbar*Fbar^T = (J^(-1/2))^2 (F*F^T)
-    Real Bbar11 = invJ*(F[0][0]*F[0][0] + F[0][1]*F[0][1]);
-    Real Bbar22 = invJ*(F[1][0]*F[1][0] + F[1][1]*F[1][1]);
-    Real Bbar12 = invJ*(F[0][0]*F[1][0] + F[0][1]*F[1][1]);
-
-    // Compute Ibar/2 = tr(Bbar)/2, and dev[Bbar] = Bbar - (Ibar/2)*1
-    Real Ibar = Bbar11 + Bbar22;
-    Bbar11 -= 0.5*Ibar;
-    Bbar22 -= 0.5*Ibar;
-
-    // Compute and store the Cauchy stress: sigma = (J-1)*kappa*1 + (mu/J)*dev[Bbar]
-    Real stiffness_scaling_factor = state[7];
-    Real p = stiffness_scaling_factor*kappa*(J-1.0);
-    Real mu_bar = stiffness_scaling_factor*mu*invJ;
-    state[0] = mu_bar*Bbar11 + p; // stress_xx
-    state[1] = mu_bar*Bbar22 + p; // stress_yy
-    state[5] = mu_bar*Bbar12;     // stress_xy
-    state[6] = p;                 // pressure
-
-    // Compute the strain energy density
-    // Real U = 0.5*kappa*(J-1.0)*(J-1.0);
-    // Real W = 0.5*mu*(Ibar - 2.0);
-    psi = 0.5*p*(J-1.0) + 0.5*stiffness_scaling_factor*mu*(Ibar - 2.0);
-    
+    // 2) 2D deviatoric part 
+    //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
+    Real tr2 = strain_xx + strain_yy;
+    Real dev_strain[3];
+    dev_strain[0] = strain_xx - 0.5*tr2;
+    dev_strain[1] = strain_yy - 0.5*tr2;
+    dev_strain[2] = strain_xy;    
   } // update()
 
   // Conditionally load material history parameters from memory
