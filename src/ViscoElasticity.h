@@ -135,7 +135,45 @@ class ViscoElasticity {
     Real dev_strain[3];
     dev_strain[0] = strain_xx - 0.5*tr2;
     dev_strain[1] = strain_yy - 0.5*tr2;
-    dev_strain[2] = strain_xy;    
+    dev_strain[2] = strain_xy;
+
+    
+
+    // 3) Viscous strain update
+    Real A = std::exp(-std::fabs(dt)/tau);
+    Real viscous_strain[3] = { state[9], state[10], state[11] }; // Previous step, step n
+    
+    // Solve for Viscous strain for step n+1
+    viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
+    viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
+    viscous_strain[2] = A*viscous_strain[2] + (1.0 - A)*dev_strain[2];
+
+    // 4) Solve for stress with elastic part of strain
+    Real C11 = lam + 2.0*mu;
+    Real C12 = lam;
+    Real C66 = mu;
+
+    Real elastic_strain_xx = strain[0] - viscous_strain[0];
+    Real elastic_strain_yy = strain[1] - viscous_strain[1];
+    Real elastic_strain_xy  = strain[2] - viscous_strain[2];
+
+    Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy;
+    Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy;
+    Real stress_xy = C66*elastic_strain_xy;
+
+    // Update the states with final results
+    state[0] = stress_xx;
+    state[1] = stress_yy;
+    state[5] = stress_xy;
+
+    state[6] = strain[0];
+    state[7] = strain[1];
+    state[8] = strain[2];
+
+    state[9] = viscous_strain[0];
+    state[10] = viscous_strain[1];
+    state[11] = viscous_strain[2];
+
   } // update()
 
   // Conditionally load material history parameters from memory
