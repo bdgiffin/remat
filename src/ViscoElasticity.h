@@ -19,6 +19,15 @@ class ViscoElasticity {
   // Viscous parameters
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
+ private:
+  // Deviatoric projector in 2D
+  inline void dev2(Real e[3], Real out[3]) {
+    Real tr2 = e[0] + e[1];
+    out[0] = e[0] - 0.5 * tr2; // eps_xx - tr/2
+    out[1] = e[1] - 0.5 * tr2; // eps_yy - tr/2
+    out[2] = e[2];             // gxy unchanged
+  }
+
  public:
 
   // Empty constructor
@@ -133,21 +142,39 @@ class ViscoElasticity {
 
     // 2) 2D deviatoric part 
     //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
-    Real tr2 = strain_xx + strain_yy;
+    //Real tr2 = strain_xx + strain_yy;
     Real dev_strain[3];
-    dev_strain[0] = strain_xx - 0.5*tr2;
-    dev_strain[1] = strain_yy - 0.5*tr2;
-    dev_strain[2] = strain_xy;
+    //dev_strain[0] = strain_xx - 0.5*tr2;
+    //dev_strain[1] = strain_yy - 0.5*tr2;
+    //dev_strain[2] = strain_xy;
+    dev2(strain,dev_strain);
+
+    // 2) 2D deviatoric part of previous step strain 
+    //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
+    Real strain_previous[3] = { state[6], state[7], state[8] };
+    //Real tr2_previous = strain_previous[0] + strain_previous[1];
+    Real dev_strain_previous[3];
+    //dev_strain_previous[0] = strain_previous[0] - 0.5*tr2;
+    //dev_strain_previous[1] = strain_previous[1] - 0.5*tr2;
+    //dev_strain_previous[2] = strain_previous[2];
+    dev2(strain_previous,dev_strain_previous);
+
 
     // 3) Viscous strain update
     Real A = std::exp(-std::fabs(dt)/tau);
     Real viscous_strain[3] = { state[9], state[10], state[11] }; // Previous step, step n
-    
-    // Solve for Viscous strain for step n+1
-    viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
-    viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
-    viscous_strain[2] = A*viscous_strain[2] + (1.0 - A)*dev_strain[2];
 
+    if (dt >= 0.0) {
+      // Solve for Viscous strain for step n+1
+      //viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
+      //viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
+      //viscous_strain[2] = A*viscous_strain[2] + (1.0 - A)*dev_strain[2];
+
+
+    } else {
+      
+
+    }
     // 4) Solve for stress with elastic part of strain
     Real C11 = lam + 2.0*mu;
     Real C12 = lam;
