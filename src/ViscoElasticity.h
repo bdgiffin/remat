@@ -115,7 +115,7 @@ class ViscoElasticity {
   } // initialize_variable_properties()
 
   // Update the material state using the current deformation gradient F
-  void update(Real (&F)[2][2], Real* state, Real dt) {
+  void update(Real (&F)[2][2],Real &psi, Real* state, Real dt) {
     // Update at a material point.
     // Input: F (2x2), dt. Small strain: eps = sym(F - I).
     // Output: Updated states means updated viscous strain and stress values
@@ -142,7 +142,7 @@ class ViscoElasticity {
     // 3) Viscous strain update
     Real A = std::exp(-std::fabs(dt)/tau);
     Real viscous_strain[3] = { state[9], state[10], state[11] }; // Previous step, step n
-
+    
     // Solve for Viscous strain for step n+1
     viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
     viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
@@ -160,13 +160,14 @@ class ViscoElasticity {
     Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy;
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy;
     Real stress_xy = C66*elastic_strain_xy;
+    Real stress[3] = { stress_xx, stress_yy, stress_xy };
 
     // Becasue of being in 2D, explicitly set them to zero
     state[2]=0.0; state[3]=0.0; state[4]=0.0;
     // Update the states with final results
-    state[0] = stress_xx;
-    state[1] = stress_yy;
-    state[5] = stress_xy;
+    state[0] = stress[0];
+    state[1] = stress[1];
+    state[5] = stress[2];
 
     state[6] = strain[0];
     state[7] = strain[1];
@@ -175,6 +176,7 @@ class ViscoElasticity {
     state[9]  = viscous_strain[0];
     state[10] = viscous_strain[1];
     state[11] = viscous_strain[2];
+    psi = 1;
   } // update()
 
   // Conditionally load material history parameters from memory
