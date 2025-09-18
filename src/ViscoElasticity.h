@@ -151,7 +151,6 @@ class ViscoElasticity {
 
     // 2) 2D deviatoric part of previous step strain 
     //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
-    Real strain_previous[3] = { state[6], state[7], state[8] };
     //Real tr2_previous = strain_previous[0] + strain_previous[1];
     Real dev_strain_previous[3];
     //dev_strain_previous[0] = strain_previous[0] - 0.5*tr2;
