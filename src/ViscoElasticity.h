@@ -143,11 +143,11 @@ class ViscoElasticity {
     // 2) 2D deviatoric part 
     //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
     //Real tr2 = strain_xx + strain_yy;
-    Real dev_strain[3];
+    //Real dev_strain[3];
     //dev_strain[0] = strain_xx - 0.5*tr2;
     //dev_strain[1] = strain_yy - 0.5*tr2;
     //dev_strain[2] = strain_xy;
-    dev2(strain,dev_strain);
+    //dev2(strain,dev_strain);
 
     // 2) 2D deviatoric part of previous step strain 
     //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
@@ -157,12 +157,13 @@ class ViscoElasticity {
     //dev_strain_previous[0] = strain_previous[0] - 0.5*tr2;
     //dev_strain_previous[1] = strain_previous[1] - 0.5*tr2;
     //dev_strain_previous[2] = strain_previous[2];
-    dev2(strain_previous,dev_strain_previous);
+    //dev2(strain_previous,dev_strain_previous);
 
 
-    // 3) Viscous strain update
+    // 3) Viscous strain main update
+    Real viscous_strain[3]  = { state[9], state[10], state[11] }; // Previous step, viscous strain
+    Real strain_previous[3] = { state[6], state[7],  state[8]  }; // Previous step, strain
     Real A = std::exp(-std::fabs(dt)/tau);
-    Real viscous_strain[3] = { state[9], state[10], state[11] }; // Previous step, step n
 
     if (dt >= 0.0) {
       // Solve for Viscous strain for step n+1
@@ -170,11 +171,40 @@ class ViscoElasticity {
       //viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
       //viscous_strain[2] = A*viscous_strain[2] + (1.0 - A)*dev_strain[2];
 
+      // First step of algorigthm
+      viscous_strain[0] *= A;
+      viscous_strain[1] *= A;
+      viscous_strain[2] *= A;
+
+      // Second step eps_prev = eps
+      strain_previous[0] = strain[0];
+      strain_previous[1] = strain[1];
+      strain_previous[2] = strain[2];
+
+      // Third step final calculation
+      dev2(strain_previous,dev_strain_previous);
+      viscous_strain[0] += dev_strain_previous[0] * (1.0 - A);
+      viscous_strain[1] += dev_strain_previous[1] * (1.0 - A);
+      viscous_strain[2] += dev_strain_previous[2] * (1.0 - A);
 
     } else {
-      
+      // First step of algorigthm
+      dev2(strain_previous,dev_strain_previous);
+      viscous_strain[0] += - dev_strain_previous[0] * (1.0 - A);
+      viscous_strain[1] += - dev_strain_previous[1] * (1.0 - A);
+      viscous_strain[2] += - dev_strain_previous[2] * (1.0 - A);
 
-    }
+      // Second step eps_prev = eps
+      strain_previous[0] = strain[0];
+      strain_previous[1] = strain[1];
+      strain_previous[2] = strain[2];
+
+      // Third step 
+      viscous_strain[0] /= A;
+      viscous_strain[1] /= A;
+      viscous_strain[2] /= A;
+    } // end if dt
+
     // 4) Solve for stress with elastic part of strain
     Real C11 = lam + 2.0*mu;
     Real C12 = lam;
@@ -191,6 +221,7 @@ class ViscoElasticity {
 
     // Becasue of being in 2D, explicitly set them to zero
     state[2]=0.0; state[3]=0.0; state[4]=0.0;
+
     // Update the states with final results
     state[0] = stress[0];
     state[1] = stress[1];
