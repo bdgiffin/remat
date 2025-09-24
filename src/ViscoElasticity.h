@@ -14,6 +14,14 @@ class ViscoElasticity {
   Real mu;    // Shear modulus
   Real mu2;   // Twice the shear modulus
   Real lam;   // Lame parameter
+
+  // Equlibrium spring parameters Standard Linear Solid (SLS) model
+  Real E_eq;      // Equlibrium spring young's modulus
+  Real nu_eq;     // Equlibrium spring Poisson's ratio
+  Real lam_eq;    // Equlibrium spring lame parameter
+  Real mu_eq;     // Equlibrium spring shear modulus
+  Real mu2_eq;    // Twice the equlibrium spring shear modulus
+
   //Real kappa; // Bulk modulus
   //Real pmod;  // P-wave modulus
   // Viscous parameters
@@ -56,11 +64,32 @@ class ViscoElasticity {
       std::cout << "Missing material parameter: poissons_ratio" << std::endl;
       exit(EXIT_FAILURE);
     }
+    
+    // Get elastic constants for equilibrium spring
+        if (params.count("youngs_modulus_equilibrium_spring") > 0) {
+      E_eq = params["youngs_modulus_equilibrium_spring"];
+    } else {
+      std::cout << "Missing material parameter: youngs_modulus_equilibrium_spring" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (params.count("poissons_ratio_equilibrium_spring") > 0) {
+      nu_eq = params["poissons_ratio_equilibrium_spring"];
+    } else {
+      std::cout << "Missing material parameter: poissons_ratio_equilibrium_spring" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    
 
     // Compute derived elastic constants
     mu2   = E/(1.0+nu);
     mu    = 0.5*mu2;
     lam   = mu2*nu/(1.0-2.0*nu);
+
+    // Compute derived elastic constants for equilibrium spring
+    mu2_eq   = E_eq/(1.0+nu_eq);
+    mu_eq    = 0.5*mu2_eq;
+    lam_eq   = mu2_eq*nu_eq/(1.0-2.0*nu_eq);
+
     //kappa = lam+0.5*mu2;
     //pmod  = lam+mu2;
 
@@ -130,6 +159,7 @@ class ViscoElasticity {
     // Output: Updated states means updated viscous strain and stress values
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
+      std::cout << "F = [[" << F[0][0] << ", " << F[0][1] << "], "<< "[" << F[1][0] << ", " << F[1][1] << "]]\n";
       std::cout << "ERROR: negative Jacobian" << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -205,17 +235,23 @@ class ViscoElasticity {
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
-    Real C11 = lam + 2.0*mu;
+    
+    // Finding C for Maxwell 
+    Real C11 = lam + mu2;
     Real C12 = lam;
     Real C66 = mu;
+    // Finding C for equilibrium spring
+    Real C11_eq = lam_eq + mu2_eq;
+    Real C12_eq = lam_eq;
+    Real C66_eq = mu_eq;
 
     Real elastic_strain_xx = strain[0] - viscous_strain[0];
     Real elastic_strain_yy = strain[1] - viscous_strain[1];
     Real elastic_strain_xy = strain[2] - viscous_strain[2];
 
-    Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy;
-    Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy;
-    Real stress_xy = C66*elastic_strain_xy;
+    Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy + C11_eq*strain_xx + C12_eq*strain_yy;
+    Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy + C12_eq*strain_xx + C11_eq*strain_yy;
+    Real stress_xy = C66*elastic_strain_xy + C66_eq*strain_xy;
     Real stress[3] = { stress_xx, stress_yy, stress_xy };
 
     // Becasue of being in 2D, explicitly set them to zero
