@@ -168,70 +168,56 @@ class ViscoElasticity {
     Real strain_xx = F[0][0] - 1.0;
     Real strain_yy = F[1][1] - 1.0;
     Real strain_xy = 2*0.5*(F[0][1] + F[1][0]); // engineering gamma_xy                 
-    Real strain[3] = { strain_xx, strain_yy, strain_xy };
-
-    // 2) 2D deviatoric part 
-    //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
-    //Real tr2 = strain_xx + strain_yy;
-    //Real dev_strain[3];
-    //dev_strain[0] = strain_xx - 0.5*tr2;
-    //dev_strain[1] = strain_yy - 0.5*tr2;
-    //dev_strain[2] = strain_xy;
-    //dev2(strain,dev_strain);
-
-    // 2) 2D deviatoric part of previous step strain 
-    //    dev2(e) = e - 0.5*tr2(e)*I2, shears unchanged
-    //Real tr2_previous = strain_previous[0] + strain_previous[1];
-    Real dev_strain_previous[3];
-    //dev_strain_previous[0] = strain_previous[0] - 0.5*tr2;
-    //dev_strain_previous[1] = strain_previous[1] - 0.5*tr2;
-    //dev_strain_previous[2] = strain_previous[2];
-    //dev2(strain_previous,dev_strain_previous);
+ 
 
 
     // 3) Viscous strain main update
-    Real viscous_strain[3]  = { state[9], state[10], state[11] }; // Previous step, viscous strain
-    Real strain_previous[3] = { state[6], state[7],  state[8]  }; // Previous step, strain
+    Real viscous_strain_xx  =  state[9];
+    Real viscous_strain_yy  =  state[10];
+    Real viscous_strain_xy  =  state[11];
+
+    Real previous_strain_xx  =  state[6];
+    Real previous_strain_yy  =  state[7];
+    Real previous_strain_xy  =  state[8];
+    // Define a vector version of previous strain for taking the dev part easier
+    Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
+    Real dev_previous_strain[3];
+
     Real A = std::exp(-std::fabs(dt)/tau);
 
     if (dt >= 0.0) {
-      // Solve for Viscous strain for step n+1
-      //viscous_strain[0] = A*viscous_strain[0] + (1.0 - A)*dev_strain[0];
-      //viscous_strain[1] = A*viscous_strain[1] + (1.0 - A)*dev_strain[1];
-      //viscous_strain[2] = A*viscous_strain[2] + (1.0 - A)*dev_strain[2];
-
       // First step of algorigthm
-      viscous_strain[0] *= A;
-      viscous_strain[1] *= A;
-      viscous_strain[2] *= A;
+      viscous_strain_xx *= A;
+      viscous_strain_yy *= A;
+      viscous_strain_xy *= A;
 
       // Second step eps_prev = eps
-      strain_previous[0] = strain[0];
-      strain_previous[1] = strain[1];
-      strain_previous[2] = strain[2];
+      previous_strain[0] = strain_xx;
+      previous_strain[1] = strain_yy;
+      previous_strain[2] = strain_xy;
 
       // Third step final calculation
-      dev2(strain_previous,dev_strain_previous);
-      viscous_strain[0] += dev_strain_previous[0] * (1.0 - A);
-      viscous_strain[1] += dev_strain_previous[1] * (1.0 - A);
-      viscous_strain[2] += dev_strain_previous[2] * (1.0 - A);
+      dev2(previous_strain,dev_previous_strain);
+      viscous_strain_xx += dev_previous_strain[0] * (1.0 - A);
+      viscous_strain_yy += dev_previous_strain[1] * (1.0 - A);
+      viscous_strain_xy += dev_previous_strain[2] * (1.0 - A);
 
     } else {
       // First step of algorigthm
-      dev2(strain_previous,dev_strain_previous);
-      viscous_strain[0] += - dev_strain_previous[0] * (1.0 - A);
-      viscous_strain[1] += - dev_strain_previous[1] * (1.0 - A);
-      viscous_strain[2] += - dev_strain_previous[2] * (1.0 - A);
+      dev2(previous_strain,dev_previous_strain);
+      viscous_strain_xx += - dev_previous_strain[0] * (1.0 - A);
+      viscous_strain_yy += - dev_previous_strain[1] * (1.0 - A);
+      viscous_strain_xy += - dev_previous_strain[2] * (1.0 - A);
 
       // Second step eps_prev = eps
-      strain_previous[0] = strain[0];
-      strain_previous[1] = strain[1];
-      strain_previous[2] = strain[2];
+      previous_strain[0] = strain_xx;
+      previous_strain[1] = strain_yy;
+      previous_strain[2] = strain_xy;
 
       // Third step 
-      viscous_strain[0] /= A;
-      viscous_strain[1] /= A;
-      viscous_strain[2] /= A;
+      viscous_strain_xx /= A;
+      viscous_strain_yy /= A;
+      viscous_strain_xy /= A;
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
@@ -245,9 +231,9 @@ class ViscoElasticity {
     Real C12_eq = lam_eq;
     Real C66_eq = mu_eq;
 
-    Real elastic_strain_xx = strain[0] - viscous_strain[0];
-    Real elastic_strain_yy = strain[1] - viscous_strain[1];
-    Real elastic_strain_xy = strain[2] - viscous_strain[2];
+    Real elastic_strain_xx = strain_xx - viscous_strain_xx;
+    Real elastic_strain_yy = strain_yy - viscous_strain_yy;
+    Real elastic_strain_xy = strain_xy - viscous_strain_xy;
 
     Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy + C11_eq*strain_xx + C12_eq*strain_yy;
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy + C12_eq*strain_xx + C11_eq*strain_yy;
@@ -262,13 +248,13 @@ class ViscoElasticity {
     state[1] = stress[1];
     state[5] = stress[2];
 
-    state[6] = strain[0];
-    state[7] = strain[1];
-    state[8] = strain[2];
+    state[6] = strain_xx;
+    state[7] = strain_yy;
+    state[8] = strain_xy;
 
-    state[9]  = viscous_strain[0];
-    state[10] = viscous_strain[1];
-    state[11] = viscous_strain[2];
+    state[9]  = viscous_strain_xx;
+    state[10] = viscous_strain_yy;
+    state[11] = viscous_strain_xy;
     psi = 1;
   } // update()
 
