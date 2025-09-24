@@ -238,19 +238,18 @@ class ViscoElasticity {
     Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy + C11_eq*strain_xx + C12_eq*strain_yy;
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy + C12_eq*strain_xx + C11_eq*strain_yy;
     Real stress_xy = C66*elastic_strain_xy + C66_eq*strain_xy;
-    Real stress[3] = { stress_xx, stress_yy, stress_xy };
 
     // Becasue of being in 2D, explicitly set them to zero
     state[2]=0.0; state[3]=0.0; state[4]=0.0;
 
     // Update the states with final results
-    state[0] = stress[0];
-    state[1] = stress[1];
-    state[5] = stress[2];
+    state[0] = stress_xx;
+    state[1] = stress_yy;
+    state[5] = stress_xy;
 
-    state[6] = strain_xx;
-    state[7] = strain_yy;
-    state[8] = strain_xy;
+    state[6] = previous_strain[0];
+    state[7] = previous_strain[1];
+    state[8] = previous_strain[2];
 
     state[9]  = viscous_strain_xx;
     state[10] = viscous_strain_yy;
