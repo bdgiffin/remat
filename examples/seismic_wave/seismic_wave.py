@@ -47,6 +47,10 @@ REMAT.API.define_parameter(b"density",        1.0)
 REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
+# Define equilibrium spring parameters
+REMAT.API.define_parameter(b"youngs_modulus_equilibrium_spring", 2.0)
+REMAT.API.define_parameter(b"poissons_ratio_equilibrium_spring", 0.28)
+
 # Define viscous parameters
 REMAT.API.define_parameter(b"relaxation_time", 0.1)
 
