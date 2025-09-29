@@ -118,7 +118,6 @@ class ViscoElasticity {
   }
     
   // Return the number of state variables for allocation purposes
-  // Extended to store dual components for viscous strain (primal + dual for xx,yy,xy)
  int num_state_vars(void) { return 15; }
 
   // Return the names of all fields
@@ -126,9 +125,7 @@ class ViscoElasticity {
     return std::vector<std::string>({
       "stress_xx","stress_yy","stress_zz","stress_yz","stress_zx","stress_xy",
       "strain_xx","strain_yy","strain_xy",
-      // primal viscous strains
       "viscous_strain_xx","viscous_strain_yy","viscous_strain_xy",
-      // dual parts of viscous strains (stored separately to enable reversible updates)
       "viscous_strain_xx_dual","viscous_strain_yy_dual","viscous_strain_xy_dual"
     });
   }
@@ -147,11 +144,11 @@ class ViscoElasticity {
     state[6] = 0.0;   // strain_xx
     state[7] = 0.0;   // strain_yy
     state[8] = 0.0;   // strain_xy
-    // store primal viscous strains as Fixed_E using save_from/load helpers
+    // store primal viscous strains as Fixed_E
     save_as_Real(Fixed_E(0.0), state[9]);   // viscous_strain_xx (primal)
     save_as_Real(Fixed_E(0.0), state[10]);  // viscous_strain_yy (primal)
     save_as_Real(Fixed_E(0.0), state[11]);  // viscous_strain_xy (primal)
-    // store dual viscous strains (initially zero)
+    // store dual viscous strains as Fixed_E
     save_as_Real(Fixed_E(0.0), state[12]);  // viscous_strain_xx (dual)
     save_as_Real(Fixed_E(0.0), state[13]);  // viscous_strain_yy (dual)
     save_as_Real(Fixed_E(0.0), state[14]);  // viscous_strain_xy (dual)
@@ -191,9 +188,9 @@ class ViscoElasticity {
   load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
   load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
 
-  Dual<Fixed_E> viscous_xx(vs_xx_p, vs_xx_d);
-  Dual<Fixed_E> viscous_yy(vs_yy_p, vs_yy_d);
-  Dual<Fixed_E> viscous_xy(vs_xy_p, vs_xy_d);
+  Dual<Fixed_E> viscous_strain_xx(vs_xx_p, vs_xx_d);
+  Dual<Fixed_E> viscous_strain_yy(vs_yy_p, vs_yy_d);
+  Dual<Fixed_E> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
   Real previous_strain_xx  =  state[6];
   Real previous_strain_yy  =  state[7];
@@ -203,43 +200,49 @@ class ViscoElasticity {
     Real dev_previous_strain[3];
 
   Real A = std::exp(-std::fabs(dt)/tau);
-  // Use Rational for reversible scaling operations
-  Rational rat(A);
+  // Use Rational for reversible operations
+  Rational A_rat(A);
 
     if (dt >= 0.0) {
-      // First step: scale existing viscous history by A (use Rational via Dual)
-      viscous_xx = viscous_xx * rat;
-      viscous_yy = viscous_yy * rat;
-      viscous_xy = viscous_xy * rat;
+      // First step of algorigthm
+      viscous_strain_xx = viscous_strain_xx * A_rat;
+      viscous_strain_yy = viscous_strain_yy * A_rat;
+      viscous_strain_xy = viscous_strain_xy * A_rat;
 
-      // Second step: update previous strain to current
+      // Second step eps_prev = eps
       previous_strain[0] = strain_xx;
       previous_strain[1] = strain_yy;
       previous_strain[2] = strain_xy;
 
-      // Third step: add the deviatoric contribution scaled by (1-A)
+      // Third step final calculation
       dev2(previous_strain,dev_previous_strain);
       Dual<Fixed_E> dxx(Fixed_E(dev_previous_strain[0] * (1.0 - A)), Fixed_E(0.0));
       Dual<Fixed_E> dyy(Fixed_E(dev_previous_strain[1] * (1.0 - A)), Fixed_E(0.0));
       Dual<Fixed_E> dxy(Fixed_E(dev_previous_strain[2] * (1.0 - A)), Fixed_E(0.0));
-      viscous_xx = viscous_xx + dxx;
-      viscous_yy = viscous_yy + dyy;
-      viscous_xy = viscous_xy + dxy;
+      viscous_strain_xx = viscous_strain_xx + dxx;
+      viscous_strain_yy = viscous_strain_yy + dyy;
+      viscous_strain_xy = viscous_strain_xy + dxy;
 
     } else {
-      // Reverse step: subtract deviatoric contribution, then unscale by A
+      // First step of algorigthm
       dev2(previous_strain,dev_previous_strain);
       Dual<Fixed_E> dxx(Fixed_E(dev_previous_strain[0] * (1.0 - A)), Fixed_E(0.0));
       Dual<Fixed_E> dyy(Fixed_E(dev_previous_strain[1] * (1.0 - A)), Fixed_E(0.0));
       Dual<Fixed_E> dxy(Fixed_E(dev_previous_strain[2] * (1.0 - A)), Fixed_E(0.0));
-      viscous_xx = viscous_xx - dxx;
-      viscous_yy = viscous_yy - dyy;
-      viscous_xy = viscous_xy - dxy;
+           
+      viscous_strain_xx = viscous_strain_xx - dxx;
+      viscous_strain_yy = viscous_strain_yy - dyy;
+      viscous_strain_xy = viscous_strain_xy - dxy;
+     
+      // Second step eps_prev = eps
+      previous_strain[0] = strain_xx;
+      previous_strain[1] = strain_yy;
+      previous_strain[2] = strain_xy;
 
-      // Then divide by rat
-      viscous_xx = viscous_xx / rat;
-      viscous_yy = viscous_yy / rat;
-      viscous_xy = viscous_xy / rat;
+      // Third step
+      viscous_strain_xx = viscous_strain_xx / A_rat;
+      viscous_strain_yy = viscous_strain_yy / A_rat;
+      viscous_strain_xy = viscous_strain_xy / A_rat;
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
@@ -253,10 +256,9 @@ class ViscoElasticity {
     Real C12_eq = lam_eq;
     Real C66_eq = mu_eq;
 
-  // Convert fixed/primal viscous values back to Real for stress calculation
-  Real elastic_strain_xx = strain_xx - Real(viscous_xx.first);
-  Real elastic_strain_yy = strain_yy - Real(viscous_yy.first);
-  Real elastic_strain_xy = strain_xy - Real(viscous_xy.first);
+  Real elastic_strain_xx = strain_xx - Real(viscous_strain_xx.first);
+  Real elastic_strain_yy = strain_yy - Real(viscous_strain_yy.first);
+  Real elastic_strain_xy = strain_xy - Real(viscous_strain_xy.first);
 
     Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy + C11_eq*strain_xx + C12_eq*strain_yy;
     Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy + C12_eq*strain_xx + C11_eq*strain_yy;
@@ -270,18 +272,16 @@ class ViscoElasticity {
     state[1] = stress_yy;
     state[5] = stress_xy;
 
-    // Save previous strains (primal Reals)
     state[6] = previous_strain[0];
     state[7] = previous_strain[1];
     state[8] = previous_strain[2];
 
-    // Save viscous primal + dual components to state memory
-    save_as_Real(viscous_xx.first,  state[9]);
-    save_as_Real(viscous_yy.first,  state[10]);
-    save_as_Real(viscous_xy.first,  state[11]);
-    save_as_Real(viscous_xx.second, state[12]);
-    save_as_Real(viscous_yy.second, state[13]);
-    save_as_Real(viscous_xy.second, state[14]);
+    save_as_Real(viscous_strain_xx.first,  state[9]);
+    save_as_Real(viscous_strain_yy.first,  state[10]);
+    save_as_Real(viscous_strain_xy.first,  state[11]);
+    save_as_Real(viscous_strain_xx.second, state[12]);
+    save_as_Real(viscous_strain_yy.second, state[13]);
+    save_as_Real(viscous_strain_xy.second, state[14]);
     psi = 1;
   } // update()
 
@@ -305,6 +305,9 @@ class ViscoElasticity {
     field_data[9]  = state[9];  // viscous_strain_xx
     field_data[10] = state[10]; // viscous_strain_yy
     field_data[11] = state[11]; // viscous_strain_xy
+    field_data[12] = state[12]; // viscous_strain_xx dual
+    field_data[13] = state[13]; // viscous_strain_yy dual
+    field_data[14] = state[14]; // viscous_strain_xy dual
   }
 
   // Return the initial sound speed
