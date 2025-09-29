@@ -20,7 +20,8 @@
 
 // Declare element and material types
 //typedef Element<Material> ElementT;
-typedef Element<ViscoElasticity> ElementT;
+//typedef Element<ViscoElasticity> ElementT;
+typedef Element<ViscoElasticity<Fixed_E,Rational>> ElementT;
 typedef Truss<UniaxialViscoplasticity<Real,Real> >        TrussT_float;
 typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
 //typedef Truss<UniaxialMaterial> TrussT_float;
