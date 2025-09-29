@@ -220,9 +220,9 @@ class ViscoElasticity {
 
       // Third step final calculation
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A), 0.0);
       viscous_strain_xx = viscous_strain_xx + dxx;
       viscous_strain_yy = viscous_strain_yy + dyy;
       viscous_strain_xy = viscous_strain_xy + dxy;
@@ -230,9 +230,9 @@ class ViscoElasticity {
     } else {
       // First step of algorigthm
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A), 0.0);
            
       viscous_strain_xx = viscous_strain_xx - dxx;
       viscous_strain_yy = viscous_strain_yy - dyy;
