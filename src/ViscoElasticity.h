@@ -8,7 +8,11 @@
 #include "Dual.h"
 #include "Fixed.h"
 #include "Rational.h"
+#include <limits>
+#include "types.h"
 
+
+template<class FixedE, class Ratio>
 class ViscoElasticity {
  protected:
   Real rho;   // Mass density
@@ -145,13 +149,13 @@ class ViscoElasticity {
     state[7] = 0.0;   // strain_yy
     state[8] = 0.0;   // strain_xy
     // store primal viscous strains as Fixed_E
-    save_as_Real(Fixed_E(0.0), state[9]);   // viscous_strain_xx (primal)
-    save_as_Real(Fixed_E(0.0), state[10]);  // viscous_strain_yy (primal)
-    save_as_Real(Fixed_E(0.0), state[11]);  // viscous_strain_xy (primal)
+    save_as_Real(FixedE(0.0), state[9]);   // viscous_strain_xx (primal)
+    save_as_Real(FixedE(0.0), state[10]);  // viscous_strain_yy (primal)
+    save_as_Real(FixedE(0.0), state[11]);  // viscous_strain_xy (primal)
     // store dual viscous strains as Fixed_E
-    save_as_Real(Fixed_E(0.0), state[12]);  // viscous_strain_xx (dual)
-    save_as_Real(Fixed_E(0.0), state[13]);  // viscous_strain_yy (dual)
-    save_as_Real(Fixed_E(0.0), state[14]);  // viscous_strain_xy (dual)
+    save_as_Real(FixedE(0.0), state[12]);  // viscous_strain_xx (dual)
+    save_as_Real(FixedE(0.0), state[13]);  // viscous_strain_yy (dual)
+    save_as_Real(FixedE(0.0), state[14]);  // viscous_strain_xy (dual)
   } // initialize()
 
   // Do we have to keep this?
@@ -181,27 +185,27 @@ class ViscoElasticity {
 
 
   // 3) Viscous strain main update -- load dual/fixed stored values
-  Fixed_E vs_xx_p, vs_xx_d;
-  Fixed_E vs_yy_p, vs_yy_d;
-  Fixed_E vs_xy_p, vs_xy_d;
+  FixedE vs_xx_p, vs_xx_d;
+  FixedE vs_yy_p, vs_yy_d;
+  FixedE vs_xy_p, vs_xy_d;
   load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
   load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
   load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
 
-  Dual<Fixed_E> viscous_strain_xx(vs_xx_p, vs_xx_d);
-  Dual<Fixed_E> viscous_strain_yy(vs_yy_p, vs_yy_d);
-  Dual<Fixed_E> viscous_strain_xy(vs_xy_p, vs_xy_d);
+  Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
+  Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
+  Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
   Real previous_strain_xx  =  state[6];
   Real previous_strain_yy  =  state[7];
   Real previous_strain_xy  =  state[8];
-    // Define a vector version of previous strain for taking the dev part easier
-    Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
-    Real dev_previous_strain[3];
+  // Define a vector version of previous strain for taking the dev part easier
+  Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
+  Real dev_previous_strain[3];
 
   Real A = std::exp(-std::fabs(dt)/tau);
   // Use Rational for reversible operations
-  Rational A_rat(A);
+  Ratio A_rat(A);
 
     if (dt >= 0.0) {
       // First step of algorigthm
@@ -216,9 +220,9 @@ class ViscoElasticity {
 
       // Third step final calculation
       dev2(previous_strain,dev_previous_strain);
-      Dual<Fixed_E> dxx(Fixed_E(dev_previous_strain[0] * (1.0 - A)), Fixed_E(0.0));
-      Dual<Fixed_E> dyy(Fixed_E(dev_previous_strain[1] * (1.0 - A)), Fixed_E(0.0));
-      Dual<Fixed_E> dxy(Fixed_E(dev_previous_strain[2] * (1.0 - A)), Fixed_E(0.0));
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
       viscous_strain_xx = viscous_strain_xx + dxx;
       viscous_strain_yy = viscous_strain_yy + dyy;
       viscous_strain_xy = viscous_strain_xy + dxy;
@@ -226,9 +230,9 @@ class ViscoElasticity {
     } else {
       // First step of algorigthm
       dev2(previous_strain,dev_previous_strain);
-      Dual<Fixed_E> dxx(Fixed_E(dev_previous_strain[0] * (1.0 - A)), Fixed_E(0.0));
-      Dual<Fixed_E> dyy(Fixed_E(dev_previous_strain[1] * (1.0 - A)), Fixed_E(0.0));
-      Dual<Fixed_E> dxy(Fixed_E(dev_previous_strain[2] * (1.0 - A)), Fixed_E(0.0));
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
            
       viscous_strain_xx = viscous_strain_xx - dxx;
       viscous_strain_yy = viscous_strain_yy - dyy;
