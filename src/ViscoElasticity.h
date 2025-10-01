@@ -31,7 +31,7 @@ class ViscoElasticity {
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
  private:
- 
+
   // Deviatoric projector in 2D
   inline void dev2(Real e[3], Real out[3]) {
     Real tr2 = e[0] + e[1];
@@ -83,10 +83,10 @@ class ViscoElasticity {
 
     // Visco parameters
      // Get deviatoric/shear stiffness of Maxwell element spring (no bulk stiffness for Maxwell element)
-    if (params.count("shear_stiffness_Maxwell_element") > 0) {
-      mu_e = params["shear_stiffness_Maxwell_element"];
+    if (params.count("shear_modulus_Maxwell_element") > 0) {
+      mu_e = params["shear_modulus_Maxwell_element"];
     } else {
-      std::cout << "Missing material parameter: shear_stiffness_Maxwell_element" << std::endl;
+      std::cout << "Missing material parameter: shear_modulus_Maxwell_element" << std::endl;
       exit(EXIT_FAILURE);
     }
 

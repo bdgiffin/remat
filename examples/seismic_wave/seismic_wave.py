@@ -47,12 +47,10 @@ REMAT.API.define_parameter(b"density",        1.0)
 REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
-# Define equilibrium spring parameters
-REMAT.API.define_parameter(b"youngs_modulus_equilibrium_spring", 2.0)
-REMAT.API.define_parameter(b"poissons_ratio_equilibrium_spring", 0.28)
 
 # Define viscous parameters
 REMAT.API.define_parameter(b"relaxation_time", 0.1)
+REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", 2.0) 
 
 # Set the integrator type: "float" (default), or "fixed"
 REMAT.API.set_integrator_type(b"float")
@@ -98,7 +96,7 @@ REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_
 # set analysis time-stepping parameters
 dt = 0.25e-2 # [s] time increment
 step_id = 0
-Nsteps = 100
+Nsteps = 10
 Nsub_steps = 10
 
 if (not sys.platform == "emscripten"):
