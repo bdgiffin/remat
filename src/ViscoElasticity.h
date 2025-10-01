@@ -22,19 +22,16 @@ class ViscoElasticity {
   Real mu2;   // Twice the shear modulus
   Real lam;   // Lame parameter
 
-  // Equlibrium spring parameters Standard Linear Solid (SLS) model
-  Real E_eq;      // Equlibrium spring young's modulus
-  Real nu_eq;     // Equlibrium spring Poisson's ratio
-  Real lam_eq;    // Equlibrium spring lame parameter
-  Real mu_eq;     // Equlibrium spring shear modulus
-  Real mu2_eq;    // Twice the equlibrium spring shear modulus
-
   //Real kappa; // Bulk modulus
   //Real pmod;  // P-wave modulus
+  
   // Viscous parameters
+  Real mu_e;   // Shear modulus of the Maxwell element spring
+  Real mu2_e;  // Twice the shear modulus of the Maxwell element spring
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
  private:
+ 
   // Deviatoric projector in 2D
   inline void dev2(Real e[3], Real out[3]) {
     Real tr2 = e[0] + e[1];
@@ -72,13 +69,7 @@ class ViscoElasticity {
       exit(EXIT_FAILURE);
     }
 
-    // Get deviatoric/shear stiffness of Maxwell element spring (no bulk stiffness for Maxwell element)
-    if (params.count("shear_stiffness_Maxwell_element") > 0) {
-      mu_e = params["shear_stiffness_Maxwell_element"];
-    } else {
-      std::cout << "Missing material parameter: shear_stiffness_Maxwell_element" << std::endl;
-      exit(EXIT_FAILURE);
-    }
+
     
 
     // Compute derived elastic constants 
@@ -86,15 +77,24 @@ class ViscoElasticity {
     mu    = 0.5*mu2;
     lam   = mu2*nu/(1.0-2.0*nu);
 
-    // Compute shear constant for Maxwell element
-    mu2_e    = 2*mu_e;
 
     //kappa = lam+0.5*mu2;
     //pmod  = lam+mu2;
 
     // Visco parameters
+     // Get deviatoric/shear stiffness of Maxwell element spring (no bulk stiffness for Maxwell element)
+    if (params.count("shear_stiffness_Maxwell_element") > 0) {
+      mu_e = params["shear_stiffness_Maxwell_element"];
+    } else {
+      std::cout << "Missing material parameter: shear_stiffness_Maxwell_element" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
+    // Compute shear constant for Maxwell element
+    mu2_e    = 2*mu_e;
+
     // Gets either relatxation_time or viscosity
-    // relatxation_time = viscosity / G
+    // relatxation_time = viscosity / G (G = mu_e here)
     // If both provided, relaxation_time wins
     if (params.count("relaxation_time") > 0) {
       tau = params["relaxation_time"];
@@ -250,9 +250,9 @@ class ViscoElasticity {
     // Maxwell branch (deviatoric only): sigma_M = 2*mu_e (deviatoric part of current strain - viscous part)
     // The reason why the previous_strain is used is that the current strain is poured into the previous_strain at this point. (after the update function)
     dev2(previous_strain,dev_previous_strain);
-    Real stress_xx_Maxwell = 2.0*mu_e*(dev_previous_strain[0] - Real(viscous_strain_xx.first));
-    Real stress_yy_Maxwell = 2.0*mu_e*(dev_previous_strain[1] - Real(viscous_strain_yy.first));
-    Real stress_xy_Maxwell =     mu_e*(dev_previous_strain[2] - Real(viscous_strain_xy.first));
+    Real stress_xx_Maxwell = mu2_e*(dev_previous_strain[0] - Real(viscous_strain_xx.first));
+    Real stress_yy_Maxwell = mu2_e*(dev_previous_strain[1] - Real(viscous_strain_yy.first));
+    Real stress_xy_Maxwell =  mu_e*(dev_previous_strain[2] - Real(viscous_strain_xy.first));
 
     // total stress = equilibrium + Maxwell deviatoric
     Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
