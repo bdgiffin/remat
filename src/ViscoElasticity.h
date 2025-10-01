@@ -315,12 +315,12 @@ class ViscoElasticity {
     field_data[6]  = state[6];  // strain_xx
     field_data[7]  = state[7];  // strain_yy
     field_data[8]  = state[8];  // strain_xy
-    field_data[9]  = state[9];  // viscous_strain_xx
-    field_data[10] = state[10]; // viscous_strain_yy
-    field_data[11] = state[11]; // viscous_strain_xy
-    field_data[12] = state[12]; // viscous_strain_xx dual
-    field_data[13] = state[13]; // viscous_strain_yy dual
-    field_data[14] = state[14]; // viscous_strain_xy dual
+    load_from_Real(state[9] ,temp); field_data[9]  = Real(temp); // viscous_strain_xx
+    load_from_Real(state[10],temp); field_data[10] = Real(temp); // viscous_strain_yy
+    load_from_Real(state[11],temp); field_data[11] = Real(temp); // viscous_strain_xy
+    load_from_Real(state[12],temp); field_data[12] = Real(temp); // viscous_strain_xx dual
+    load_from_Real(state[13],temp); field_data[13] = Real(temp); // viscous_strain_yy dual
+    load_from_Real(state[14],temp); field_data[14] = Real(temp); // viscous_strain_xy dual
   }
 
   // Return the initial sound speed
