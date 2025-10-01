@@ -250,9 +250,13 @@ class ViscoElasticity {
     // Maxwell branch (deviatoric only): sigma_M = 2*mu_e (deviatoric part of current strain - viscous part)
     // The reason why the previous_strain is used is that the current strain is poured into the previous_strain at this point. (after the update function)
     dev2(previous_strain,dev_previous_strain);
-    Real stress_xx_Maxwell = mu2_e*(dev_previous_strain[0] - Real(viscous_strain_xx.first));
-    Real stress_yy_Maxwell = mu2_e*(dev_previous_strain[1] - Real(viscous_strain_yy.first));
-    Real stress_xy_Maxwell =  mu_e*(dev_previous_strain[2] - Real(viscous_strain_xy.first));
+    Real dev_elastic_strain_xx = dev_previous_strain[0] - Real(viscous_strain_xx.first);
+    Real dev_elastic_strain_yy = dev_previous_strain[1] - Real(viscous_strain_yy.first);
+    Real dev_elastic_strain_xy = dev_previous_strain[2] - Real(viscous_strain_xy.first);
+
+    Real stress_xx_Maxwell = mu2_e*(dev_elastic_strain_xx);
+    Real stress_yy_Maxwell = mu2_e*(dev_elastic_strain_yy);
+    Real stress_xy_Maxwell =  mu_e*(dev_elastic_strain_xy);
 
     // total stress = equilibrium + Maxwell deviatoric
     Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
@@ -277,7 +281,21 @@ class ViscoElasticity {
     save_as_Real(viscous_strain_xx.second, state[12]);
     save_as_Real(viscous_strain_yy.second, state[13]);
     save_as_Real(viscous_strain_xy.second, state[14]);
-    psi = 1;
+
+    // elastic strain energy density
+    // Because at this point we have the stress and total strain, we can compute the energy as 0.5*sigma:eps
+    // Note that the shear strain is engineering shear strain
+    // Elastic strain-energy density (springs only; dashpot excluded)
+    Real psi_eq       = 0.5*(stress_xx_eq*strain_xx
+                           + stress_yy_eq*strain_yy 
+                           + stress_xy_eq*strain_xy);
+    // elastic strain-energy density in Maxwell element
+    Real psi_Maxwell  = 0.5*(stress_xx_Maxwell*dev_elastic_strain_xx
+                           + stress_yy_Maxwell*dev_elastic_strain_yy
+                           + stress_xy_Maxwell*dev_elastic_strain_xy);
+
+    // Total elastic strain-energy density
+    psi = psi_eq + psi_Maxwell;
   } // update()
 
   // Conditionally load material history parameters from memory
