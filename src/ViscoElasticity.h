@@ -77,7 +77,7 @@ class ViscoElasticity {
     mu    = 0.5*mu2;
     lam   = mu2*nu/(1.0-2.0*nu);
 
-
+    // 2D relations
     //kappa = lam+0.5*mu2;
     //pmod  = lam+mu2;
 
@@ -91,7 +91,7 @@ class ViscoElasticity {
     }
 
     // Compute shear constant for Maxwell element
-    mu2_e    = 2*mu_e;
+    mu2_e    = 2.0*mu_e;
 
     // Gets either relatxation_time or viscosity
     // relatxation_time = viscosity / G (G = mu_e here)
@@ -114,7 +114,7 @@ class ViscoElasticity {
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 15; }
+ int num_state_vars(void) { return 16; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -122,7 +122,8 @@ class ViscoElasticity {
       "stress_xx","stress_yy","stress_zz","stress_yz","stress_zx","stress_xy",
       "strain_xx","strain_yy","strain_xy",
       "viscous_strain_xx","viscous_strain_yy","viscous_strain_xy",
-      "viscous_strain_xx_dual","viscous_strain_yy_dual","viscous_strain_xy_dual"
+      "viscous_strain_xx_dual","viscous_strain_yy_dual","viscous_strain_xy_dual",
+      "stiffness_scaling_factor"
     });
   }
 
@@ -148,13 +149,14 @@ class ViscoElasticity {
     save_as_Real(FixedE(0.0), state[12]);  // viscous_strain_xx (dual)
     save_as_Real(FixedE(0.0), state[13]);  // viscous_strain_yy (dual)
     save_as_Real(FixedE(0.0), state[14]);  // viscous_strain_xy (dual)
+    state[15] = 1.0; // stiffness_scaling_factor
   } // initialize()
 
   // Do we have to keep this?
   // Initialize variable material properties
   void initialize_variable_properties(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
-    // state[7] = function_xy(x[0],x[1]);
+    state[15] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
 
   // Update the material state using the current deformation gradient F
@@ -172,7 +174,7 @@ class ViscoElasticity {
     // 1) 2D small strain (engineering shear)
     Real strain_xx = F[0][0] - 1.0;
     Real strain_yy = F[1][1] - 1.0;
-    Real strain_xy = 2*0.5*(F[0][1] + F[1][0]); // engineering gamma_xy                 
+    Real strain_xy = 2.0*0.5*(F[0][1] + F[1][0]); // engineering gamma_xy                 
  
 
 
@@ -242,10 +244,21 @@ class ViscoElasticity {
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
+    Real stiffness_scaling_factor = state[15];
+
+    // Scaled equilibrium stiffnesses
+    Real mu2_scaled = stiffness_scaling_factor * mu2;
+    Real mu_scaled  = stiffness_scaling_factor * mu;
+    // Scaled first Lame parameter (Watch out this is only exact for 2D)
+    Real lam_scaled = stiffness_scaling_factor * lam;
+    // Apply scaling to the Maxwell shear stiffness as well
+    Real mu2_e_scaled = stiffness_scaling_factor * mu2_e;
+    Real mu_e_scaled  = stiffness_scaling_factor * mu_e;
+
     // Equilibrium (long-time) stress: full isotropic Hooke in 2D
-    Real stress_xx_eq = (lam + mu2)*strain_xx + lam*strain_yy;
-    Real stress_yy_eq = lam* strain_xx + (lam + mu2)*strain_yy;
-    Real stress_xy_eq = mu * strain_xy;
+    Real stress_xx_eq = (lam_scaled + mu2_scaled)*strain_xx + lam_scaled*strain_yy;
+    Real stress_yy_eq = lam_scaled* strain_xx + (lam_scaled + mu2_scaled)*strain_yy;
+    Real stress_xy_eq = mu_scaled * strain_xy;
 
     // Maxwell branch (deviatoric only): sigma_M = 2*mu_e (deviatoric part of current strain - viscous part)
     // The reason why the previous_strain is used is that the current strain is poured into the previous_strain at this point. (after the update function)
@@ -254,9 +267,9 @@ class ViscoElasticity {
     Real dev_elastic_strain_yy = dev_previous_strain[1] - Real(viscous_strain_yy.first);
     Real dev_elastic_strain_xy = dev_previous_strain[2] - Real(viscous_strain_xy.first);
 
-    Real stress_xx_Maxwell = mu2_e*(dev_elastic_strain_xx);
-    Real stress_yy_Maxwell = mu2_e*(dev_elastic_strain_yy);
-    Real stress_xy_Maxwell =  mu_e*(dev_elastic_strain_xy);
+    Real stress_xx_Maxwell = mu2_e_scaled*(dev_elastic_strain_xx);
+    Real stress_yy_Maxwell = mu2_e_scaled*(dev_elastic_strain_yy);
+    Real stress_xy_Maxwell = mu_e_scaled*(dev_elastic_strain_xy);
 
     // total stress = equilibrium + Maxwell deviatoric
     Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
@@ -322,6 +335,7 @@ class ViscoElasticity {
     load_from_Real(state[12],temp); field_data[12] = Real(temp); // viscous_strain_xx dual
     load_from_Real(state[13],temp); field_data[13] = Real(temp); // viscous_strain_yy dual
     load_from_Real(state[14],temp); field_data[14] = Real(temp); // viscous_strain_xy dual
+    field_data[15] = state[15]; // stiffness_scaling_factor
   }
 
   // Return the initial sound speed
