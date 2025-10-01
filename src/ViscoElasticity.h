@@ -315,6 +315,7 @@ class ViscoElasticity {
     field_data[6]  = state[6];  // strain_xx
     field_data[7]  = state[7];  // strain_yy
     field_data[8]  = state[8];  // strain_xy
+    FixedE temp;
     load_from_Real(state[9] ,temp); field_data[9]  = Real(temp); // viscous_strain_xx
     load_from_Real(state[10],temp); field_data[10] = Real(temp); // viscous_strain_yy
     load_from_Real(state[11],temp); field_data[11] = Real(temp); // viscous_strain_xy
