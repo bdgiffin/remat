@@ -89,14 +89,14 @@ coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = mo
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
 # Define variable material properties
-#REMAT.define_variable_properties(lambda x, y: 1.0 - 0.5*(y > 0.5 + 0.07*(x-5.0)) + 0.4*(y > 1.0 - 0.07**(x-5.0)) - 0.5*(y > 1.5 + 0.1*(x-5.0)) + 0.25*(y > 2.0 + 0.05*(x-5.0)) + 0.5*(y > 2.5 - 0.02*(x-5.0)))
+REMAT.define_variable_properties(lambda x, y: 1.0 - 0.5*(y > 0.5 + 0.07*(x-5.0)) + 0.4*(y > 1.0 - 0.07**(x-5.0)) - 0.5*(y > 1.5 + 0.1*(x-5.0)) + 0.25*(y > 2.0 + 0.05*(x-5.0)) + 0.5*(y > 2.5 - 0.02*(x-5.0)))
 
 # Run analysis -------------------------------------------------------------
 
 # set analysis time-stepping parameters
 dt = 0.25e-2 # [s] time increment
 step_id = 0
-Nsteps = 10
+Nsteps = 30
 Nsub_steps = 10
 
 if (not sys.platform == "emscripten"):
