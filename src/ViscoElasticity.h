@@ -58,7 +58,7 @@ class ViscoElasticity {
       exit(EXIT_FAILURE);
     }
 
-    // Get primary elastic constants
+    // Get primary elastic constants ("equilibrium" stiffness parameters)
     if (params.count("youngs_modulus") > 0) {
       E = params["youngs_modulus"];
     } else {
@@ -71,31 +71,23 @@ class ViscoElasticity {
       std::cout << "Missing material parameter: poissons_ratio" << std::endl;
       exit(EXIT_FAILURE);
     }
-    
-    // Get elastic constants for equilibrium spring
-        if (params.count("youngs_modulus_equilibrium_spring") > 0) {
-      E_eq = params["youngs_modulus_equilibrium_spring"];
+
+    // Get deviatoric/shear stiffness of Maxwell element spring (no bulk stiffness for Maxwell element)
+    if (params.count("shear_stiffness_Maxwell_element") > 0) {
+      mu_e = params["shear_stiffness_Maxwell_element"];
     } else {
-      std::cout << "Missing material parameter: youngs_modulus_equilibrium_spring" << std::endl;
-      exit(EXIT_FAILURE);
-    }
-    if (params.count("poissons_ratio_equilibrium_spring") > 0) {
-      nu_eq = params["poissons_ratio_equilibrium_spring"];
-    } else {
-      std::cout << "Missing material parameter: poissons_ratio_equilibrium_spring" << std::endl;
+      std::cout << "Missing material parameter: shear_stiffness_Maxwell_element" << std::endl;
       exit(EXIT_FAILURE);
     }
     
 
-    // Compute derived elastic constants
+    // Compute derived elastic constants 
     mu2   = E/(1.0+nu);
     mu    = 0.5*mu2;
     lam   = mu2*nu/(1.0-2.0*nu);
 
-    // Compute derived elastic constants for equilibrium spring
-    mu2_eq   = E_eq/(1.0+nu_eq);
-    mu_eq    = 0.5*mu2_eq;
-    lam_eq   = mu2_eq*nu_eq/(1.0-2.0*nu_eq);
+    // Compute shear constant for Maxwell element
+    mu2_e    = 2*mu_e;
 
     //kappa = lam+0.5*mu2;
     //pmod  = lam+mu2;
@@ -109,7 +101,7 @@ class ViscoElasticity {
     } else {
       if (params.count("viscosity") > 0) {
         eta = params["viscosity"];
-        tau = eta / mu;
+        tau = eta / mu_e;
       } else {      
         std::cout << "Missing viscous parameters: relaxation_time" << std::endl;
         exit(EXIT_FAILURE);
@@ -220,9 +212,9 @@ class ViscoElasticity {
 
       // Third step final calculation
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A), 0.0);
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
       viscous_strain_xx = viscous_strain_xx + dxx;
       viscous_strain_yy = viscous_strain_yy + dyy;
       viscous_strain_xy = viscous_strain_xy + dxy;
@@ -230,9 +222,9 @@ class ViscoElasticity {
     } else {
       // First step of algorigthm
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A), 0.0);
+      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
            
       viscous_strain_xx = viscous_strain_xx - dxx;
       viscous_strain_yy = viscous_strain_yy - dyy;
@@ -250,23 +242,22 @@ class ViscoElasticity {
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
-    
-    // Finding C for Maxwell 
-    Real C11 = lam + mu2;
-    Real C12 = lam;
-    Real C66 = mu;
-    // Finding C for equilibrium spring
-    Real C11_eq = lam_eq + mu2_eq;
-    Real C12_eq = lam_eq;
-    Real C66_eq = mu_eq;
+    // Equilibrium (long-time) stress: full isotropic Hooke in 2D
+    Real stress_xx_eq = (lam + mu2)*strain_xx + lam*strain_yy;
+    Real stress_yy_eq = lam* strain_xx + (lam + mu2)*strain_yy;
+    Real stress_xy_eq = mu * strain_xy;
 
-  Real elastic_strain_xx = strain_xx - Real(viscous_strain_xx.first);
-  Real elastic_strain_yy = strain_yy - Real(viscous_strain_yy.first);
-  Real elastic_strain_xy = strain_xy - Real(viscous_strain_xy.first);
+    // Maxwell branch (deviatoric only): sigma_M = 2*mu_e (deviatoric part of current strain - viscous part)
+    // The reason why the previous_strain is used is that the current strain is poured into the previous_strain at this point. (after the update function)
+    dev2(previous_strain,dev_previous_strain);
+    Real stress_xx_Maxwell = 2.0*mu_e*(dev_previous_strain[0] - Real(viscous_strain_xx.first));
+    Real stress_yy_Maxwell = 2.0*mu_e*(dev_previous_strain[1] - Real(viscous_strain_yy.first));
+    Real stress_xy_Maxwell =     mu_e*(dev_previous_strain[2] - Real(viscous_strain_xy.first));
 
-    Real stress_xx = C11*elastic_strain_xx + C12*elastic_strain_yy + C11_eq*strain_xx + C12_eq*strain_yy;
-    Real stress_yy = C12*elastic_strain_xx + C11*elastic_strain_yy + C12_eq*strain_xx + C11_eq*strain_yy;
-    Real stress_xy = C66*elastic_strain_xy + C66_eq*strain_xy;
+    // total stress = equilibrium + Maxwell deviatoric
+    Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
+    Real stress_yy = stress_yy_eq + stress_yy_Maxwell;
+    Real stress_xy = stress_xy_eq + stress_xy_Maxwell;
 
     // Becasue of being in 2D, explicitly set them to zero
     state[2]=0.0; state[3]=0.0; state[4]=0.0;
