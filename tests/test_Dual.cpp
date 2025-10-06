@@ -24,17 +24,18 @@ TEST(test_Dual, constructors) {
 TEST(test_Dual, arithmetic) {
   FixedE6 a = +5.0/6.0;
   FixedE6 b =-17.0/12.0;
-  DualE6  c = DualE6(-b,a);
+  FixedE6 mb=-b;
+  DualE6  c = DualE6(mb,a);
   DualE6  d = DualE6(a,b);
   Integer i = 5;
   // Test basic arithmetic operations between two Dual numbers
-  ASSERT_EQ(c+d,DualE6(-b+a,a+b));
-  ASSERT_EQ(c-d,DualE6(-b-a,a-b));
+  ASSERT_EQ(c+d,DualE6(mb+a,a+b));
+  ASSERT_EQ(c-d,DualE6(mb-a,a-b));
   // Test basic arithemtic operations between a Dual number and an Integer
-  ASSERT_EQ(c*i,DualE6(-b*i+a%i,a/i));
-  ASSERT_EQ(c/i,DualE6(-b/i,a*i-b%i));
-  ASSERT_EQ(d*i,DualE6(a*i-b%i,b/i));
-  ASSERT_EQ(d/i,DualE6(a/i,b*i-a%i));
+  ASSERT_EQ(c*i,DualE6(mb*i+a%i,a/i));
+  ASSERT_EQ(c/i,DualE6(mb/i,a*i+mb%i));
+  ASSERT_EQ(d*i,DualE6(a*i+b%i,b/i));
+  ASSERT_EQ(d/i,DualE6(a/i,b*i+a%i));
 } /* TEST(test_Dual, arithmetic) */
 
 TEST(test_Dual, reversibility) {

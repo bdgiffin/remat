@@ -5,6 +5,7 @@
 #include <iostream>
 #include <math.h>
 #include <cmath>
+#include <tuple>
 
 template<int RADIX = 10, int EXPONENT = 0>
 struct Fixed {
@@ -26,8 +27,33 @@ struct Fixed {
 
   // basic arithmetic operations between a Fixed-precision number and an Integer
   Fixed<RADIX,EXPONENT> operator*(Integer const multiplier) const { return Fixed<RADIX,EXPONENT>(mantissa*multiplier); }
-  Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
-  Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
+  Fixed<RADIX,EXPONENT> operator/(Integer const divisor) const { 
+    // Euclidean division
+    Integer quotient  = mantissa/divisor;
+    Integer remainder = mantissa%divisor;
+    if (remainder < 0) {
+      if (divisor > 0) {
+	quotient = quotient - 1;
+      } else {
+	quotient = quotient + 1;
+      }
+    }
+    return Fixed<RADIX,EXPONENT>(quotient);
+  }
+  Fixed<RADIX,EXPONENT> operator%(Integer const divisor) const {
+    // Euclidean division
+    Integer remainder = mantissa%divisor;
+    if (remainder < 0) {
+      if (divisor > 0) {
+	remainder = remainder + divisor;
+      } else {
+	remainder = remainder - divisor;
+      }
+    }
+    return Fixed<RADIX,EXPONENT>(remainder);
+  }
+  //Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
+  //Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
 
   // basic arithmetic operations between a Fixed-precision number and a Real (floating point) number
   Fixed<RADIX,EXPONENT> operator*(Real const multiplier) const { return Fixed<RADIX,EXPONENT>(Integer(mantissa*multiplier)); }
@@ -42,16 +68,43 @@ struct Fixed {
   bool operator==(Fixed<RADIX,EXPONENT> const other) const { return (mantissa == other.mantissa); }
   bool operator!=(Fixed<RADIX,EXPONENT> const other) const { return (mantissa != other.mantissa); }
 
-  // Modify the a value with the sign of the provided argument
-  //copysign(Fixed<RADIX,EXPONENT> value) {
-  //  if        (value.mantissa < 0) {
-  //    return Fixed<RADIX,EXPONENT>(-std::abs(mantissa));
-  //  } else if (value.mantissa > 0) {
-  //    return Fixed<RADIX,EXPONENT>( std::abs(mantissa));
-  //  } else { // if the incoming value is zero, keep the sign of the mantissa
-  //    return Fixed<RADIX,EXPONENT>(mantissa);
-  //  }
-  //}
+  // Implementations for Euclidean and floored division adapted from: 
+  // "Division and Modulus for Computer Scientists" - Daan Leijen (2001)
+  // https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf
+
+  /* Truncated division */
+  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodT(Integer const divisor) const {
+    Integer quotient  = mantissa/divisor;
+    Integer remainder = mantissa - quotient*divisor;
+    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
+  }
+
+  /* Euclidean division */
+  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodE(Integer const divisor) const {
+    Integer quotient  = mantissa/divisor;
+    Integer remainder = mantissa%divisor;
+    if (remainder < 0) {
+      if (divisor > 0) {
+	quotient  -= 1;
+	remainder += divisor;
+      } else {
+	quotient  += 1;
+	remainder -= divisor;
+      }
+    }
+    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
+  }
+  
+  /* Floored division */
+  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodF(Integer const divisor) const {
+    Integer quotient  = mantissa/divisor;
+    Integer remainder = mantissa%divisor;
+    if ((remainder > 0 && divisor < 0) || (remainder < 0 && divisor > 0)) {
+      quotient  -= 1;
+      remainder += divisor;
+    }
+    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
+  }
 
 private:
   
@@ -66,11 +119,11 @@ typedef Fixed<10,-6> Fixed_U;
 typedef Fixed<10,-6> Fixed_E;
 
 // Declare conversion to/from a Real value
-void load_from_Real(Real value, Fixed_E &load_value) {
+inline void load_from_Real(Real value, Fixed_E &load_value) {
   //std::memcpy(&(load_value.mantissa),&value,sizeof(Integer));
   load_value.mantissa = Integer(value);
 }
-void save_as_Real(Fixed_E value, Real& save_value) {
+inline void save_as_Real(Fixed_E value, Real& save_value) {
   //std::memcpy(&save_value,&(value.mantissa),sizeof(Integer));
   save_value = value.mantissa;
 }
@@ -87,6 +140,17 @@ inline Fixed<10,-6> copysign(Fixed<10,-6> magnitude, Fixed<10,-6> signed_value) 
     signed_magnitude.mantissa =  std::abs(signed_magnitude.mantissa);
   } // if the incoming signed_value is zero, keep the sign of the first argument
   return signed_magnitude;
+}
+
+// Return a value with the magnitude of the first argument and the sign of the second argument
+inline Fixed<10,-6> abs(Fixed<10,-6> signed_value) {
+  Fixed<10,-6> magnitude = signed_value;
+  if        (signed_value.mantissa < 0) {
+    magnitude.mantissa = -std::abs(magnitude.mantissa);
+  } else if (signed_value.mantissa > 0) {
+    magnitude.mantissa =  std::abs(magnitude.mantissa);
+  }
+  return magnitude;
 }
 
 #endif // FIXED_H
