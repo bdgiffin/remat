@@ -105,14 +105,13 @@ class Animation:
         # Draw solid elements
         connectivity = np.zeros((num_elems,4),dtype=np.int32)
         REMAT.API.get_connectivity(b"element",connectivity)
-        if (self.element_color == "pressure"):
-            pressure = REMAT.get_field(b"element","pressure")
+        element_field = REMAT.get_field(b"element",self.element_color)
         for e in range(0,num_elems):
             points = 100*coords[connectivity[e,:],:]
             points[:,1] = 600 - points[:,1]
-            if (self.element_color == "pressure"):
-                p1 = min(max(-pressure[e],0)/self.element_field_max,1.0)
-                p2 = min(max(+pressure[e],0)/self.element_field_max,1.0)
+            if (element_field is not None):
+                p1 = min(max(-element_field[e],0)/self.element_field_max,1.0)
+                p2 = min(max(+element_field[e],0)/self.element_field_max,1.0)
                 color = (255*(1.0-p2),255*(1.0-p1-p2),255*(1.0-p1))
             else:
                 color = self.element_color
@@ -123,15 +122,14 @@ class Animation:
         # Draw truss elements
         connectivity = np.zeros((num_truss,2),dtype=np.int32)
         REMAT.API.get_connectivity(b"truss",connectivity)
-        if (self.truss_color == "equivalent_plastic_strain"):
-            eqps = REMAT.get_field(b"truss","equivalent_plastic_strain")
+        truss_field = REMAT.get_field(b"truss",self.truss_color)
         is_dead = REMAT.get_field(b"truss","steps_since_element_death")
         for e in range(0,num_truss):
             if (not is_dead[e]):
                 points = 100*coords[connectivity[e,:],:]
                 points[:,1] = 600 - points[:,1]
-                if (self.truss_color == "equivalent_plastic_strain"):
-                    p1 = min(max(eqps[e]/self.truss_field_max,0.0),1.0)
+                if (truss_field is not None):
+                    p1 = min(max(truss_field[e]/self.truss_field_max,0.0),1.0)
                     color = (220,220*(1.0-p1),220*(1.0-p1))
                 else:
                     color = self.truss_color
