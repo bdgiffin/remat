@@ -131,7 +131,7 @@ if (not sys.platform == "emscripten"):
 
 else:
 
-    anim = Animation(Nsteps,Nsub_steps,dt,element_color="pressure",element_field_max=0.1)
+    anim = Animation(Nsteps,Nsub_steps,dt,element_color="viscous_strain_yy",element_field_max=0.01)
     asyncio.run(anim.start())
 
 # --------------------------------------------------------------------------

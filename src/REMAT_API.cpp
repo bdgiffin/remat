@@ -29,9 +29,9 @@ typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
 Parameters params;
 
 // global instance of the system object
-System<ElementT,TrussT_float,Real,Real,Real>           remat_float;
-System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed;
-System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Real>     remat_mixed;
+System<ElementT,TrussT_float,Real,Real,Real>                       remat_float;
+System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Rational>             remat_fixed;
+System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Real>                 remat_mixed;
 System<ElementT_float_visco,TrussT_float,Real,Real,Real>           remat_float_visco;
 System<ElementT_fixed_visco,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed_visco;
 SystemBase* remat = &remat_float;
@@ -53,11 +53,11 @@ extern "C" {
     } else if (integrator_type_string == "mixed") {
       remat = &remat_mixed;
     } else if (integrator_type_string == "float_visco") {
-      remat = &remat_mixed;
+      remat = &remat_float_visco;
     } else if (integrator_type_string == "fixed_visco") {
-      remat = &remat_mixed;
+      remat = &remat_fixed_visco;
     } else {
-      std::cerr << "Invalid integrator type specified!" << std::endl;
+      std::cerr << "Invalid integrator type specified: " << integrator_type_string << std::endl;
       exit(EXIT_FAILURE);
     }
     
