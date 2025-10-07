@@ -2,6 +2,7 @@
 #define FIXED_H
 
 #include "types.h"
+#include "arithmetic.h"
 #include <iostream>
 #include <math.h>
 #include <cmath>
@@ -67,44 +68,6 @@ struct Fixed {
   bool operator<=(Fixed<RADIX,EXPONENT> const other) const { return (mantissa <= other.mantissa); }
   bool operator==(Fixed<RADIX,EXPONENT> const other) const { return (mantissa == other.mantissa); }
   bool operator!=(Fixed<RADIX,EXPONENT> const other) const { return (mantissa != other.mantissa); }
-
-  // Implementations for Euclidean and floored division adapted from: 
-  // "Division and Modulus for Computer Scientists" - Daan Leijen (2001)
-  // https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf
-
-  /* Truncated division */
-  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodT(Integer const divisor) const {
-    Integer quotient  = mantissa/divisor;
-    Integer remainder = mantissa - quotient*divisor;
-    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
-  }
-
-  /* Euclidean division */
-  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodE(Integer const divisor) const {
-    Integer quotient  = mantissa/divisor;
-    Integer remainder = mantissa%divisor;
-    if (remainder < 0) {
-      if (divisor > 0) {
-	quotient  -= 1;
-	remainder += divisor;
-      } else {
-	quotient  += 1;
-	remainder -= divisor;
-      }
-    }
-    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
-  }
-  
-  /* Floored division */
-  std::tuple<Fixed<RADIX,EXPONENT>, Fixed<RADIX,EXPONENT> > divmodF(Integer const divisor) const {
-    Integer quotient  = mantissa/divisor;
-    Integer remainder = mantissa%divisor;
-    if ((remainder > 0 && divisor < 0) || (remainder < 0 && divisor > 0)) {
-      quotient  -= 1;
-      remainder += divisor;
-    }
-    return {Fixed<RADIX,EXPONENT>(quotient), Fixed<RADIX,EXPONENT>(remainder)};
-  }
 
 private:
   

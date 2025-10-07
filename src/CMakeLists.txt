@@ -44,6 +44,7 @@ set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/System.h
     ${CMAKE_CURRENT_LIST_DIR}/Truss.h
     ${CMAKE_CURRENT_LIST_DIR}/UniaxialMaterial.h
+    ${CMAKE_CURRENT_LIST_DIR}/arithmetic.h
     ${CMAKE_CURRENT_LIST_DIR}/types.h
     PARENT_SCOPE
     )
