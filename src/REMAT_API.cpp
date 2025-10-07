@@ -7,6 +7,7 @@
 #include "System.h"
 #include "Element.h"
 #include "Material.h"
+#include "ViscoElasticity.h"
 #include "Fixed.h"
 #include "Rational.h"
 #include "System.h"
@@ -18,11 +19,11 @@
 #include <stdio.h>
 
 // Declare element and material types
-typedef Element<Material> ElementT;
+typedef Element<Material>                                 ElementT;
+typedef Element<ViscoElasticity<Real,Real> >              ElementT_float_visco;
+typedef Element<ViscoElasticity<Fixed_E,Rational> >       ElementT_fixed_visco;
 typedef Truss<UniaxialViscoplasticity<Real,Real> >        TrussT_float;
 typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
-//typedef Truss<UniaxialMaterial> TrussT_float;
-//typedef Truss<UniaxialMaterial> TrussT_fixed;
 
 // global parameter list
 Parameters params;
@@ -31,6 +32,8 @@ Parameters params;
 System<ElementT,TrussT_float,Real,Real,Real>           remat_float;
 System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed;
 System<ElementT,TrussT_fixed,Fixed_V,Fixed_U,Real>     remat_mixed;
+System<ElementT_float_visco,TrussT_float,Real,Real,Real>           remat_float_visco;
+System<ElementT_fixed_visco,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed_visco;
 SystemBase* remat = &remat_float;
 
 // ======================================================================== //
@@ -43,11 +46,15 @@ extern "C" {
   // Set which integrator type to use
   void set_integrator_type(const char* integrator_type) {
     std::string integrator_type_string(integrator_type);
-    if (integrator_type_string == "float") {
+    if        (integrator_type_string == "float") {
       remat = &remat_float;
     } else if (integrator_type_string == "fixed") {
       remat = &remat_fixed;
     } else if (integrator_type_string == "mixed") {
+      remat = &remat_mixed;
+    } else if (integrator_type_string == "float_visco") {
+      remat = &remat_mixed;
+    } else if (integrator_type_string == "fixed_visco") {
       remat = &remat_mixed;
     } else {
       std::cerr << "Invalid integrator type specified!" << std::endl;
