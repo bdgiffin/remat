@@ -21,6 +21,7 @@ For all examples:
    contact
    potential_well
    seismic_wave
+   dissipative_wave
    triple_pendulum
    viscoplastic_truss
 
