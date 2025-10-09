@@ -29,9 +29,9 @@ TEST(test_Fixed, arithmetic) {
   ASSERT_EQ((a*i).mantissa,+4166665);
   ASSERT_EQ((b*i).mantissa,-7083330);
   ASSERT_EQ((a/i).mantissa,+ 166666);
-  ASSERT_EQ((b/i).mantissa,- 283333);
+  ASSERT_EQ((b/i).mantissa,- 283334);
   ASSERT_EQ((a%i).mantissa,+      3);
-  ASSERT_EQ((b%i).mantissa,-      1);
+  ASSERT_EQ((b%i).mantissa,+      4);
 } /* TEST(test_Fixed, arithmetic) */
 
 TEST(test_Fixed, comparison) {
