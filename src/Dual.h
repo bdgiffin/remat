@@ -35,51 +35,20 @@ struct Dual {
   }
 
   // basic arithmetic operations between a Dual number and an Integer
-  //Dual<T> operator*(Integer const multiplier) const {
-  //  LongInteger res;
-  //  if (__builtin_mul_overflow(first.mantissa,multiplier,&res)) std::cerr << "OVERFLOW: (*) " << first.mantissa << " * " << multiplier << std::endl;
-  //  auto [quotient, remainder] = second.divmodF(multiplier);
-  //  //remainder = T(0.0);
-  //  return Dual<T>(first * multiplier + remainder, quotient);
-  //  //return Dual<T>(first * multiplier + second % multiplier, second / multiplier);
-  //}
-  //Dual<T> operator/(Integer const divisor)    const {
-  //  LongInteger res;
-  //  if (__builtin_mul_overflow(second.mantissa,divisor,&res)) std::cerr << "OVERFLOW: (/) " << second.mantissa << " * " << divisor << std::endl;
-  //  auto [quotient, remainder] = first.divmodF(divisor);
-  //  //remainder = T(0.0);
-  //  return Dual<T>(quotient, second * divisor + remainder);
-  //  //return Dual<T>(first / divisor, second * divisor + first % divisor);
-  //}
+  Dual<T> operator*(Integer const multiplier) const { return Dual<T>(first * multiplier + second % multiplier, second / multiplier); }
+  Dual<T> operator/(Integer const divisor)    const { return Dual<T>(first / divisor, second * divisor + first % divisor); }
 
   // basic arithmetic operations between a Dual number and a Rational number (may overflow!)
-  //Dual<T> operator*(Rational const multiplier) const { return ((*this)/multiplier.denominator)*multiplier.numerator; }
-  //Dual<T> operator/(Rational const divisor)    const { return ((*this)/divisor.numerator)*divisor.denominator;       }
-
-  // basic arithmetic operations between a Dual number and a Rational number (may overflow!)
-  //Dual<T> operator*(Rational const multiplier) const {
-  //  auto [quotient2, remainder2] = second.divmodT(multiplier.numerator);
-  //  LongInteger product1 = LongInteger(first.mantissa)*multiplier.numerator + remainder2;
-  //  auto [quotient1, remainder1] = product1.divmodT(multiplier.denominator);
-  //  Integer product2 = quotient2*multiplier.denominator
-  //  
-  //  return ((*this)*multiplier.numerator)/multiplier.denominator;
-  //}
-  //Dual<T> operator/(Rational const divisor)    const {
-  //    return ((*this)*divisor.denominator)/divisor.numerator;
-  //}
-
   Dual<T> operator*(Rational multiplier) const {
     T new_first, new_second;
-    auto [a, b] = squeezeT(first.mantissa, second.mantissa, multiplier.numerator, multiplier.denominator);
+    auto [a, b] = squeezeE(first.mantissa, second.mantissa, multiplier.numerator, multiplier.denominator);
     new_first.mantissa  = a;
     new_second.mantissa = b;
     return Dual<T>(new_first,new_second);
   } // operator*(Rational)
-
   Dual<T> operator/(Rational divisor)    const {
     T new_first, new_second;
-    auto [a, b] = squeezeT(first.mantissa, second.mantissa, divisor.denominator, divisor.numerator);
+    auto [a, b] = squeezeE(first.mantissa, second.mantissa, divisor.denominator, divisor.numerator);
     new_first.mantissa  = a;
     new_second.mantissa = b;
     return Dual<T>(new_first,new_second);

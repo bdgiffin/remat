@@ -28,33 +28,14 @@ struct Fixed {
 
   // basic arithmetic operations between a Fixed-precision number and an Integer
   Fixed<RADIX,EXPONENT> operator*(Integer const multiplier) const { return Fixed<RADIX,EXPONENT>(mantissa*multiplier); }
-  Fixed<RADIX,EXPONENT> operator/(Integer const divisor) const { 
-    // Euclidean division
-    Integer quotient  = mantissa/divisor;
-    Integer remainder = mantissa%divisor;
-    if (remainder < 0) {
-      if (divisor > 0) {
-	quotient = quotient - 1;
-      } else {
-	quotient = quotient + 1;
-      }
-    }
+  Fixed<RADIX,EXPONENT> operator/(Integer const divisor) const {
+    auto [quotient, remainder] = divmodE(mantissa, divisor);
     return Fixed<RADIX,EXPONENT>(quotient);
   }
   Fixed<RADIX,EXPONENT> operator%(Integer const divisor) const {
-    // Euclidean division
-    Integer remainder = mantissa%divisor;
-    if (remainder < 0) {
-      if (divisor > 0) {
-	remainder = remainder + divisor;
-      } else {
-	remainder = remainder - divisor;
-      }
-    }
+    auto [quotient, remainder] = divmodE(mantissa, divisor);
     return Fixed<RADIX,EXPONENT>(remainder);
   }
-  //Fixed<RADIX,EXPONENT> operator/(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa/divisor);    }
-  //Fixed<RADIX,EXPONENT> operator%(Integer const divisor)    const { return Fixed<RADIX,EXPONENT>(mantissa%divisor);    }
 
   // basic arithmetic operations between a Fixed-precision number and a Real (floating point) number
   Fixed<RADIX,EXPONENT> operator*(Real const multiplier) const { return Fixed<RADIX,EXPONENT>(Integer(mantissa*multiplier)); }
