@@ -1,7 +1,7 @@
 # Build select examples for execution in a web environment
 
 REMAT_INSTALL=../install/package
-TARGETS=seismic_wave-web potential_well-web contact-web buckling_arch-web bouncing_ball-web viscoplastic_truss-web triple_pendulum-web
+TARGETS=seismic_wave-web dissipative_wave-web potential_well-web contact-web buckling_arch-web bouncing_ball-web viscoplastic_truss-web triple_pendulum-web
 
 all: $(TARGETS)
 
