@@ -8,6 +8,7 @@
 #include "Element.h"
 #include "Material.h"
 #include "ViscoElasticity.h"
+#include "ViscoPlasticity.h"
 #include "Fixed.h"
 #include "Rational.h"
 #include "System.h"
@@ -21,7 +22,8 @@
 // Declare element and material types
 typedef Element<Material>                                 ElementT;
 typedef Element<ViscoElasticity<Real,Real> >              ElementT_float_visco;
-typedef Element<ViscoElasticity<Fixed_E,Rational> >       ElementT_fixed_visco;
+//typedef Element<ViscoElasticity<Fixed_E,Rational> >       ElementT_fixed_visco;
+typedef Element<ViscoPlasticity<Fixed_E,Rational> >       ElementT_fixed_visco;
 typedef Truss<UniaxialViscoplasticity<Real,Real> >        TrussT_float;
 typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
 
