@@ -54,6 +54,7 @@ REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", 2.0)
 
 # Set the integrator type: "float_visco" (default), or "fixed_visco"
 REMAT.API.set_integrator_type(b"fixed_visco")
+REMAT.API.define_parameter(b"mat_overflow_limit", 100.0)
 
 # Pre-process mesh/geometry ------------------------------------------------
 
@@ -96,7 +97,7 @@ REMAT.define_variable_properties(lambda x, y: 1.0 - 0.5*(y > 0.5 + 0.07*(x-5.0))
 # set analysis time-stepping parameters
 dt = 0.25e-2 # [s] time increment
 step_id = 0
-Nsteps = 30
+Nsteps = 70
 Nsub_steps = 10
 
 if (not sys.platform == "emscripten"):
