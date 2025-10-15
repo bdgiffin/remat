@@ -138,6 +138,10 @@ class Material {
   // Conditionally load material history parameters from memory
   bool load_state(Real* state, Real* overflow_state)  { return false; }
 
+  // How many overflow Real values does this material need per integration point?
+  // Default is zero (no overflow storage required).
+  int overflow_vars_per_point(void) { return 0; }
+
   // Conditionally store material history parameters in memory
   bool store_state(Real* state, Real* overflow_state) { return false; }
 

@@ -229,6 +229,9 @@ class UniaxialViscoplasticity {
     }
   }
 
+  // number of overflow parameters required in UniaxialViscoplasticity
+  int overflow_vars_per_point(void) { return 1; }
+
   // Conditionally store material history parameters in memory
   bool store_state(Real* state, Real* overflow_state) {
     if (int(state[4]) == mat_overflow_limit) {

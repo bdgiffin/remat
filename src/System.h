@@ -176,6 +176,7 @@ struct System : public SystemBase {
   std::vector<int>       connect; // The nodal connectivity array for all solid elements
   std::vector<Real>        state; // Solid element state variable data
   std::vector<std::string> element_field_names;
+  std::vector<std::vector<Real> > element_state_overflow; // Element integration-point overflow storage
 
   // Truss element data
   Truss_T                m_truss; // Truss element class
@@ -306,6 +307,9 @@ struct System : public SystemBase {
     for (int e=0; e<Nelems; e++) {
       m_element.initialize(&state[Nstate_vars_per_elem*e]);
     }
+
+    // Initialize element overflow storage
+    element_state_overflow.resize(Nelems);
 
     // Initialize system state data
     elastic_strain_energy = 0.0; global_field_names.push_back("elastic_strain_energy");
@@ -446,6 +450,7 @@ struct System : public SystemBase {
   virtual double update_state(Real dt) {
 
     const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
 
     // Update the time step ID and conditionally load overflow dual velocities
     if (dt < 0.0) {
@@ -462,6 +467,7 @@ struct System : public SystemBase {
       m_overflow_counter--;
 
       // Conditionally load material history parameters from memory
+      // Load truss overflow
       for (int e=0; e<Ntruss; e++) {
 	if (truss_state_overflow[e].size() > 0) {
 	  if (m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],&truss_state_overflow[e].back())) {
@@ -470,6 +476,40 @@ struct System : public SystemBase {
 	  }
 	}
       }
+
+      // Load element overflow
+      int Nstate_vars_per_elem = m_element.num_state_vars();
+      int overflow_per_point = m_element.m_model.overflow_vars_per_point();
+      int n_integration_points = 4;
+      int snapshot_length = overflow_per_point * n_integration_points;
+      bool overflow_snapshot_loaded = false;
+
+      if (overflow_per_point > 0) {
+        for (int e=0; e<Nelems; e++) {
+          // Check if this element has at least one saved snapshot to prevent error
+          if (element_state_overflow[e].size() >= snapshot_length) {
+            int start_index = element_state_overflow[e].size() - snapshot_length;
+            std::vector<Real> last_snapshot(snapshot_length);
+            for (int i = 0; i < snapshot_length; i++) {
+              last_snapshot[i] = element_state_overflow[e][start_index + i];
+            }
+
+            bool loaded = m_element.load_state(&state[Nstate_vars_per_elem * e], last_snapshot.data());
+
+            if (loaded) {
+              // Remove the last snapshot from the overflow vector
+              for (int i = 0; i < snapshot_length; i++) {
+                element_state_overflow[e].pop_back();
+                overflow_snapshot_loaded = true;
+              }
+            }
+          }
+        }
+        if (overflow_snapshot_loaded) {
+          std::cout << "Loading element state overflow: count = " << (element_state_overflow[Nelems-1].size()/snapshot_length) << std::endl;
+        }
+      }
+
       
     }
 
@@ -505,12 +545,33 @@ struct System : public SystemBase {
       }
 
       // Conditionally store material history parameters in memory
+      // Store truss overflow
       for (int e=0; e<Ntruss; e++) {
 	Real new_state_overflow;
 	if (m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],&new_state_overflow)) {
 	  truss_state_overflow[e].push_back(new_state_overflow);
 	  std::cout << "Storing state overflow: count = " << truss_state_overflow[e].size() << std::endl;
 	}
+      }
+
+      // Store element overflow
+      const int overflow_per_point = m_element.m_model.overflow_vars_per_point();
+      const int n_integration_points = 4;
+      const int snapshot_length = overflow_per_point * n_integration_points;
+      bool overflow_snapshot_stored = false;
+      if (overflow_per_point > 0) {
+        for (int e=0; e<Nelems; e++) {
+          std::vector<Real> new_snapshot(snapshot_length, 0.0);
+          if (m_element.store_state(&state[Nstate_vars_per_elem*e], new_snapshot.data())) {
+            overflow_snapshot_stored = true;
+            for (int i = 0; i < snapshot_length; i++) {
+              element_state_overflow[e].push_back(new_snapshot[i]);
+            }
+          }
+        }
+        if (overflow_snapshot_stored) {
+          std::cout << "Storing element state overflow: count = " << (element_state_overflow[Nelems-1].size()/snapshot_length) << std::endl;
+        }
       }
       
     }

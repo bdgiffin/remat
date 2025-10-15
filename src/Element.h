@@ -209,6 +209,39 @@ public:
     }
 
   } // update()
+
+  // Conditionally load material history parameters from memory for this element
+  bool load_state(Real* state, Real* overflow_state) {
+    const int num_state_vars = m_model.num_state_vars();
+    const int overflow_per_point = m_model.overflow_vars_per_point();
+    if (overflow_per_point <= 0) return false;
+    bool loaded_any = false;
+    // loop over integration points
+    for (int q=0; q<4; q++) {
+      Real* model_state = &state[(q+1)*num_state_vars];
+      Real* model_overflow_state = overflow_state + q*overflow_per_point;
+      if (m_model.load_state(model_state, model_overflow_state)) {
+        loaded_any = true;
+      }
+    }
+    return loaded_any;
+  }
+
+  // Conditionally store material history parameters in memory for this element
+  bool store_state(Real* state, Real* overflow_state) {
+    const int num_state_vars = m_model.num_state_vars();
+    const int overflow_per_point = m_model.overflow_vars_per_point();
+    if (overflow_per_point <= 0) return false;
+    bool stored_any = false;
+    // loop over integration points
+    for (int q=0; q<4; q++) {
+      Real* model_state = &state[(q+1)*num_state_vars];
+      Real* model_overflow_state = overflow_state + q*overflow_per_point;
+      if (m_model.store_state(model_state, model_overflow_state)) stored_any = true;
+    }
+    //std::cout << "Storing to memory elemenrt sotre \n";
+    return stored_any;
+  }
     
   // Return the number of nodes per element
   constexpr int num_nodes(void) { return 4; }
