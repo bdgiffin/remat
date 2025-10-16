@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdlib.h> // exit
 #include <limits>
+#include <vector>
 #include "types.h"
 #include "Dual.h"
 #include "Parameters.h"
@@ -219,28 +220,19 @@ class UniaxialViscoplasticity {
   } // update()
 
   // Conditionally load material history parameters from memory
-  bool load_state(Real* state, Real* overflow_state)  {
-    if (int(state[4]) == 0) {
+  void load_state(Real* state, std::vector<Real>& overflow_state)  {
+    if ((int(state[4]) == 0) && (overflow_state.size() > 0)) {
       state[4] = Real(mat_overflow_limit);
-      state[3] = *overflow_state;
-      return true;
-    } else {
-      return false;
+      state[3] = overflow_state.back(); overflow_state.pop_back();
     }
   }
 
-  // number of overflow parameters required in UniaxialViscoplasticity
-  int overflow_vars_per_point(void) { return 1; }
-
   // Conditionally store material history parameters in memory
-  bool store_state(Real* state, Real* overflow_state) {
+  void store_state(Real* state, std::vector<Real>& overflow_state) {
     if (int(state[4]) == mat_overflow_limit) {
       state[4] = Real(0);
-      *overflow_state = state[3];
+      overflow_state.push_back(state[3]);
       state[3] = smallest_value(state[3]);
-      return true;
-    } else {
-      return false;
     }
   }
   

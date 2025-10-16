@@ -123,9 +123,6 @@ class ViscoElasticity {
   // Return the number of state variables for allocation purposes
  int num_state_vars(void) { return 17; }
 
-  // How many overflow Real values does each material point require?
-  int overflow_vars_per_point(void) { return 3; }
-
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
     return std::vector<std::string>({
@@ -190,30 +187,30 @@ class ViscoElasticity {
  
 
 
-  // 3) Viscous strain main update -- load dual/fixed stored values
-  FixedE vs_xx_p, vs_xx_d;
-  FixedE vs_yy_p, vs_yy_d;
-  FixedE vs_xy_p, vs_xy_d;
-  load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
-  load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
-  load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
+    // 3) Viscous strain main update -- load dual/fixed stored values
+    FixedE vs_xx_p, vs_xx_d;
+    FixedE vs_yy_p, vs_yy_d;
+    FixedE vs_xy_p, vs_xy_d;
+    load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
+    load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
+    load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
 
-  Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
-  Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
-  Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
+    Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
+    Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
+    Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
-  Real previous_strain_xx  =  state[6];
-  Real previous_strain_yy  =  state[7];
-  Real previous_strain_xy  =  state[8];
+    Real previous_strain_xx  =  state[6];
+    Real previous_strain_yy  =  state[7];
+    Real previous_strain_xy  =  state[8];
 
-  int overflow_counter = int(state[16]);
-  // Define a vector version of previous strain for taking the dev part easier
-  Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
-  Real dev_previous_strain[3];
+    int overflow_counter = int(state[16]);
+    // Define a vector version of previous strain for taking the dev part easier
+    Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
+    Real dev_previous_strain[3];
 
-  Real A = std::exp(-std::fabs(dt)/tau);
-  // Use Rational for reversible operations
-  Ratio A_rat(A);
+    Real A = std::exp(-std::fabs(dt)/tau);
+    // Use Rational for reversible operations
+    Ratio A_rat(A);
 
     if (dt >= 0.0) {
       // First step of algorigthm
@@ -319,44 +316,39 @@ class ViscoElasticity {
     // Note that the shear strain is engineering shear strain
     // Elastic strain-energy density (springs only; dashpot excluded)
     Real psi_eq       = 0.5*(stress_xx_eq*strain_xx
-                           + stress_yy_eq*strain_yy 
-                           + stress_xy_eq*strain_xy);
+			     + stress_yy_eq*strain_yy 
+			     + stress_xy_eq*strain_xy);
     // elastic strain-energy density in Maxwell element
     Real psi_Maxwell  = 0.5*(stress_xx_Maxwell*dev_elastic_strain_xx
-                           + stress_yy_Maxwell*dev_elastic_strain_yy
-                           + stress_xy_Maxwell*dev_elastic_strain_xy);
+			     + stress_yy_Maxwell*dev_elastic_strain_yy
+			     + stress_xy_Maxwell*dev_elastic_strain_xy);
 
     // Total elastic strain-energy density
     psi = psi_eq + psi_Maxwell;
   } // update()
 
   // Conditionally load material history parameters from memory
-  bool load_state(Real* state, Real* overflow_state)  {
-    if (int(state[16]) == 0) {
+  void load_state(Real* state, std::vector<Real>& overflow_state)  {
+    if ((int(state[16]) == 0) && (overflow_state.size() > 0)) {
       state[16] = Real(mat_overflow_limit);
-      state[12] = overflow_state[0];
-      state[13] = overflow_state[1];
-      state[14] = overflow_state[2];
-      return true;
-    }
-    else {
-      return false;
+      // load in reverse order
+      state[14] = overflow_state.back(); overflow_state.pop_back();
+      state[13] = overflow_state.back(); overflow_state.pop_back();
+      state[12] = overflow_state.back(); overflow_state.pop_back();
     }
   }
 
   // Conditionally store material history parameters in memory
-  bool store_state(Real* state, Real* overflow_state) {
+  void store_state(Real* state, std::vector<Real>& overflow_state) {
     if (int(state[16]) == mat_overflow_limit) {
       state[16] = Real(0);
-      overflow_state[0] = state[12];
-      overflow_state[1] = state[13];
-      overflow_state[2] = state[14];
+      // store in forward order
+      overflow_state.push_back(state[12]);
+      overflow_state.push_back(state[13]);
+      overflow_state.push_back(state[14]);
       state[12] = smallest_value(state[12]);
       state[13] = smallest_value(state[13]);
       state[14] = smallest_value(state[14]);
-      return true;
-    } else {
-      return false;
     }
   }
 
