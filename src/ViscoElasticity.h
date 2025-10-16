@@ -24,7 +24,7 @@ class ViscoElasticity {
 
   //Real kappa; // Bulk modulus
   //Real pmod;  // P-wave modulus
-  
+
   // Viscous parameters
   Real mu_e;   // Shear modulus of the Maxwell element spring
   Real mu2_e;  // Twice the shear modulus of the Maxwell element spring
@@ -39,6 +39,8 @@ class ViscoElasticity {
     out[1] = e[1] - 0.5 * tr2; // eps_yy - tr/2
     out[2] = e[2];             // gxy unchanged
   }
+
+  int  mat_overflow_limit = std::numeric_limits<int>::max();
 
  public:
 
@@ -111,10 +113,15 @@ class ViscoElasticity {
       std::cout << "ViscoElasticity: need a positive relaxation_time" << std::endl;
       exit(EXIT_FAILURE);
     }
+
+    if (params.count("mat_overflow_limit") > 0) {
+
+      mat_overflow_limit = int(params["mat_overflow_limit"]);
+    }
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 16; }
+ int num_state_vars(void) { return 17; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -123,7 +130,8 @@ class ViscoElasticity {
       "strain_xx","strain_yy","strain_xy",
       "viscous_strain_xx","viscous_strain_yy","viscous_strain_xy",
       "viscous_strain_xx_dual","viscous_strain_yy_dual","viscous_strain_xy_dual",
-      "stiffness_scaling_factor"
+      "stiffness_scaling_factor",
+      "overflow_counter",
     });
   }
 
@@ -150,6 +158,7 @@ class ViscoElasticity {
     save_as_Real(FixedE(0.0), state[13]);  // viscous_strain_yy (dual)
     save_as_Real(FixedE(0.0), state[14]);  // viscous_strain_xy (dual)
     state[15] = 1.0; // stiffness_scaling_factor
+    state[16] = Real(0); // overflow_counter
   } // initialize()
 
   // Do we have to keep this?
@@ -178,28 +187,30 @@ class ViscoElasticity {
  
 
 
-  // 3) Viscous strain main update -- load dual/fixed stored values
-  FixedE vs_xx_p, vs_xx_d;
-  FixedE vs_yy_p, vs_yy_d;
-  FixedE vs_xy_p, vs_xy_d;
-  load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
-  load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
-  load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
+    // 3) Viscous strain main update -- load dual/fixed stored values
+    FixedE vs_xx_p, vs_xx_d;
+    FixedE vs_yy_p, vs_yy_d;
+    FixedE vs_xy_p, vs_xy_d;
+    load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
+    load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
+    load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
 
-  Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
-  Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
-  Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
+    Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
+    Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
+    Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
-  Real previous_strain_xx  =  state[6];
-  Real previous_strain_yy  =  state[7];
-  Real previous_strain_xy  =  state[8];
-  // Define a vector version of previous strain for taking the dev part easier
-  Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
-  Real dev_previous_strain[3];
+    Real previous_strain_xx  =  state[6];
+    Real previous_strain_yy  =  state[7];
+    Real previous_strain_xy  =  state[8];
 
-  Real A = std::exp(-std::fabs(dt)/tau);
-  // Use Rational for reversible operations
-  Ratio A_rat(A);
+    int overflow_counter = int(state[16]);
+    // Define a vector version of previous strain for taking the dev part easier
+    Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
+    Real dev_previous_strain[3];
+
+    Real A = std::exp(-std::fabs(dt)/tau);
+    // Use Rational for reversible operations
+    Ratio A_rat(A);
 
     if (dt >= 0.0) {
       // First step of algorigthm
@@ -221,6 +232,7 @@ class ViscoElasticity {
       viscous_strain_yy = viscous_strain_yy + dyy;
       viscous_strain_xy = viscous_strain_xy + dxy;
 
+      overflow_counter++;
     } else {
       // First step of algorigthm
       dev2(previous_strain,dev_previous_strain);
@@ -241,6 +253,8 @@ class ViscoElasticity {
       viscous_strain_xx = viscous_strain_xx / A_rat;
       viscous_strain_yy = viscous_strain_yy / A_rat;
       viscous_strain_xy = viscous_strain_xy / A_rat;
+
+      overflow_counter--;
     } // end if dt
 
     // 4) Solve for stress with elastic part of strain
@@ -295,27 +309,49 @@ class ViscoElasticity {
     save_as_Real(viscous_strain_yy.second, state[13]);
     save_as_Real(viscous_strain_xy.second, state[14]);
 
+    state[16] = Real(overflow_counter);
+
     // elastic strain energy density
     // Because at this point we have the stress and total strain, we can compute the energy as 0.5*sigma:eps
     // Note that the shear strain is engineering shear strain
     // Elastic strain-energy density (springs only; dashpot excluded)
     Real psi_eq       = 0.5*(stress_xx_eq*strain_xx
-                           + stress_yy_eq*strain_yy 
-                           + stress_xy_eq*strain_xy);
+			     + stress_yy_eq*strain_yy 
+			     + stress_xy_eq*strain_xy);
     // elastic strain-energy density in Maxwell element
     Real psi_Maxwell  = 0.5*(stress_xx_Maxwell*dev_elastic_strain_xx
-                           + stress_yy_Maxwell*dev_elastic_strain_yy
-                           + stress_xy_Maxwell*dev_elastic_strain_xy);
+			     + stress_yy_Maxwell*dev_elastic_strain_yy
+			     + stress_xy_Maxwell*dev_elastic_strain_xy);
 
     // Total elastic strain-energy density
     psi = psi_eq + psi_Maxwell;
   } // update()
 
   // Conditionally load material history parameters from memory
-  bool load_state(Real* state, Real* overflow_state)  { return false; }
+  void load_state(Real* state, std::vector<Real>& overflow_state)  {
+    if ((int(state[16]) == 0) && (overflow_state.size() > 0)) {
+      state[16] = Real(mat_overflow_limit);
+      // load in reverse order
+      state[14] = overflow_state.back(); overflow_state.pop_back();
+      state[13] = overflow_state.back(); overflow_state.pop_back();
+      state[12] = overflow_state.back(); overflow_state.pop_back();
+    }
+  }
 
   // Conditionally store material history parameters in memory
-  bool store_state(Real* state, Real* overflow_state) { return false; }
+  void store_state(Real* state, std::vector<Real>& overflow_state) {
+    if (int(state[16]) == mat_overflow_limit) {
+      state[16] = Real(0);
+      // store in forward order
+      overflow_state.push_back(state[12]);
+      overflow_state.push_back(state[13]);
+      overflow_state.push_back(state[14]);
+      state[12] = smallest_value(state[12]);
+      state[13] = smallest_value(state[13]);
+      state[14] = smallest_value(state[14]);
+    }
+  }
+
 
   // Copy state variable data to field data
   void get_fields(Real* state, double* field_data) {
@@ -336,6 +372,7 @@ class ViscoElasticity {
     load_from_Real(state[13],temp); field_data[13] = Real(temp); // viscous_strain_yy dual
     load_from_Real(state[14],temp); field_data[14] = Real(temp); // viscous_strain_xy dual
     field_data[15] = state[15]; // stiffness_scaling_factor
+    field_data[16] = state[16]; // overflow_counter
   }
 
   // Return the initial sound speed
