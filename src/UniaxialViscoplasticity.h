@@ -107,8 +107,8 @@ class UniaxialViscoplasticity {
     state[4] = Real(0); // overflow counter
     save_as_Real(FixedE(0.0),state[5]); // equivalent plastic strain
     state[6] = Real(0); // steps since element death
-    state[7] = Real(0);
-    state[8] = Real(0);
+    state[7] = Real(0); //neg_delta_forward_count
+    state[8] = Real(0); //neg_delta_backward_count
   } // initialize()
   
   // Update the material state using the current stretch ratio
@@ -122,15 +122,16 @@ class UniaxialViscoplasticity {
       std::cout << "ERROR: negative stretch ratio" << std::endl;
       exit(EXIT_FAILURE);
     }
-
+    
     // Compute the axial (small) strain
     Real strain = lambda - 1.0;
-
+    
     // Load the plastic strain and its dual from memory
     FixedE p1,p2;
     load_from_Real(state[2],p1);
     load_from_Real(state[3],p2);
     Dual<FixedE> plastic_strain(p1,p2);
+    Dual<FixedE> old_plastic_strain = plastic_strain;
 
     // Load the overflow counter from memory
     int overflow_counter = int(state[4]);
@@ -142,70 +143,90 @@ class UniaxialViscoplasticity {
     // Load the steps since element death
     int steps_since_death = int(state[6]);
 
-    // Compute the scaling factor
-    Real phi = std::exp(-E*std::abs(dt)/eta);
-    Ratio rat(phi);
+    // Real epsilon_prev = state[1];
+    if (dt > 0.0) {
+      // epsilon_prev = strain;
+      state[1] = strain;
+    } 
 
-    // Conditionally update the strain history variable
-    if (dt >= 0.0) state[1] = strain;
-
-    // Determine the flow direction and the reference plastic strain
-    Real n = std::copysign(1.0,state[1] - Real(plastic_strain.first));
-    Real ep0 = state[1] - n*yield/E;
-
-    // Update the number of steps since element death occurred
     if (steps_since_death > 0) {
-      if (dt >= 0.0) {
+      if (dt > 0.0) {
         steps_since_death++;
       } else {
-	steps_since_death--;
+        steps_since_death--;
       }
       std::cout << " since death = " << steps_since_death << std::endl;
     }
 
-    // Check for yielding
-    if ((std::abs(E*(state[1] - Real(plastic_strain.first))) > yield) && (steps_since_death == 0)) {
-      // Update the plastic strain
-      Dual<FixedE> dep(ep0*(1.0 - phi), 0.0);
+    Dual<FixedE> epsilon_prev_dual(FixedE(state[1]), FixedE(0.0));
+    Dual<FixedE> elastic_strain = epsilon_prev_dual - old_plastic_strain;
+    Real elastic_strain_primal = Real(elastic_strain.first);
+
+    Real yield_strain = (E > 0.0) ? yield / E : 0.0;
+    //Real epsilon_tol_real = std::numeric_limits<Real>::epsilon();
+    Real epsilon_tol_real = 0.0;
+
+    if ((std::abs(elastic_strain_primal) >= yield_strain) && (steps_since_death == 0)) {
+      Real n_sign = 0.0;
+      if (elastic_strain_primal > 0.0) {
+        n_sign = 1.0;
+      } else if (elastic_strain_primal < 0.0) {
+        n_sign = -1.0;
+      }
+
+      Real A = std::exp(-E*std::abs(dt)/eta);
+      Ratio A_rat(A);
+
+      Real offset_real = n_sign * (yield_strain + epsilon_tol_real);
+      Dual<FixedE> offset(FixedE(offset_real), FixedE(0.0));
+      Dual<FixedE> delta_elastic = elastic_strain - offset;
+
+      if (dt > 0.0) {
+        delta_elastic = delta_elastic * A_rat;
+        neg_delta_forward_count++;
+
+
+      } else {
+        delta_elastic = delta_elastic / A_rat;
+        neg_delta_backward_count++;
+
+      }
+
+      elastic_strain = delta_elastic + offset;
+      plastic_strain = epsilon_prev_dual - elastic_strain;
+
       std::cout << "yielding" << std::endl;
       if (dt >= 0.0) {
-	FixedE old_ps = plastic_strain.first;
-	plastic_strain = plastic_strain*rat;
-	plastic_strain = plastic_strain + dep;
-	FixedE delta_ps = plastic_strain.first - old_ps;
-	if (delta_ps < FixedE(0.0)) {
-    neg_delta_forward_count++;
-	  eqps = eqps - delta_ps;
-	} else {
-	  eqps = eqps + delta_ps;
-	}
-	overflow_counter++;
-	if (Real(eqps) > epsf) { steps_since_death = 1; } // the element has died
+        FixedE delta_ps = plastic_strain.first - old_plastic_strain.first;
+	      if (delta_ps < FixedE(0.0)) {
+          eqps = eqps - delta_ps;
+        } else {
+          eqps = eqps + delta_ps;
+        }
+        overflow_counter++;
+        if (Real(eqps) > epsf) { steps_since_death = 1; }
       } else {
-	overflow_counter--;
-	FixedE new_ps = plastic_strain.first;
-	plastic_strain = plastic_strain - dep;
-	plastic_strain = plastic_strain/rat;
-	FixedE delta_ps = new_ps - plastic_strain.first;
+        overflow_counter--;
+        FixedE delta_ps = old_plastic_strain.first - plastic_strain.first;
 	if (delta_ps < FixedE(0.0)) {
-    neg_delta_backward_count++;
-	  eqps = eqps + delta_ps;
-	} else {
-	  eqps = eqps - delta_ps;
-	}
+          eqps = eqps + delta_ps;
+        } else {
+          eqps = eqps - delta_ps;
+        }
       }
       //std::cout << " growth fac = " << 1.0/phi << std::endl;
       //std::cout << "  primal ps = " << Real(plastic_strain.first)  << std::endl;
       //std::cout << "    dual ps = " << Real(plastic_strain.second) << std::endl;
       //std::cout << "    counter = " << overflow_counter << std::endl;
       std::cout << "    eqps = " << Real(eqps) << std::endl;
-      std::cout << "    neg_delta_forward_count = " << neg_delta_forward_count << std::endl;
-      std::cout << "    neg_delta_backward_count = " << neg_delta_backward_count << std::endl;
     }
+    plastic_strain = epsilon_prev_dual - elastic_strain;
 
     // Conditionally update the strain history variable
-    if (dt < 0.0) state[1] = strain;
-    
+    if (dt < 0.0) {
+      state[1] = strain;
+    }
+
     // Compute and store the axial stress and force
     Real stress = (steps_since_death > 0) ? 0.0 : E*(state[1] - Real(plastic_strain.first));
     state[0] = stress*area;
@@ -216,10 +237,10 @@ class UniaxialViscoplasticity {
 
     // Save the overflow counter to memory
     state[4] = Real(overflow_counter);
-
+    
     // Save the equivalent plastic strain to memory
     save_as_Real(eqps, state[5]);
-
+    
     // Save the steps since element death
     state[6] = Real(steps_since_death);
     state[7] = Real(neg_delta_forward_count);
@@ -227,7 +248,9 @@ class UniaxialViscoplasticity {
 
     // Compute the strain energy per unit length
     psi = (steps_since_death > 0) ? 0.0 : 0.5*state[0]*(state[1] - Real(plastic_strain.first));
-    
+    //std::cout << "    OO: neg_delta_forward_count = " << neg_delta_forward_count << std::endl;
+    //std::cout << "    neg_delta_backward_count = " << neg_delta_backward_count << std::endl;
+
   } // update()
 
   // Conditionally load material history parameters from memory
