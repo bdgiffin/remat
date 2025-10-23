@@ -23,12 +23,14 @@ public:
   void initialize(Real* state) {
     
     // zero-initialize element-averaged state
+    // (stored at the fictitious integration point 0)
     const int num_state_vars = m_model.num_state_vars();
     for (int i=0; i<num_state_vars; i++) {
       state[i] = 0.0;
     }
     
     // loop over integration points
+    // (stored at the actual integration point 1-4)
     for (int q=0; q < 4; q++) {
       Real* model_state = &state[(q+1)*num_state_vars];
       m_model.initialize(model_state);
@@ -209,6 +211,26 @@ public:
     }
 
   } // update()
+
+  // Conditionally load material history parameters from memory for this element
+  void load_state(Real* state, std::vector<Real>& overflow_state) {
+    const int num_state_vars = m_model.num_state_vars();
+
+    // loop over integration points (in reverse order)
+    for (int q=3; q>=0; q--) {
+      m_model.load_state(&state[num_state_vars*(q+1)],overflow_state);
+    }
+  }
+
+  // Conditionally store material history parameters in memory for this element
+  void store_state(Real* state, std::vector<Real>& overflow_state) {
+    const int num_state_vars = m_model.num_state_vars();
+
+    // loop over integration points (in forward order)
+    for (int q=0; q<4; q++) {
+      m_model.store_state(&state[num_state_vars*(q+1)],overflow_state);
+    }
+  }
     
   // Return the number of nodes per element
   constexpr int num_nodes(void) { return 4; }

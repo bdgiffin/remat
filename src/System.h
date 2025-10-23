@@ -176,6 +176,7 @@ struct System : public SystemBase {
   std::vector<int>       connect; // The nodal connectivity array for all solid elements
   std::vector<Real>        state; // Solid element state variable data
   std::vector<std::string> element_field_names;
+  std::vector<std::vector<Real> > element_state_overflow; // Element integration-point overflow storage
 
   // Truss element data
   Truss_T                m_truss; // Truss element class
@@ -306,6 +307,9 @@ struct System : public SystemBase {
     for (int e=0; e<Nelems; e++) {
       m_element.initialize(&state[Nstate_vars_per_elem*e]);
     }
+
+    // Initialize element overflow storage
+    element_state_overflow.resize(Nelems);
 
     // Initialize system state data
     elastic_strain_energy = 0.0; global_field_names.push_back("elastic_strain_energy");
@@ -446,6 +450,7 @@ struct System : public SystemBase {
   virtual double update_state(Real dt) {
 
     const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
 
     // Update the time step ID and conditionally load overflow dual velocities
     if (dt < 0.0) {
@@ -462,14 +467,24 @@ struct System : public SystemBase {
       m_overflow_counter--;
 
       // Conditionally load material history parameters from memory
+      // Load truss overflow
+      int Ntruss_overflow = 0;
       for (int e=0; e<Ntruss; e++) {
-	if (truss_state_overflow[e].size() > 0) {
-	  if (m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],&truss_state_overflow[e].back())) {
-	    truss_state_overflow[e].pop_back();
-	    std::cout << "Loading state overflow: count = " << truss_state_overflow[e].size() << std::endl;
-	  }
-	}
+	int old_state_overflow_size = truss_state_overflow[e].size();
+	m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
+	if (truss_state_overflow[e].size() < old_state_overflow_size) { Ntruss_overflow++; }
       }
+      if (Ntruss_overflow > 0) { std::cout << "Loaded " << Ntruss_overflow << " truss overflow states" << std::endl; }
+
+      // Conditionally load material history parameters from memory
+      // Load element overflow
+      int Nelem_overflow = 0;
+      for (int e=0; e<Nelems; e++) {
+	int old_state_overflow_size = element_state_overflow[e].size();
+        m_element.load_state(&state[Nstate_vars_per_elem*e],element_state_overflow[e]);
+	if (element_state_overflow[e].size() < old_state_overflow_size) { Nelem_overflow++; }
+      }
+      if (Nelem_overflow > 0) { std::cout << "Loaded " << Nelem_overflow << " element overflow states" << std::endl; }
       
     }
 
@@ -505,13 +520,24 @@ struct System : public SystemBase {
       }
 
       // Conditionally store material history parameters in memory
+      // Store truss overflow
+      int Ntruss_overflow = 0;
       for (int e=0; e<Ntruss; e++) {
-	Real new_state_overflow;
-	if (m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],&new_state_overflow)) {
-	  truss_state_overflow[e].push_back(new_state_overflow);
-	  std::cout << "Storing state overflow: count = " << truss_state_overflow[e].size() << std::endl;
-	}
+	int old_state_overflow_size = truss_state_overflow[e].size();
+	m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
+	if (truss_state_overflow[e].size() > old_state_overflow_size) { Ntruss_overflow++; }
       }
+      if (Ntruss_overflow > 0) { std::cout << "Stored " << Ntruss_overflow << " truss overflow states" << std::endl; }
+
+      // Conditionally store material history parameters in memory
+      // Store element overflow
+      int Nelem_overflow = 0;
+      for (int e=0; e<Nelems; e++) {
+	int old_state_overflow_size = element_state_overflow[e].size();
+        m_element.store_state(&state[Nstate_vars_per_elem*e],element_state_overflow[e]);
+	if (element_state_overflow[e].size() > old_state_overflow_size) { Nelem_overflow++; }
+      }
+      if (Nelem_overflow > 0) { std::cout << "Stored " << Nelem_overflow << " element overflow states" << std::endl; }
       
     }
     
