@@ -292,10 +292,16 @@ struct System : public SystemBase {
       if (m_vx0 != 0.0) v[2*i+0] = Dual<FixedV>(m_vx0,0.0);
       if (m_vy0 != 0.0) v[2*i+1] = Dual<FixedV>(m_vy0,0.0);
     }
-
+    std::cout << "BEFORE Initialize dual DoFs ..." << std::endl; 
     // Initialize dual DoFs
     for (int i=0; i<Ndofs; i++) {
+      std::cout << "type of v[i].first: " << typeid(v[i].first).name() << std::endl;
+      std::cout << "type of v[i] itself " << typeid(v[i]).name() << std::endl;
+      std::cout << "value of v[i].first before setting dual part: " << v[i].first << std::endl;
+      std::cout << "value of v[i].second before setting dual part: " << v[i].second << std::endl;
+      std::cout << "smallest_value(v[i].first):  " << smallest_value(v[i].first) << std::endl;
       v[i].second = smallest_value(v[i].first);
+      std::cout << "within Initialize dual DoFs Test number" << i << " passed" << std::endl; 
     }
 
     // Initialize connectivity data for all elements

@@ -73,10 +73,14 @@ inline void save_as_Real(Fixed_E value, Real& save_value) {
 }
 
 // Declare function to return the smallest representable value with the sign of the incoming argument
-inline Fixed<10,-6> smallest_value(Fixed<10,-6> signed_value) { return copysign(Fixed<10,-6>::smallest,signed_value); }
+inline Fixed<10,-6> smallest_value(Fixed<10,-6> signed_value) { 
+  std::cout << "USING FIXED_H smallest_value" << std::endl; 
+  return copysign(Fixed<10,-6>::smallest,signed_value); 
+}
 
 // Return a value with the magnitude of the first argument and the sign of the second argument
 inline Fixed<10,-6> copysign(Fixed<10,-6> magnitude, Fixed<10,-6> signed_value) {
+  std::cout << "USING FIXED_H copysign" << std::endl;
   Fixed<10,-6> signed_magnitude = magnitude;
   if        (signed_value.mantissa < 0) {
     signed_magnitude.mantissa = -std::abs(signed_magnitude.mantissa);
