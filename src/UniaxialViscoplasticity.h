@@ -184,11 +184,8 @@ class UniaxialViscoplasticity {
 
       if (dt > 0.0) {
         delta_elastic = delta_elastic * A_rat;
-
-
       } else {
         delta_elastic = delta_elastic / A_rat;
-
       }
 
       elastic_strain = delta_elastic + offset;
@@ -221,42 +218,6 @@ class UniaxialViscoplasticity {
     }
     plastic_strain = epsilon_prev_dual - elastic_strain;
 
-    // Previous implemnetation of yeilding check:
-    // if ((std::abs(E*(state[1] - Real(plastic_strain.first))) > yield) && (steps_since_death == 0)) {
-    //   // Update the plastic strain
-    //   Dual<FixedE> dep(ep0*(1.0 - phi), 0.0);
-    //   std::cout << "yielding" << std::endl;
-    //   if (dt >= 0.0) {
-    //     FixedE old_ps = plastic_strain.first;
-    //     plastic_strain = plastic_strain*rat;
-    //     plastic_strain = plastic_strain + dep;
-    //     FixedE delta_ps = plastic_strain.first - old_ps;
-    //     if (delta_ps < FixedE(0.0)) {
-    //       eqps = eqps - delta_ps;
-    //     } else {
-    //       eqps = eqps + delta_ps;
-    //     }
-    //     overflow_counter++;
-    //     if (Real(eqps) > epsf) { steps_since_death = 1; } // the element has died
-    //         } else {
-    //     overflow_counter--;
-    //     FixedE new_ps = plastic_strain.first;
-    //     plastic_strain = plastic_strain - dep;
-    //     plastic_strain = plastic_strain/rat;
-    //     FixedE delta_ps = new_ps - plastic_strain.first;
-    //     if (delta_ps < FixedE(0.0)) {
-    //       eqps = eqps + delta_ps;
-    //     } else {
-    //       eqps = eqps - delta_ps;
-    //     }
-    //   }
-    //   //std::cout << " growth fac = " << 1.0/phi << std::endl;
-    //   //std::cout << "  primal ps = " << Real(plastic_strain.first)  << std::endl;
-    //   //std::cout << "    dual ps = " << Real(plastic_strain.second) << std::endl;
-    //   //std::cout << "    counter = " << overflow_counter << std::endl;
-    //   std::cout << "    eqps = " << Real(eqps) << std::endl;
-    // }
-    
     // Conditionally update the strain history variable
     if (dt < 0.0) state[1] = strain;
 
