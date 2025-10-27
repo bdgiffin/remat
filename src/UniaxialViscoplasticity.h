@@ -145,10 +145,10 @@ class UniaxialViscoplasticity {
     } 
 
     if (steps_since_death > 0) {
-      if (dt > 0.0) {
+      if (dt >= 0.0) {
         steps_since_death++;
       } else {
-        steps_since_death--;
+    steps_since_death--;
       }
       std::cout << " since death = " << steps_since_death << std::endl;
     }
@@ -161,7 +161,8 @@ class UniaxialViscoplasticity {
 
     // Define a small tolerance in the fixed-point representation
     Dual<FixedE> n_times_epsilon_tol_fixed(FixedE(0.0), FixedE(0.0));
-
+    
+    // Check for yielding
     if ((std::abs(elastic_strain_primal) >= yield_strain) && (steps_since_death == 0)) {
       Real n_sign = 0.0;
       if (elastic_strain_primal > 0.0) {
