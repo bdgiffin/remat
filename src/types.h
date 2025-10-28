@@ -16,10 +16,4 @@ typedef double Real;
 void load_from_Real(Real value, Real &load_value) { load_value = value; }
 void save_as_Real(Real value, Real& save_value) { save_value = value; }
 
-// Declare function to return the smallest representable value with the sign of the incoming argument
-Real smallest_value(Real signed_value) { return std::copysign(std::numeric_limits<Real>::min(),signed_value); }
-
-// Return a value with the magnitude of the first argument and the sign of the second argument
-Real copysign(Real magnitude, Real signed_value) { return std::copysign(magnitude,signed_value); }
-
 #endif // TYPES_H

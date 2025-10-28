@@ -346,9 +346,9 @@ class ViscoElasticity {
       overflow_state.push_back(state[12]);
       overflow_state.push_back(state[13]);
       overflow_state.push_back(state[14]);
-      state[12] = smallest_value(state[12]);
-      state[13] = smallest_value(state[13]);
-      state[14] = smallest_value(state[14]);
+      state[12] = Real(0.0);
+      state[13] = Real(0.0);
+      state[14] = Real(0.0);
     }
   }
 
