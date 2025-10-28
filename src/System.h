@@ -131,6 +131,8 @@ struct System : public SystemBase {
   // Stable time step size
   Real m_dt_scale_factor;
   Real m_stable_dt;
+  std::vector<Real> m_dt_history;
+  std::vector<Real> m_time_history;
 
   // Global body forces
   Real m_bx = 0.0;
@@ -221,6 +223,8 @@ struct System : public SystemBase {
     // Initialize global parameters
     m_time_step = 0;
     m_time = 0.0;
+    m_dt_history.clear();
+    m_time_history.clear();
     if (params.count("body_force_x") > 0) m_bx = params["body_force_x"];
     if (params.count("body_force_y") > 0) m_by = params["body_force_y"];
     if (params.count("initial_velocity_x") > 0) m_vx0 = params["initial_velocity_x"];
@@ -435,6 +439,8 @@ struct System : public SystemBase {
 
     // Set the overflow counter
     m_overflow_counter = 0;
+    m_dt_history.clear();
+    m_time_history.clear();
     
     // Update accelerations and damping factors for each DoF
     update_accelerations(0.0);
@@ -455,6 +461,8 @@ struct System : public SystemBase {
     // Update the time step ID and conditionally load overflow dual velocities
     if (dt < 0.0) {
       m_time_step--;
+      dt = -m_dt_history.back();
+      m_dt_history.pop_back();
       if (m_overflow_counter == 0) {
 	m_overflow_counter = m_overflow_limit;
 	std::vector<FixedV>& last_v_overflow = v_overflow.back();
@@ -505,6 +513,7 @@ struct System : public SystemBase {
 
     // Update time step ID and conditionally store overflow dual velocities
     if (dt > 0.0) {
+      m_dt_history.push_back(dt);
       m_time_step++;
       m_overflow_counter++;
       if (m_overflow_counter == m_overflow_limit) {
@@ -738,7 +747,14 @@ private:
   void update_accelerations(Real dt) {
 
     // Update the current analysis time
-    m_time = m_time + dt;
+    // m_time = m_time + dt;
+    if (dt > 0.0) {
+      m_time_history.push_back(m_time);
+      m_time = m_time + dt;
+    } else if (dt < 0.0) {
+      m_time = m_time_history.back();
+      m_time_history.pop_back();
+    }
 
     // Zero-initialize forces and masses
     std::fill(m.begin(), m.end(), 0.0);
