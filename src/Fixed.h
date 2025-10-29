@@ -12,7 +12,7 @@ template<int RADIX = 10, int EXPONENT = 0>
 struct Fixed {
   inline static Real     decimal = std::pow(RADIX,+EXPONENT);
   inline static Real inv_decimal = std::pow(RADIX,-EXPONENT);
-  inline static Fixed<RADIX,EXPONENT> smallest = Fixed<RADIX,EXPONENT>(Integer(0));
+  inline static Fixed<RADIX,EXPONENT> epsilon = Fixed<RADIX,EXPONENT>(Integer(1));
   Integer mantissa;
 
   // constructor method for a Fixed-precision number
@@ -72,28 +72,10 @@ inline void save_as_Real(Fixed_E value, Real& save_value) {
   save_value = value.mantissa;
 }
 
-// Declare function to return the smallest representable value with the sign of the incoming argument
-inline Fixed<10,-6> smallest_value(Fixed<10,-6> signed_value) { return copysign(Fixed<10,-6>::smallest,signed_value); }
-
-// Return a value with the magnitude of the first argument and the sign of the second argument
-inline Fixed<10,-6> copysign(Fixed<10,-6> magnitude, Fixed<10,-6> signed_value) {
-  Fixed<10,-6> signed_magnitude = magnitude;
-  if        (signed_value.mantissa < 0) {
-    signed_magnitude.mantissa = -std::abs(signed_magnitude.mantissa);
-  } else if (signed_value.mantissa > 0) {
-    signed_magnitude.mantissa =  std::abs(signed_magnitude.mantissa);
-  } // if the incoming signed_value is zero, keep the sign of the first argument
-  return signed_magnitude;
-}
-
-// Return a value with the magnitude of the first argument and the sign of the second argument
+// Return the magnitude (absolute value) of the signed argument
 inline Fixed<10,-6> abs(Fixed<10,-6> signed_value) {
   Fixed<10,-6> magnitude = signed_value;
-  if        (signed_value.mantissa < 0) {
-    magnitude.mantissa = -std::abs(magnitude.mantissa);
-  } else if (signed_value.mantissa > 0) {
-    magnitude.mantissa =  std::abs(magnitude.mantissa);
-  }
+  if (magnitude.mantissa < 0) magnitude.mantissa = -magnitude.mantissa;
   return magnitude;
 }
 

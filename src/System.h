@@ -295,7 +295,7 @@ struct System : public SystemBase {
 
     // Initialize dual DoFs
     for (int i=0; i<Ndofs; i++) {
-      v[i].second = smallest_value(v[i].first);
+      v[i].second = FixedV(0.0);
     }
 
     // Initialize connectivity data for all elements
@@ -513,7 +513,7 @@ struct System : public SystemBase {
 	for (int i=0; i<Ndofs; i++) {
 	  //if ((v[i].first == FixedV(0.0)) and !fixity[i]) exit(1);
 	  new_v_overflow[i] = v[i].second;
-	  v[i].second = smallest_value(v[i].second);
+	  v[i].second = FixedV(0.0);
 	}
 	v_overflow.push_back(new_v_overflow);
 	std::cout << "Storing velocity overflow: count = " << v_overflow.size() << std::endl;

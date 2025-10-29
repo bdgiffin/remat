@@ -17,9 +17,11 @@ class UniaxialViscoplasticity {
   Real area;  // Cross-sectional area
   Real E;     // Young's modulus
   Real eta;   // Viscosity
+  Real tau;   // Relaxation time
   Real yield; // Yield stress
   Real epsf;  // Equivalent plastic strian at failure
   int  mat_overflow_limit = std::numeric_limits<int>::max();
+  FixedE yield_strain; // Yield strain
  public:
 
   // Empty constructor
@@ -55,6 +57,12 @@ class UniaxialViscoplasticity {
       exit(EXIT_FAILURE);
     }
 
+    // Verify that the Young's modulus is a strictly positive value:
+    if (E <= 0.0) {
+      std::cout << "Invalid uniaxial viscoplasticity parameter specified: (youngs_modulus / truss_youngs_modulus) must be a strictly positive value" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
     // Get viscosity
     if (params.count("viscosity") > 0) {
       eta = params["viscosity"];
@@ -62,12 +70,18 @@ class UniaxialViscoplasticity {
       eta = std::numeric_limits<Real>::max();
     }
 
+    // Compute the relaxation time
+    tau = eta/E;
+
     // Get yield_stress
     if (params.count("yield_stress") > 0) {
       yield = params["yield_stress"];
     } else {
       yield = std::numeric_limits<Real>::max();
     }
+
+    // Compute the initial yield strain
+    yield_strain = FixedE(yield/E);
 
     // Get eps_fail (equivalent plastic strain at failure)
     if (params.count("eps_fail") > 0) {
@@ -114,13 +128,13 @@ class UniaxialViscoplasticity {
 
     // Check for element inversion
     if (lambda <= 0.0) {
-      std::cout << "ERROR: negative stretch ratio" << std::endl;
+      std::cout << "ERROR: non-positive stretch ratio" << std::endl;
       exit(EXIT_FAILURE);
     }
-
+    
     // Compute the axial (small) strain
     Real strain = lambda - 1.0;
-
+    
     // Load the plastic strain and its dual from memory
     FixedE p1,p2;
     load_from_Real(state[2],p1);
@@ -136,67 +150,77 @@ class UniaxialViscoplasticity {
 
     // Load the steps since element death
     int steps_since_death = int(state[6]);
-
-    // Compute the scaling factor
-    Real phi = std::exp(-E*std::abs(dt)/eta);
-    Ratio rat(phi);
-
-    // Conditionally update the strain history variable
-    if (dt >= 0.0) state[1] = strain;
-
-    // Determine the flow direction and the reference plastic strain
-    Real n = std::copysign(1.0,state[1] - Real(plastic_strain.first));
-    Real ep0 = state[1] - n*yield/E;
-
-    // Update the number of steps since element death occurred
+    
+    // Increment/decrement the "steps since element death" counter
     if (steps_since_death > 0) {
       if (dt >= 0.0) {
         steps_since_death++;
       } else {
 	steps_since_death--;
       }
-      std::cout << " since death = " << steps_since_death << std::endl;
-    }
-
-    // Check for yielding
-    if ((std::abs(E*(state[1] - Real(plastic_strain.first))) > yield) && (steps_since_death == 0)) {
-      // Update the plastic strain
-      Dual<FixedE> dep(ep0*(1.0 - phi), 0.0);
-      std::cout << "yielding" << std::endl;
-      if (dt >= 0.0) {
-	FixedE old_ps = plastic_strain.first;
-	plastic_strain = plastic_strain*rat;
-	plastic_strain = plastic_strain + dep;
-	FixedE delta_ps = plastic_strain.first - old_ps;
-	if (delta_ps < FixedE(0.0)) {
-	  eqps = eqps - delta_ps;
-	} else {
-	  eqps = eqps + delta_ps;
-	}
-	overflow_counter++;
-	if (Real(eqps) > epsf) { steps_since_death = 1; } // the element has died
-      } else {
-	overflow_counter--;
-	FixedE new_ps = plastic_strain.first;
-	plastic_strain = plastic_strain - dep;
-	plastic_strain = plastic_strain/rat;
-	FixedE delta_ps = new_ps - plastic_strain.first;
-	if (delta_ps < FixedE(0.0)) {
-	  eqps = eqps + delta_ps;
-	} else {
-	  eqps = eqps - delta_ps;
-	}
-      }
-      //std::cout << " growth fac = " << 1.0/phi << std::endl;
-      //std::cout << "  primal ps = " << Real(plastic_strain.first)  << std::endl;
-      //std::cout << "    dual ps = " << Real(plastic_strain.second) << std::endl;
-      //std::cout << "    counter = " << overflow_counter << std::endl;
-      std::cout << "    eqps = " << Real(eqps) << std::endl;
     }
 
     // Conditionally update the strain history variable
-    if (dt < 0.0) state[1] = strain;
+    if (dt > 0.0) { state[1] = strain; } // strain_prev <- strain
+    Dual<FixedE> total_strain(FixedE(state[1]), FixedE(0.0));
+
+    // Compute the trial elastic strain = (total strain) - (plastic strain)
+    Dual<FixedE> elastic_strain = total_strain - plastic_strain;
     
+    // Check for yielding
+    if ((abs(elastic_strain.first) >= yield_strain) && (steps_since_death == 0)) {
+
+      // Determine the flow direction
+      bool n_positive = (elastic_strain.first >= FixedE(0.0));
+
+      // Compute the amplification factor
+      Ratio A_rat(std::exp(-std::abs(dt)/tau));
+
+      // Offset the trial elastic strain by the (signed) yield strain
+      if (n_positive) {
+	elastic_strain.first = elastic_strain.first - yield_strain;
+      } else {
+	elastic_strain.first = elastic_strain.first + yield_strain;
+      }
+
+      // Multiply the shifted elastic strain by the amplification factor
+      FixedE old_elastic_strain = elastic_strain.first;
+      if (dt > 0.0) { // forward-in-time
+        elastic_strain = elastic_strain * A_rat;
+      } else {        // backward-in-time
+        elastic_strain = elastic_strain / A_rat;
+      }
+
+      // Determine the change in plastic strain (negative of the change in elastic strain)
+      // Delta Ep = (old Ee) - (new Ee) = (new Ep) - (old Ep)
+      // FixedE delta_ps = old_elastic_strain - elastic_strain.first;
+
+      // Update the equivalent plastic strain
+      FixedE delta_eqps = abs(old_elastic_strain - elastic_strain.first);
+      if (dt >= 0.0) {
+	eqps = eqps + delta_eqps;
+        overflow_counter++;
+        if (Real(eqps) > epsf) { steps_since_death = 1; }
+      } else {
+        overflow_counter--;
+	eqps = eqps - delta_eqps;
+      }
+
+      // Reverse-offset the trial elastic strain by the (signed) yield strain
+      if (n_positive) {
+	elastic_strain.first = elastic_strain.first + yield_strain;
+      } else {
+	elastic_strain.first = elastic_strain.first - yield_strain;
+      }
+      
+    } // check for yielding
+
+    // Compute the updated plastic strain = (total strain) - (elastic strain)
+    plastic_strain = total_strain - elastic_strain;
+
+    // Conditionally update the strain history variable
+    if (dt < 0.0) { state[1] = strain; } // strain_prev <- strain
+
     // Compute and store the axial stress and force
     Real stress = (steps_since_death > 0) ? 0.0 : E*(state[1] - Real(plastic_strain.first));
     state[0] = stress*area;
@@ -207,16 +231,16 @@ class UniaxialViscoplasticity {
 
     // Save the overflow counter to memory
     state[4] = Real(overflow_counter);
-
+    
     // Save the equivalent plastic strain to memory
     save_as_Real(eqps, state[5]);
-
+    
     // Save the steps since element death
     state[6] = Real(steps_since_death);
 
     // Compute the strain energy per unit length
     psi = (steps_since_death > 0) ? 0.0 : 0.5*state[0]*(state[1] - Real(plastic_strain.first));
-    
+
   } // update()
 
   // Conditionally load material history parameters from memory
@@ -232,7 +256,7 @@ class UniaxialViscoplasticity {
     if (int(state[4]) == mat_overflow_limit) {
       state[4] = Real(0);
       overflow_state.push_back(state[3]);
-      state[3] = smallest_value(state[3]);
+      state[3] = Real(0.0);
     }
   }
   
