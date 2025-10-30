@@ -47,6 +47,15 @@ blt_add_executable(NAME       test_Integrator
 blt_add_test(NAME    test_Integrator
 	     COMMAND test_Integrator)
 
+blt_add_executable(NAME       test_UniaxialViscoplasticity
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_UniaxialViscoplasticity.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+		 
+blt_add_test(NAME    test_UniaxialViscoplasticity
+	     COMMAND test_UniaxialViscoplasticity)
+
 blt_add_executable(NAME       test_System
                    SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_System.cpp
                    INCLUDES   ${test_include_dirs}
