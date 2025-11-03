@@ -14,6 +14,7 @@
 #include "Truss.h"
 #include "UniaxialMaterial.h"
 #include "UniaxialViscoplasticity.h"
+#include "BoundaryCondition.h"
 #include <chrono>
 #include <iostream>
 #include <stdio.h>
@@ -105,6 +106,13 @@ extern "C" {
   void define_point_mass(int *point_ids, double *point_mass, size_t Npoints) {
     remat->initialize_point_mass(point_ids,point_mass,Npoints,params);
   } // define_point_mass()
+  
+  // ------------------------------------------------------------------------ //
+
+  // Define a time-varying displacement boundary condition
+  void define_displacement_bc(int *node_ids, size_t Nnodes, int component, TimeFunction function) {
+    remat->define_displacement_bc(node_ids,static_cast<int>(Nnodes),component,function);
+  } // define_displacement_bc()
   
   // ------------------------------------------------------------------------ //
 
