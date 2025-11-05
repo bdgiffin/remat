@@ -440,8 +440,8 @@ struct System : public SystemBase {
     bc.component = component;
     bc.function = function;
     bc.nodes.node_ids.clear();
-    bc.last_values.clear();
-    bc.prescribed_velocities.clear();
+    bc.last_values.assign(num_nodes, 0.0);
+    bc.prescribed_velocities.assign(num_nodes, 0.0);
     
     // Loop over all nodes that will have the displacement BC applied
     for (int i=0; i<num_nodes; ++i) {
@@ -458,14 +458,15 @@ struct System : public SystemBase {
       }
 
       bc.nodes.node_ids.push_back(node_id);
+      int constrained_dof = bc.nodes.node_ids.size() - 1;
       
       Real px = x[Ndofs_per_node*node_id + 0];
       Real py = 0.0;
       if (Ndofs_per_node > 1) py = x[Ndofs_per_node*node_id + 1];
 
       Real initial_value = function(m_time, px, py);
-      bc.last_values.push_back(initial_value);
-      bc.prescribed_velocities.push_back(0.0);
+      bc.last_values[constrained_dof] = initial_value;
+      bc.prescribed_velocities[constrained_dof] = 0.0;
 
       fixity[dof] = true;
       m_has_time_bc[dof] = true;
@@ -474,6 +475,9 @@ struct System : public SystemBase {
     }
 
     if (!bc.nodes.node_ids.empty()) {
+      int constrained_dof = bc.nodes.node_ids.size();
+      bc.last_values.resize(constrained_dof);
+      bc.prescribed_velocities.resize(constrained_dof);
       m_displacement_bcs.push_back(bc);
     }
     
