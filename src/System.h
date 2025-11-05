@@ -2,6 +2,7 @@
 #define SYSTEM_H
 
 #include "types.h"
+#include "BoundaryCondition.h"
 #include "ContactInteraction.h"
 #include "Dual.h"
 #include "Integrator.h"
@@ -39,6 +40,11 @@ struct SystemBase {
 
   // Procedure to initialize new point masses
   virtual void initialize_point_mass(int* new_point_ids, double* new_point_mass, int new_Npoints, Parameters& params) = 0;
+  
+  // ===================================================================== //
+
+  // Procedure to define a time-varying displacement boundary condition
+  virtual void define_displacement_bc(int* node_ids, int num_nodes, int component, TimeFunction function) = 0;
   
   // ===================================================================== //
 
@@ -131,6 +137,8 @@ struct System : public SystemBase {
   // Stable time step size
   Real m_dt_scale_factor;
   Real m_stable_dt;
+  std::vector<Real> m_dt_history;
+  std::vector<Real> m_time_history;
 
   // Global body forces
   Real m_bx = 0.0;
@@ -168,6 +176,8 @@ struct System : public SystemBase {
   std::vector<Dual<Real> >     a; // The (primal) system accelerations for each DoF
   std::vector<Real>        alpha; // The system damping factors for each DoF
   std::vector<std::string> node_field_names;
+  std::vector<DisplacementBoundaryCondition> m_displacement_bcs; // Time-varying displacement boundary conditions
+  std::vector<bool> m_has_time_bc; // Flags indicating DoFs with time-varying BCs
 
   // Solid element data
   Element_T            m_element; // Solid element class
@@ -221,6 +231,8 @@ struct System : public SystemBase {
     // Initialize global parameters
     m_time_step = 0;
     m_time = 0.0;
+    m_dt_history.clear();
+    m_time_history.clear();
     if (params.count("body_force_x") > 0) m_bx = params["body_force_x"];
     if (params.count("body_force_y") > 0) m_by = params["body_force_y"];
     if (params.count("initial_velocity_x") > 0) m_vx0 = params["initial_velocity_x"];
@@ -244,6 +256,11 @@ struct System : public SystemBase {
     const int Nstate = Nelems*Nstate_vars_per_elem;
     if (Nelems > 0) element_field_names = m_element.m_model.get_field_names();
 
+    // Reset displacement boundary condition data
+    m_displacement_bcs.clear();
+    m_has_time_bc.resize(Ndofs);
+
+    // assign() → // initialize all DOFs (assign is cleaner than resize+manual loop)
     // Initialize the dimensions of all arrays
     connect.resize(Nelem_dofs);
     fixity.resize(Ndofs);
@@ -285,6 +302,7 @@ struct System : public SystemBase {
       f[i] = 0.0;
       a[i] = Dual<Real>(0.0,0.0);
       alpha[i] = 0.0;
+      m_has_time_bc[i] = false;
     }
     
     // Assign constant initial velocity (if defined)
@@ -400,6 +418,73 @@ struct System : public SystemBase {
   
   // ===================================================================== //
 
+  // Procedure to define a time-varying displacement boundary condition
+  virtual void define_displacement_bc(int* node_ids, int num_nodes, int component, TimeFunction function) {
+    
+    if (function == nullptr) {
+      std::cerr << "Null time function provided for displacement boundary condition." << std::endl;
+      return;
+    }
+
+    if (Ndofs == 0) {
+      std::cerr << "Geometry must be defined before adding displacement boundary conditions." << std::endl;
+      return;
+    }
+
+    if ((component < 0) || (component >= Ndofs_per_node)) {
+      std::cerr << "Invalid component (" << component << ") for displacement boundary condition." << std::endl;
+      return;
+    }
+
+    DisplacementBoundaryCondition bc;
+    bc.component = component;
+    bc.function = function;
+    bc.nodes.node_ids.clear();
+    bc.last_values.assign(num_nodes, 0.0);
+    bc.prescribed_velocities.assign(num_nodes, 0.0);
+    
+    // Loop over all nodes that will have the displacement BC applied
+    for (int i=0; i<num_nodes; ++i) {
+      int node_id = node_ids[i];
+      if ((node_id < 0) || (node_id >= Nnodes)) {
+	std::cerr << "Ignoring invalid node id (" << node_id << ") in displacement boundary condition." << std::endl;
+	continue;
+      }
+
+      int dof = Ndofs_per_node*node_id + component;
+      if ((dof < 0) || (dof >= Ndofs)) {
+	std::cerr << "Ignoring invalid DoF index (" << dof << ") in displacement boundary condition." << std::endl;
+	continue;
+      }
+
+      bc.nodes.node_ids.push_back(node_id);
+      int constrained_dof = bc.nodes.node_ids.size() - 1;
+      
+      Real px = x[Ndofs_per_node*node_id + 0];
+      Real py = 0.0;
+      if (Ndofs_per_node > 1) py = x[Ndofs_per_node*node_id + 1];
+
+      Real initial_value = function(m_time, px, py);
+      bc.last_values[constrained_dof] = initial_value;
+      bc.prescribed_velocities[constrained_dof] = 0.0;
+
+      fixity[dof] = true;
+      m_has_time_bc[dof] = true;
+      u[dof] = Dual<FixedU>(initial_value, 0.0);
+      v[dof] = Dual<FixedV>(0.0, 0.0);
+    }
+
+    if (!bc.nodes.node_ids.empty()) {
+      int constrained_dof = bc.nodes.node_ids.size();
+      bc.last_values.resize(constrained_dof);
+      bc.prescribed_velocities.resize(constrained_dof);
+      m_displacement_bcs.push_back(bc);
+    }
+    
+  } // define_displacement_bc()
+  
+  // ===================================================================== //
+
   // Procedure to initialize variable material stiffness properties
   virtual void initialize_variable_properties(double (*function_xy)(double,double)) {
 
@@ -435,6 +520,12 @@ struct System : public SystemBase {
 
     // Set the overflow counter
     m_overflow_counter = 0;
+    m_dt_history.clear();
+    m_time_history.clear();
+
+    // Apply any prescribed displacement boundary conditions at the initial time
+    apply_displacement_bcs(m_time,0.0);
+    enforce_prescribed_velocities();
     
     // Update accelerations and damping factors for each DoF
     update_accelerations(0.0);
@@ -455,6 +546,8 @@ struct System : public SystemBase {
     // Update the time step ID and conditionally load overflow dual velocities
     if (dt < 0.0) {
       m_time_step--;
+      dt = -m_dt_history.back();
+      m_dt_history.pop_back();
       if (m_overflow_counter == 0) {
 	m_overflow_counter = m_overflow_limit;
 	std::vector<FixedV>& last_v_overflow = v_overflow.back();
@@ -493,18 +586,33 @@ struct System : public SystemBase {
 
     // Update displacement to the next whole-step
     m_integrator.whole_step_displacement_update(dt,v.data(),u.data(),Ndofs);
+
+    // Storing/restoring time history
+    // Real target_time = m_time + dt;
+    if (dt > 0.0) {
+      m_time_history.push_back(m_time);
+      m_time = m_time + dt;
+    } else if (dt < 0.0) {
+      m_time = m_time_history.back();
+      m_time_history.pop_back();
+    }
+
+    // Enforce prescribed displacement boundary conditions at the new analysis time
+    apply_displacement_bcs(m_time,dt);
     
     // Update masses, residual forces, and accelerations at the whole-step
     update_accelerations(dt);
-    
+    // enforce_prescribed_velocities();
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+    enforce_prescribed_velocities();
 
     // Update kinetic energy
     update_kinetic_energy();
 
     // Update time step ID and conditionally store overflow dual velocities
     if (dt > 0.0) {
+      m_dt_history.push_back(dt);
       m_time_step++;
       m_overflow_counter++;
       if (m_overflow_counter == m_overflow_limit) {
@@ -734,11 +842,80 @@ struct System : public SystemBase {
 private:
   // ===================================================================== //
 
+  // Check if a specified DoF is controlled by a time-varying boundary condition
+  bool has_time_varying_bc(int dof) const { return (dof >= 0 && dof < int(m_has_time_bc.size())) ? m_has_time_bc[dof] : false; }
+
+  // ===================================================================== //
+
+  // Apply all time-varying displacement boundary conditions at the specified time
+  void apply_displacement_bcs(Real target_time, Real dt) {
+    if (m_displacement_bcs.empty()) { return; }
+    
+    // later if we want to increase the number of elements/nodes we should try to save num_nodes to size_t so it will be size_t i and j for loops or even dofs
+    for (int i = 0; i < m_displacement_bcs.size(); i++) {
+      DisplacementBoundaryCondition& bc = m_displacement_bcs[i];
+      if (bc.function == nullptr) { continue; }
+      int num_nodes = bc.nodes.node_ids.size();
+      if (bc.last_values.size() != num_nodes) {
+	bc.last_values.resize(num_nodes,0.0);
+      }
+      if (bc.prescribed_velocities.size() != num_nodes) {
+	bc.prescribed_velocities.resize(num_nodes,0.0);
+      }
+      // later if we want to increase the number of elements/nodes we should try to save num_nodes to size_t so it will be size_t i and j for loops or even dofs
+      for (int j=0; j<num_nodes; ++j) {
+	int node_id = bc.nodes.node_ids[j];
+	if ((node_id < 0) || (node_id >= Nnodes)) { continue; }
+
+	int dof = Ndofs_per_node*node_id + bc.component;
+	if ((dof < 0) || (dof >= Ndofs)) { continue; }
+
+	Real px = x[Ndofs_per_node*node_id + 0];
+	Real py = 0.0;
+	if (Ndofs_per_node > 1) py = x[Ndofs_per_node*node_id + 1];
+
+	Real previous_diplacement_value = bc.last_values[j];
+	Real new_diplacement_value = bc.function(target_time, px, py);
+
+	Real velocity = 0.0;
+	if (dt != 0.0) velocity = (new_diplacement_value - previous_diplacement_value)/dt;
+	bc.last_values[j] = new_diplacement_value;
+	bc.prescribed_velocities[j] = velocity;
+	u[dof] = Dual<FixedU>(new_diplacement_value,0.0);
+	v[dof] = Dual<FixedV>(velocity,0.0);
+	m_has_time_bc[dof] = true;
+	fixity[dof] = true;
+      }
+    }
+  } // apply_displacement_bcs()
+
+  // ===================================================================== //
+
+  void enforce_prescribed_velocities() {
+    if (m_displacement_bcs.empty()) { return; }
+
+    for (int i = 0; i < m_displacement_bcs.size(); i++) {
+      DisplacementBoundaryCondition& bc = m_displacement_bcs[i];
+      int num_nodes = bc.nodes.node_ids.size();
+      for (int j=0; j<num_nodes; j++) {
+        int node_id = bc.nodes.node_ids[j];
+        if ((node_id < 0) || (node_id >= Nnodes)) continue; 
+        int dof = Ndofs_per_node*node_id + bc.component;
+        if ((dof < 0) || (dof >= Ndofs)) continue; 
+        if (!has_time_varying_bc(dof)) continue; 
+        if (j < bc.prescribed_velocities.size()) {
+          v[dof].first = bc.prescribed_velocities[j];
+          v[dof].second = 0.0;
+        }
+      }
+    }
+  } // enforce_prescribed_velocities()
+
+  // ===================================================================== //
+
   // Procedure to update the accelerations
   void update_accelerations(Real dt) {
 
-    // Update the current analysis time
-    m_time = m_time + dt;
 
     // Zero-initialize forces and masses
     std::fill(m.begin(), m.end(), 0.0);
@@ -930,4 +1107,3 @@ private:
 }; // System
 
 #endif // SYSTEM_H
-

@@ -101,10 +101,24 @@ coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = pi
 # Define the problem geometry
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
+# Time-varying displacement boundary conditions
+moving_node_ids = np.array([30, 32, 34, 35, 36, 37, 42, 51, 53, 55, 56, 57, 58, 78, 79]).astype(np.int32)
+
+
+def top_horizontal_motion(time, x, y):
+    return 1 * time
+
+if moving_node_ids.size > 0:
+    # print(f"Defining time-varying displacement BC on {np.ascontiguousarray(moving_node_ids, dtype=np.int32), 0, top_horizontal_motion} top nodes")
+    REMAT.define_displacement_bc(
+        np.ascontiguousarray(moving_node_ids, dtype=np.int32),
+        0,
+        top_horizontal_motion)
+
 # Run analysis -------------------------------------------------------------
 
 # Define "main" animation loop
-Nsteps = 150
+Nsteps = 1500
 Nsub_steps = 10
 dt = 1.0e-3 # [s] time increment
 anim = Animation(Nsteps,Nsub_steps,dt,

@@ -35,6 +35,9 @@ c_double_p = POINTER(c_double)
 # C-types corresponding to a function that accepts 2 double arguments and returns 1 double
 c_function_2d = CFUNCTYPE(c_double, c_double, c_double)
 
+# C-types corresponding to a time-varying displacement boundary condition function that accepts 3 arguments and returns 1 double
+c_time_function = CFUNCTYPE(c_double, c_double, c_double, c_double)
+
 # C-type corresponding to 1D numpy array
 ND_POINTER_1 = np.ctypeslib.ndpointer(dtype=np.double,
                                       ndim=1,
@@ -70,6 +73,8 @@ API.define_contact_interaction.argtypes = [NI_POINTER_1, NI_POINTER_2, c_size_t,
 API.define_contact_interaction.restype  = None
 API.define_point_mass.argtypes = [NI_POINTER_1, ND_POINTER_1, c_size_t]
 API.define_point_mass.restype  = None
+API.define_displacement_bc.argtypes = [NI_POINTER_1, c_size_t, c_int, c_time_function]
+API.define_displacement_bc.restype  = None
 API.initialize.argtypes = None
 API.initialize.restype  = None
 API.initialize_variable_properties.argtypes = [c_function_2d]
@@ -94,6 +99,8 @@ API.get_time.argtypes         = None
 API.get_time.restype          = c_double
 
 # ---------------------------------------------------------------------------- #
+# Prevent garbage collection
+_registered_time_functions = []
 
 # Generate mesh geometry and initialize the REMAT object prior to initialization
 def create_geometry(x,v,fixity,connectivity,contacts,truss_connectivity):
@@ -124,6 +131,29 @@ def define_variable_properties(py_function_xy):
 
     # Call REMAT API function to adjust variable properties
     API.initialize_variable_properties(c_function_xy)
+    
+# ---------------------------------------------------------------------------- #
+
+# Define a time-dependent displacement boundary condition
+def define_displacement_bc(node_ids, component, py_time_function):
+
+    node_ids = np.asarray(node_ids, dtype=np.int32).ravel()
+    if node_ids.size == 0:
+        return
+
+    c_nodes = np.ascontiguousarray(node_ids, dtype=np.int32)
+
+    # Convert python function to C callback
+    c_function = c_time_function(py_time_function)
+
+    # Retain a reference to the callback to keep it alive
+    # Apparently ctypes does not automatically keep these references alive
+    # Later when we call this from C/C++ code the references may be lost
+    # I did not know this before experiencing segmentation faults!
+    _registered_time_functions.append(c_function)
+
+    # Call REMAT API function to define the displacement BC
+    API.define_displacement_bc(c_nodes, node_ids.size, int(component), c_function)
     
 # ---------------------------------------------------------------------------- #
 
