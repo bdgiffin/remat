@@ -1,5 +1,5 @@
-#ifndef BOUNDARYCONDITION_H
-#define BOUNDARYCONDITION_H
+#ifndef BOUNDARY_CONDITION_H
+#define BOUNDARY_CONDITION_H
 
 #include <vector>
 #include "types.h"
@@ -18,6 +18,7 @@ struct DisplacementBoundaryCondition {
   int component = 0;
   TimeFunction function = nullptr;
   std::vector<Real> last_values;
+  std::vector<Real> prescribed_velocities;
 };
 
-#endif // BOUNDARYCONDITION_H
+#endif // BOUNDARY_CONDITION_H

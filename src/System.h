@@ -178,7 +178,6 @@ struct System : public SystemBase {
   std::vector<std::string> node_field_names;
   std::vector<DisplacementBoundaryCondition> m_displacement_bcs; // Time-varying displacement boundary conditions
   std::vector<bool> m_has_time_bc; // Flags indicating DoFs with time-varying BCs
-  std::vector<Real> m_prescribed_velocities; // Prescribed velocities for constrained DoFs
 
   // Solid element data
   Element_T            m_element; // Solid element class
@@ -260,7 +259,6 @@ struct System : public SystemBase {
     // Reset displacement boundary condition data
     m_displacement_bcs.clear();
     m_has_time_bc.resize(Ndofs);
-    m_prescribed_velocities.resize(Ndofs);
 
     // assign() → // initialize all DOFs (assign is cleaner than resize+manual loop)
     // Initialize the dimensions of all arrays
@@ -305,7 +303,6 @@ struct System : public SystemBase {
       a[i] = Dual<Real>(0.0,0.0);
       alpha[i] = 0.0;
       m_has_time_bc[i] = false;
-      m_prescribed_velocities[i] = 0.0;
     }
     
     // Assign constant initial velocity (if defined)
@@ -444,6 +441,7 @@ struct System : public SystemBase {
     bc.function = function;
     bc.nodes.node_ids.clear();
     bc.last_values.clear();
+    bc.prescribed_velocities.clear();
     
     // Loop over all nodes that will have the displacement BC applied
     for (int i=0; i<num_nodes; ++i) {
@@ -467,10 +465,10 @@ struct System : public SystemBase {
 
       Real initial_value = function(m_time, px, py, node_id, component);
       bc.last_values.push_back(initial_value);
+      bc.prescribed_velocities.push_back(0.0);
 
       fixity[dof] = true;
       m_has_time_bc[dof] = true;
-      m_prescribed_velocities[dof] = 0.0;
       u[dof] = Dual<FixedU>(initial_value, 0.0);
       v[dof] = Dual<FixedV>(0.0, 0.0);
     }
@@ -600,7 +598,7 @@ struct System : public SystemBase {
     
     // Update masses, residual forces, and accelerations at the whole-step
     update_accelerations(dt);
-    
+    // enforce_prescribed_velocities();
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
     enforce_prescribed_velocities();
@@ -857,6 +855,9 @@ private:
       if (bc.last_values.size() != num_nodes) {
 	bc.last_values.resize(num_nodes,0.0);
       }
+      if (bc.prescribed_velocities.size() != num_nodes) {
+	bc.prescribed_velocities.resize(num_nodes,0.0);
+      }
       // later if we want to increase the number of elements/nodes we should try to save num_nodes to size_t so it will be size_t i and j for loops or even dofs
       for (int j=0; j<num_nodes; ++j) {
 	int node_id = bc.nodes.node_ids[j];
@@ -875,9 +876,9 @@ private:
 	Real velocity = 0.0;
 	if (dt != 0.0) velocity = (new_diplacement_value - previous_diplacement_value)/dt;
 	bc.last_values[j] = new_diplacement_value;
+	bc.prescribed_velocities[j] = velocity;
 	u[dof] = Dual<FixedU>(new_diplacement_value,0.0);
 	v[dof] = Dual<FixedV>(velocity,0.0);
-	m_prescribed_velocities[dof] = velocity;
 	m_has_time_bc[dof] = true;
 	fixity[dof] = true;
       }
@@ -893,15 +894,15 @@ private:
       DisplacementBoundaryCondition& bc = m_displacement_bcs[i];
       int num_nodes = bc.nodes.node_ids.size();
       for (int j=0; j<num_nodes; j++) {
-	int node_id = bc.nodes.node_ids[j];
-	if ((node_id < 0) || (node_id >= Nnodes)) { continue; }
-
-	int dof = Ndofs_per_node*node_id + bc.component;
-	if ((dof < 0) || (dof >= Ndofs)) { continue; }
-	if (!has_time_varying_bc(dof)) { continue; }
-
-	v[dof].first = m_prescribed_velocities[dof];
-	v[dof].second = 0.0;
+        int node_id = bc.nodes.node_ids[j];
+        if ((node_id < 0) || (node_id >= Nnodes)) continue; 
+        int dof = Ndofs_per_node*node_id + bc.component;
+        if ((dof < 0) || (dof >= Ndofs)) continue; 
+        if (!has_time_varying_bc(dof)) continue; 
+        if (j < bc.prescribed_velocities.size()) {
+          v[dof].first = bc.prescribed_velocities[j];
+          v[dof].second = 0.0;
+        }
       }
     }
   } // enforce_prescribed_velocities()
@@ -1063,13 +1064,8 @@ private:
       if (fixity[i]) {
 	a[i].first  = 0.0;
 	a[i].second = 0.0;
-	if (has_time_varying_bc(i)) {
-	  v[i].first  = m_prescribed_velocities[i];
-	  v[i].second = 0.0;
-	} else {
-	  v[i].first  = 0.0;
-	  v[i].second = 0.0;
-	}
+	v[i].first  = 0.0;
+	v[i].second = 0.0;
       }
 
     } // End loop over all DoFs
@@ -1107,4 +1103,3 @@ private:
 }; // System
 
 #endif // SYSTEM_H
-
