@@ -35,8 +35,8 @@ c_double_p = POINTER(c_double)
 # C-types corresponding to a function that accepts 2 double arguments and returns 1 double
 c_function_2d = CFUNCTYPE(c_double, c_double, c_double)
 
-# C-types corresponding to a time-varying displacement boundary condition function that accepts 5 arguments and returns 1 double
-c_time_function = CFUNCTYPE(c_double, c_double, c_double, c_double, c_int, c_int)
+# C-types corresponding to a time-varying displacement boundary condition function that accepts 3 arguments and returns 1 double
+c_time_function = CFUNCTYPE(c_double, c_double, c_double, c_double)
 
 # C-type corresponding to 1D numpy array
 ND_POINTER_1 = np.ctypeslib.ndpointer(dtype=np.double,

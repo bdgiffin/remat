@@ -10,7 +10,7 @@ struct NodeSet {
 };
 
 // Define function pointer for time-varying displacement boundary conditions.
-typedef Real (*TimeFunction)(Real time, Real x, Real y, int node_id, int component);
+typedef Real (*TimeFunction)(Real time, Real x, Real y);
 
 // Data associated with a prescribed, time-varying displacement boundary condition.
 struct DisplacementBoundaryCondition {

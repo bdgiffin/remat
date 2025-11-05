@@ -463,7 +463,7 @@ struct System : public SystemBase {
       Real py = 0.0;
       if (Ndofs_per_node > 1) py = x[Ndofs_per_node*node_id + 1];
 
-      Real initial_value = function(m_time, px, py, node_id, component);
+      Real initial_value = function(m_time, px, py);
       bc.last_values.push_back(initial_value);
       bc.prescribed_velocities.push_back(0.0);
 
@@ -871,7 +871,7 @@ private:
 	if (Ndofs_per_node > 1) py = x[Ndofs_per_node*node_id + 1];
 
 	Real previous_diplacement_value = bc.last_values[j];
-	Real new_diplacement_value = bc.function(target_time, px, py, node_id, bc.component);
+	Real new_diplacement_value = bc.function(target_time, px, py);
 
 	Real velocity = 0.0;
 	if (dt != 0.0) velocity = (new_diplacement_value - previous_diplacement_value)/dt;
