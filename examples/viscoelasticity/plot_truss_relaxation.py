@@ -72,8 +72,9 @@ def load_state_history(state_name,exo_path):
             raise RuntimeError("No time steps found in the Exodus file.")
         block_id = 1
         state_data = np.empty_like(time_steps, dtype=float)
-        for step_index in range(1, time_steps.size):
+        for step_index in range(1, time_steps.size+1):
             state_data[step_index - 1] = exo.get_element_variable_values(block_id, state_name, step_index)[0]
+        # print(f"Loaded state '{state_data}' from Exodus file.")
     return time_steps, state_data
 
 def plot_stress(time_steps, stress):
@@ -82,7 +83,7 @@ def plot_stress(time_steps, stress):
     right = time_steps >= center_x
     left = time_steps <= center_x
 
-    y0, y1 = np.nanmin(stress), np.nanmax(stress)
+    y0, y1 = np.nanmin(stress), np.nanmax(stress[left])
     pad = 0.05 * (y1 - y0 if y1 > y0 else 1.0)
     y0, y1 = y0 - pad, y1 + pad
 
@@ -103,7 +104,7 @@ def plot_stress(time_steps, stress):
 
     ax2.plot(time_steps[left][::-1], stress[right], marker="o", linewidth=1.2, markersize=2)
     ax2.set_xlabel("backward time step")
-    ax2.set_ylim(y0, y1)
+    # ax2.set_ylim(y0, y1)
     ax2.xaxis.set_inverted(True) 
     # ax2.set_xlim(center_x, time_steps.max())
     # ax2.axvline(center_x, color="gray", linestyle="--", linewidth=0.8)
