@@ -39,11 +39,13 @@ REMAT.API.define_parameter(b"poissons_ratio", 0.25)
 REMAT.API.define_parameter(b"truss_density", 1.0)
 REMAT.API.define_parameter(b"truss_youngs_modulus", 1.0)
 REMAT.API.define_parameter(b"area", 1.0)
-REMAT.API.define_parameter(b"viscosity", 5.0e-1)
-REMAT.API.define_parameter(b"mat_overflow_limit", 2000.0)
+REMAT.API.define_parameter(b"viscosity", 1e1)
+# REMAT.API.define_parameter(b"mat_overflow_limit", 3000.0)
+REMAT.API.define_parameter(b"mat_overflow_limit", 3000000000000.0)
 
 # Set the integrator type 
-REMAT.API.set_integrator_type(b"fixed_truss_visco")
+# REMAT.API.set_integrator_type(b"fixed_truss_visco")
+REMAT.API.set_integrator_type(b"float_truss_visco")
 
 # --------------------------------------------------------------------------
 
@@ -67,19 +69,51 @@ REMAT.create_geometry(coordinates,
                       truss_connectivity)
 
 # --------------------------------------------------------------------------
-
-# Step strain displacement boundary condition for the right node
+# Define displacement boundary conditions
 left_x = coordinates[0, 0]
 
-
+# Step strain
 def right_node_step(time, x, y):
     if time == 0.0:
         return 0.0
     else:
-        return epsilon0 * (x - left_x)
+        eps_t = epsilon0
+        return eps_t * (x - left_x)
 
 
-REMAT.define_displacement_bc(np.array([1], dtype=np.int32), 0, right_node_step)
+# Constant strain rate
+def right_node_constant_rate(time, x, y):
+    R = epsilon0
+    eps_t = R * time
+    return eps_t * (x - left_x)
+
+
+# Sinusoidal cyclic loading (DMA)
+def right_node_sinusoidal(time, x, y):
+    A = epsilon0
+    omega = 2.0 * pi  # 1 Hz by default
+    eps_t = A * sin(omega * time)
+    return eps_t * (x - left_x)
+
+
+# Clipped sinusoid
+def right_node_clipped_sinusoid(time, x, y):
+    C = 0.0
+    A = epsilon0
+    omega = 2.0 * pi
+    Amin = -0.5 * epsilon0
+    Amax = +0.5 * epsilon0
+    raw = A * sin(omega * time)
+    clipped = raw
+    if clipped < Amin:
+        clipped = Amin
+    elif clipped > Amax:
+        clipped = Amax
+    eps_t = C + clipped
+    return eps_t * (x - left_x)
+
+
+REMAT.define_displacement_bc(np.array([1], dtype=np.int32), 0, right_node_constant_rate)
 
 REMAT.API.initialize()
 
@@ -93,7 +127,7 @@ if exodus_available:
 # Run analysis -------------------------------------------------------------
 
 dt = 1.0e-3
-Nsteps = 40
+Nsteps = 80
 Nsub_steps = 1000
 
 # Forward integration
