@@ -64,17 +64,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyexodus
 
-def load_stress_history(exo_path):
+def load_state_history(state_name,exo_path):
     with pyexodus.exodus(str(exo_path), mode="r", array_type="numpy") as exo:
         ds = exo._f
         time_steps = np.asarray(ds.variables["time_whole"][:-1], dtype=float)
         if time_steps.size == 0:
             raise RuntimeError("No time steps found in the Exodus file.")
         block_id = 1
-        stress = np.empty_like(time_steps, dtype=float)
+        state_data = np.empty_like(time_steps, dtype=float)
         for step_index in range(1, time_steps.size):
-            stress[step_index - 1] = exo.get_element_variable_values(block_id, "axial_stress", step_index)[0]
-    return time_steps, stress
+            state_data[step_index - 1] = exo.get_element_variable_values(block_id, state_name, step_index)[0]
+    return time_steps, state_data
 
 def plot_stress(time_steps, stress):
     time_steps = time_steps - 1
@@ -93,6 +93,8 @@ def plot_stress(time_steps, stress):
 
     ax1.plot(time_steps[left], stress[left], marker="o", linewidth=1.2, markersize=2)
     ax1.set_ylabel(r"stress ($\sigma_{xx}$)")
+    # ax1.set_ylabel(r"dual variable")
+
     ax1.set_xlabel("forward time step")
     ax1.set_ylim(y0, y1)
     # ax1.set_xlim(time_steps.min(), center_x)
@@ -110,6 +112,11 @@ def plot_stress(time_steps, stress):
     fig.savefig("truss_step_relaxation.pdf", dpi=200)
 
 exo_path = "truss_step_relaxation.exo"
-ts, s = load_stress_history(exo_path)
+ts, s = load_state_history("axial_stress", exo_path)
+
+
+# ts, s = load_state_history("dual_viscous_strain", exo_path)
+
 plot_stress(ts, s)
+
 

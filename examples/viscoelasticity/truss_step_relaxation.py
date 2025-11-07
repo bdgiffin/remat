@@ -40,7 +40,7 @@ REMAT.API.define_parameter(b"truss_density", 1.0)
 REMAT.API.define_parameter(b"truss_youngs_modulus", 1.0)
 REMAT.API.define_parameter(b"area", 1.0)
 REMAT.API.define_parameter(b"viscosity", 5.0e-1)
-REMAT.API.define_parameter(b"mat_overflow_limit", 100.0)
+REMAT.API.define_parameter(b"mat_overflow_limit", 2000.0)
 
 # Set the integrator type 
 REMAT.API.set_integrator_type(b"fixed_truss_visco")
@@ -90,14 +90,11 @@ if exodus_available:
     exo.output_state()
 
 
-
-
-
 # Run analysis -------------------------------------------------------------
 
 dt = 1.0e-3
 Nsteps = 40
-Nsub_steps = 100
+Nsub_steps = 1000
 
 # Forward integration
 for step in range(1, Nsteps + 1):
