@@ -24,7 +24,9 @@ import REMAT
 
 # Problem constants
 gauge_length = 1.0
-epsilon0 = 1.0e-2
+epsilon0 = 1.0e-2 # Suggested for right_node_step and right_node_constant_rate
+epsilon0 = 0.05     # Suggested for right_node_sinusoidal and right_node_clipped_sinusoid
+
 
 # Define global parameters
 REMAT.API.define_parameter(b"body_force_x", 0.0)
@@ -39,13 +41,13 @@ REMAT.API.define_parameter(b"poissons_ratio", 0.25)
 REMAT.API.define_parameter(b"truss_density", 1.0)
 REMAT.API.define_parameter(b"truss_youngs_modulus", 1.0)
 REMAT.API.define_parameter(b"area", 1.0)
-REMAT.API.define_parameter(b"viscosity", 1e1)
-# REMAT.API.define_parameter(b"mat_overflow_limit", 3000.0)
-REMAT.API.define_parameter(b"mat_overflow_limit", 3000000000000.0)
+REMAT.API.define_parameter(b"viscosity", 10e-1)
+REMAT.API.define_parameter(b"mat_overflow_limit", 30.0)
+# REMAT.API.define_parameter(b"mat_overflow_limit", 3000000000000.0)
 
 # Set the integrator type 
-# REMAT.API.set_integrator_type(b"fixed_truss_visco")
-REMAT.API.set_integrator_type(b"float_truss_visco")
+REMAT.API.set_integrator_type(b"fixed_truss_visco")
+# REMAT.API.set_integrator_type(b"float_truss_visco")
 
 # --------------------------------------------------------------------------
 
@@ -113,7 +115,7 @@ def right_node_clipped_sinusoid(time, x, y):
     return eps_t * (x - left_x)
 
 
-REMAT.define_displacement_bc(np.array([1], dtype=np.int32), 0, right_node_constant_rate)
+REMAT.define_displacement_bc(np.array([1], dtype=np.int32), 0, right_node_sinusoidal)
 
 REMAT.API.initialize()
 
@@ -127,8 +129,8 @@ if exodus_available:
 # Run analysis -------------------------------------------------------------
 
 dt = 1.0e-3
-Nsteps = 80
-Nsub_steps = 1000
+Nsteps = 550
+Nsub_steps = 10
 
 # Forward integration
 for step in range(1, Nsteps + 1):
