@@ -7,6 +7,13 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",       
+    }
+)
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -225,7 +232,7 @@ def main():
         )
 
         ax.set_xlabel("time (s)", fontsize="large")
-        ax.set_ylabel("axial strain", fontsize="large")
+        ax.set_ylabel(r"axial strain ($\varepsilon_{xx}$)", fontsize="large")
         # ax.legend(loc="upper right", fontsize=10)
         axis_dt = SCENARIOS[0]["dt"]
         ax.set_xlim(0,15)

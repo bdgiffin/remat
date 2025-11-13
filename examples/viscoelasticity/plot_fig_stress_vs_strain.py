@@ -7,6 +7,14 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",       
+    }
+)
+
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -167,28 +175,28 @@ def run_truss_relaxation(
 
 STATE_X_TO_PLOT = "axial_strain"
 STATE_Y_TO_PLOT = "axial_stress"
-set_integrator_type = b"float_truss_visco"
-overflow_limit_value = 1e6
+set_integrator_type = b"fixed_truss_visco"
+overflow_limit_value = 30
 
 SCENARIOS = [
-    {
-        "relaxation_time": 0.3,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.1,
-        "bc_name": "right_node_step",
-        "overflow_limit": overflow_limit_value,
-    },
-    {
-        "relaxation_time": 0.3,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.02,
-        "bc_name": "right_node_constant_rate",
-        "overflow_limit": overflow_limit_value,
-    },
+    # {
+    #     "relaxation_time": 0.3,
+    #     "dt": 1.0e-3,
+    #     "Nsteps": 15000,
+    #     "Nsub_steps": 1,
+    #     "epsilon0": 0.1,
+    #     "bc_name": "right_node_step",
+    #     "overflow_limit": overflow_limit_value,
+    # },
+    # {
+    #     "relaxation_time": 0.3,
+    #     "dt": 1.0e-3,
+    #     "Nsteps": 15000,
+    #     "Nsub_steps": 1,
+    #     "epsilon0": 0.02,
+    #     "bc_name": "right_node_constant_rate",
+    #     "overflow_limit": overflow_limit_value,
+    # },
     {
         "relaxation_time": 0.3,
         "dt": 1.0e-3,
@@ -266,7 +274,7 @@ def main():
             label="forward",
             color="#2b738eff",
         )
-        ax.plot(strain_history[0], stress_history[0], '*', color="#2b738eff")
+        ax.plot(strain_history[0], stress_history[0], '.', color="#2b738eff")
 
         if backward_strain is not None and backward_stress is not None:
             ax.plot(
@@ -278,11 +286,11 @@ def main():
                 label="backward",
                 color="#f9826bff",
             )
-            ax.plot(backward_strain[::-1][-1], backward_stress[::-1][-1], '*', color="#f9826bff")
+            ax.plot(backward_strain[::-1][-1], backward_stress[::-1][-1], marker=".", color="#f9826bff")
 
-        ax.set_xlabel("axial strain", fontsize="large")
+        ax.set_xlabel(r"axial strain ($\varepsilon_{xx}$)", fontsize="large")
         ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
-        ax.set_title(format_tau(params["relaxation_time"]))
+        # ax.set_title(format_tau(params["relaxation_time"]))
         legend = ax.legend(loc="upper left", fontsize="medium")
         legend.get_texts()[0].set_color("#2b738eff")
         if backward_strain is not None:
@@ -290,12 +298,15 @@ def main():
             legend.get_lines()[1].set_linestyle("--")
         ax.set_xlim(*strain_limits(params))
         ax.set_ylim(*stress_limits(params))
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
+        # ax.spines["right"].set_visible(False)
+        # ax.spines["top"].set_visible(False)
 
         fig.tight_layout()
         suffix = params["bc_name"].replace("right_node", "")
-        fig.savefig(f"stress_vs_strain_{suffix}.svg", dpi=200)
+        if set_integrator_type == b"fixed_truss_visco":
+            fig.savefig(f"stress_vs_strain_Fixed_{suffix}.svg", format="svg", dpi=200)
+        else:
+            fig.savefig(f"stress_vs_strain_float_{suffix}.svg", format="svg", dpi=200)
         fig.clf()
 
 

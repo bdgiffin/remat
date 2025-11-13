@@ -7,6 +7,13 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",       
+    }
+)
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -167,8 +174,8 @@ def run_truss_relaxation(
 
 
 STATE_TO_PLOT = "axial_stress"
-set_integrator_type = b"fixed_truss_visco"
-overflow_limit_value = 30
+set_integrator_type = b"float_truss_visco"
+overflow_limit_value = 1e6
 
 SCENARIOS = [
     {
@@ -290,10 +297,11 @@ def main():
         
 
         fig.tight_layout()
+        suffix = params["bc_name"].replace("right_node", "")
         if set_integrator_type == b"fixed_truss_visco":
-            fig.savefig(f"stress_Fixed_{params['bc_name'].replace('right_node', '')}.svg", dpi=200)
+            fig.savefig(f"stress_Fixed_{suffix}.svg", dpi=200)
         else:
-            fig.savefig(f"stress_float_{params['bc_name'].replace('right_node', '')}.svg", dpi=200)
+            fig.savefig(f"stress_float_{suffix}.svg", dpi=200)
 
         
         fig.clf()
