@@ -7,6 +7,13 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",       
+    }
+)
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -173,6 +180,15 @@ SCENARIOS = [
         "overflow_limit": 1e6,
     },
     {
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 3000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_step",
+        "overflow_limit": 1e6,
+    },
+    {
         "relaxation_time": 0.5,
         "dt": 1.0e-3,
         "Nsteps": 4500,
@@ -233,7 +249,7 @@ def main():
     ax.set_ylim(10**-2, 1000)
 
     fig.tight_layout()
-    fig.savefig("plot_fig_dual_vs_tau.svg", dpi=200)
+    fig.savefig("dual_vs_tau.svg", dpi=200)
 
 
 if __name__ == "__main__":
