@@ -195,32 +195,32 @@ MODE_COLORS = {
     "fixed": "#f9826bff",
 }
 MODE_OVERFLOW_LIMITS = {
-    "float": 1.0e6,
+    "float": 1.0e56,
     "fixed": 100.0,
 }
 
 SCENARIOS = [
 
 
-    {
-        "description": r"Step strain, $\tau=0.3$, $\Delta t=10^{-3}",
-        "relaxation_time": .3,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.1,
-        "bc_name": "right_node_step",
-        "ylim": (-0.025, 0.105),
-    },
+    # {
+    #     "description": r"Step strain, $\tau=1$, $\Delta t=10^{-3}",
+    #     "relaxation_time": 0.3,
+    #     "dt": 1.0e-3,
+    #     "Nsteps": 15000,
+    #     "Nsub_steps": 1,
+    #     "epsilon0": 0.1,
+    #     "bc_name": "right_node_step",
+    #     "ylim": (-0.025, 0.105),
+    # },
         {
-        "description": r"Constant strain rate, $\tau=0.1$, $\Delta t=10^{-3}",
-        "relaxation_time": 0.3,
+        "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-3}",
+        "relaxation_time": 1,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
         "epsilon0": 0.02,
         "bc_name": "right_node_constant_rate",
-        "ylim": (-0.000, 0.091*0.1),
+        # "ylim": (-0.000, 0.091*0.1),
     },
     # {
     #     "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-3}",
@@ -242,26 +242,26 @@ SCENARIOS = [
     #     "bc_name": "right_node_constant_rate",
     #     "ylim": (-0.00, 0.031),
     # },
-    {
-        "description": r"Sinusoidal cyclic, $\tau=0.3$, $\Delta t=10^{-3}",
-        "relaxation_time": 0.3,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.1,
-        "bc_name": "right_node_sinusoidal",
-        "ylim": (-0.06, 0.06),
-    },
-    {
-        "description": r"Clipped sinusoid, $\tau=0.3$, $\Delta t=10^{-3}",
-        "relaxation_time": 0.3,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.2,
-        "bc_name": "right_node_clipped_sinusoid",
-        "ylim": (-0.09, 0.09),
-    },
+    # {
+    #     "description": r"Sinusoidal cyclic, $\tau=1$, $\Delta t=10^{-3}",
+    #     "relaxation_time": 0.3,
+    #     "dt": 1.0e-3,
+    #     "Nsteps": 15000,
+    #     "Nsub_steps": 1,
+    #     "epsilon0": 0.1,
+    #     "bc_name": "right_node_sinusoidal",
+    #     "ylim": (-0.06, 0.06),
+    # },
+    # {
+    #     "description": r"Clipped sinusoid, $\tau=1$, $\Delta t=10^{-3}",
+    #     "relaxation_time": 0.3,
+    #     "dt": 1.0e-3,
+    #     "Nsteps": 15000,
+    #     "Nsub_steps": 1,
+    #     "epsilon0": 0.2,
+    #     "bc_name": "right_node_clipped_sinusoid",
+    #     "ylim": (-0.09, 0.09),
+    # },
 ]
 
 
