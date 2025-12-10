@@ -196,7 +196,7 @@ MODE_OVERFLOW_LIMITS = {
 
 # Sweep Δt from 1e-5 to 1s with a fixed duration of 10s (Nsteps = 10 / Δt).
 DT_VALUES = np.logspace(-5, -1, num=9)
-DURATION = 1
+DURATION = 10
 SCENARIO = {
     "description": r"Constant strain rate, $\tau=0.3$, $\Delta t$ sweep",
     "relaxation_time": 0.3,
@@ -266,6 +266,34 @@ def sweep_time_steps(dt_values, scenario):
     return results
 
 
+def print_convergence_orders(dt_results):
+    if len(dt_results) < 2:
+        print("Need at least two dt values to compute convergence orders.")
+        return
+
+    data = sorted(dt_results, key=lambda x: x["dt"], reverse=True)  # coarse to fine
+    print("Convergence order (max relative error vs exact):")
+    print("  dt_coarse | dt_fine | float_order | fixed_order")
+    print("  -----------------------------------------------")
+    for i in range(len(data) - 1):
+        coarse = data[i]
+        fine = data[i + 1]
+        f_order = np.nan
+        g_order = np.nan
+        if coarse["float_err"] > 0.0 and fine["float_err"] > 0.0:
+            f_order = np.log(coarse["float_err"] / fine["float_err"]) / np.log(
+                coarse["dt"] / fine["dt"]
+            )
+        if coarse["fixed_err"] > 0.0 and fine["fixed_err"] > 0.0:
+            g_order = np.log(coarse["fixed_err"] / fine["fixed_err"]) / np.log(
+                coarse["dt"] / fine["dt"]
+            )
+        print(
+            f"  {coarse['dt']:.3e} | {fine['dt']:.3e} | {f_order:11.4f} | {g_order:11.4f}"
+        )
+    print("  -----------------------------------------------")
+
+
 def plot_dt_errors(dt_results, scenario):
     fig, ax = plt.subplots(figsize=(5.0, 3.5))
 
@@ -307,6 +335,7 @@ def plot_dt_errors(dt_results, scenario):
 
 def main():
     dt_results = sweep_time_steps(DT_VALUES, SCENARIO)
+    #print_convergence_orders(dt_results)
     fig = plot_dt_errors(dt_results, SCENARIO)
     fig.savefig(
         "flt_vs_fxd_dt_sweep.svg",
