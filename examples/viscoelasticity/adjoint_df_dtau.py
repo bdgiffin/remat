@@ -10,6 +10,13 @@ import matplotlib.pyplot as plt
 sys.path.append("../../install/package/")
 import REMAT
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",       
+    }
+)
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -77,17 +84,20 @@ def run_forward(dt, Nsteps, epsilon0, relaxation_time, overflow_limit, run_backw
 
 
 def main():
-    # Nominal point (matches plot_fig_dual_vs_tau.py)
-    tau = 0.01
-    dt = 1.0e-3
-    Nsteps = 100
+    # tau = 0.01
+    dt = 0.01
+    Nsteps = 50
     epsilon0 = 0.1
-    overflow_limit = 90
-    df_dtau = run_forward(dt, Nsteps, epsilon0, tau, overflow_limit, run_backward=True)
-    print(f"df/dtau  adjoint method   = {df_dtau:.10f}")
+    # very important start from 2 (i.e. 2,3,4,5,...) to avoid overflow in the material model when tau is very small (overflow_limit=1 causes overflow)
+    overflow_limit = 4
+    # df_dtau = run_forward(dt, Nsteps, epsilon0, tau, overflow_limit, run_backward=True)
+    # print(f"df/dtau  adjoint method   = {df_dtau:.10f}")
 
     # Sweep tau logarithmically from 1e-3 to 10
-    sweep_taus = np.logspace(-2, 1, num=30)
+    sweep_taus = np.logspace(-2.4, 0, num=20)
+    # clip until 6 digits after the decimal point for cleaner output
+    sweep_taus = np.round(sweep_taus, decimals=6)
+    print   (f"Sweeping tau values: {sweep_taus}")
     df_vals = []
     for tau_i in sweep_taus:
         df_i = run_forward(dt,Nsteps, epsilon0, float(tau_i), overflow_limit, run_backward=True)
@@ -96,12 +106,15 @@ def main():
     sweep_taus = np.asarray(sweep_taus)
     df_vals = np.asarray(df_vals)
 
+    print(f"Sweep results (tau, df/dtau):")
+    for tau_i, df_i in zip(sweep_taus, df_vals):
+        print(f"tau: {tau_i:.6f}, df/dtau: {df_i:.10f}")
+
     fig, ax0 = plt.subplots(1, 1, figsize=(7, 4.0))
 
-    ax0.semilogx(sweep_taus, df_vals, marker="o", linewidth=1.2)
-    ax0.set_xlabel(r"$\tau$")
-    ax0.set_ylabel(r"$df/d\tau$")
-    # ax0.grid(True, which="both", linestyle="--", alpha=0.5)
+    ax0.semilogx(sweep_taus, df_vals)
+    ax0.set_xlabel(r"$\tau$", fontsize="large")
+    ax0.set_ylabel(r"$df/d\tau$", fontsize="large")
 
     fig.tight_layout()
     fig.savefig("sensitivity_vs_tau.svg", dpi=200)
