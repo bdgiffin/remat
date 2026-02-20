@@ -254,7 +254,7 @@ def main():
 
         if backward_history is not None:
             ax.plot(
-                forward_times[1:],
+                forward_times[:-1],
                 backward_history[::-1][1:],
                 linewidth=1.6,
                 marker=None,
