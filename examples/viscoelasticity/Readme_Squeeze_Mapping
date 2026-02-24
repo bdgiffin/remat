@@ -1,0 +1,28 @@
+# Squeeze Mapping (Quick Run)
+
+## (random `x`, `x*`)
+```bash
+python examples/viscoelasticity/squeeze_jacobian.py \
+  --random-mantissa \
+  --random-count 40 \
+  --random-low -2000 \
+  --random-high 2000
+```
+This writes the heatmaps to:
+- `examples/viscoelasticity/squeeze_offdiag_by_pq.svg`
+- `examples/viscoelasticity/squeeze_offdiag_by_state.svg`
+
+## Other useful combinations
+```bash
+# (random `x`, `x*`) + reproducible samples
+python examples/viscoelasticity/squeeze_jacobian.py --random-mantissa --random-count 40 --random-low -2000 --random-high 2000 --random-seed 42
+
+# Add Violin plot over FD deltas (1..10)
+python examples/viscoelasticity/squeeze_jacobian.py --random-mantissa --random-count 40 --random-low -2000 --random-high 2000 --fd-delta-violin
+
+# Use contiguous range instead of random x/x*
+python examples/viscoelasticity/squeeze_jacobian.py --min-mantissa -20 --max-mantissa 20
+
+# Custom p and q lists + custom FD delta (I did not use these, by default p and q are from 2 to 30, and FD delta is 1)
+python examples/viscoelasticity/squeeze_jacobian.py --p 2 4 8 16 --q 3 6 12 24 --fd-delta 2
+```
