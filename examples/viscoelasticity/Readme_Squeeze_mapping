@@ -26,3 +26,22 @@ python examples/viscoelasticity/squeeze_jacobian.py --min-mantissa -20 --max-man
 # Custom p and q lists + custom FD delta (I did not use these, by default p and q are from 2 to 30, and FD delta is 1)
 python examples/viscoelasticity/squeeze_jacobian.py --p 2 4 8 16 --q 3 6 12 24 --fd-delta 2
 ```
+
+## Cloud-based affine study (box deformation)
+```bash
+python examples/viscoelasticity/Squeeze_mapping_cloud.py \
+  --cloud-study \
+  --cloud-p 8 \
+  --cloud-q 7 \
+  --cloud-center-x 0 \
+  --cloud-center-x-star 0 \
+  --cloud-box-half-widths 2 4 8 16 \
+  --cloud-max-iterations 4 \
+  --cloud-sample-mode grid
+```
+
+Outputs:
+- `examples/viscoelasticity/squeeze_cloud_affine_metrics.csv`
+- `examples/viscoelasticity/squeeze_cloud_deformation_progression.svg`
+- `examples/viscoelasticity/squeeze_cloud_A01_vs_box.svg`
+- `examples/viscoelasticity/squeeze_cloud_non_affinity_vs_box.svg`
