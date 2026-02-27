@@ -64,8 +64,16 @@ def build_bc_function(left_x, epsilon0):
     return right_node_step
 
 
-def run_forward(dt, Nsteps, epsilon0, relaxation_time, overflow_limit, run_backward=True):
-    REMAT.API.set_integrator_type(b"fixed_truss_visco")
+def run_forward(
+    dt,
+    Nsteps,
+    epsilon0,
+    relaxation_time,
+    overflow_limit,
+    run_backward=True,
+    integrator_type=b"fixed_truss_visco_adj_float",
+):
+    REMAT.API.set_integrator_type(integrator_type)
     set_material_parameters(relaxation_time, overflow_limit)
     create_geometry()
     left_x = 0.0
@@ -84,23 +92,32 @@ def run_forward(dt, Nsteps, epsilon0, relaxation_time, overflow_limit, run_backw
 
 
 def main():
-    # tau = 0.01
-    dt = 0.01
-    Nsteps = 50
+    # Pick integrator type to switch internal-variable/adjoint storage combinations:
+    # b"fixed_truss_visco"           -> viscous strain fixed,  lambda fixed
+    # b"fixed_truss_visco_adj_float" -> viscous strain fixed,  lambda float
+    # b"float_truss_visco"           -> viscous strain float,  lambda float
+    integrator_type = b"fixed_truss_visco_adj_float"
+
+    dt = 1.0e-3
+    Nsteps = 4500
     epsilon0 = 0.1
-    # very important start from 2 (i.e. 2,3,4,5,...) to avoid overflow in the material model when tau is very small (overflow_limit=1 causes overflow)
-    overflow_limit = 4
-    # df_dtau = run_forward(dt, Nsteps, epsilon0, tau, overflow_limit, run_backward=True)
-    # print(f"df/dtau  adjoint method   = {df_dtau:.10f}")
+    overflow_limit = 1_000_000
 
     # Sweep tau logarithmically from 1e-3 to 10
-    sweep_taus = np.logspace(-2.4, 0, num=20)
-    # clip until 6 digits after the decimal point for cleaner output
+    sweep_taus = np.logspace(-3, 1, num=20)
     sweep_taus = np.round(sweep_taus, decimals=6)
-    print   (f"Sweeping tau values: {sweep_taus}")
+    print(f"Sweeping tau values: {sweep_taus}")
     df_vals = []
     for tau_i in sweep_taus:
-        df_i = run_forward(dt,Nsteps, epsilon0, float(tau_i), overflow_limit, run_backward=True)
+        df_i = run_forward(
+            dt,
+            Nsteps,
+            epsilon0,
+            float(tau_i),
+            overflow_limit,
+            run_backward=True,
+            integrator_type=integrator_type,
+        )
         df_vals.append(df_i)
 
     sweep_taus = np.asarray(sweep_taus)
