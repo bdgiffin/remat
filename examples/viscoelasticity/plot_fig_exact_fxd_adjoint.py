@@ -177,7 +177,7 @@ def run_truss_relaxation(
 
 def compute_exact_adjoint(params):
     if params["bc_name"] != "right_node_constant_rate":
-        raise ValueError("Exact adjoint baseline is only implemented for constant strain rate.")
+        raise ValueError("An analytical adjoint baseline is only implemented for constant strain rate.")
 
     E = 1.0
     tau = params["relaxation_time"]
@@ -230,7 +230,7 @@ PRECISION_MODES = [
     ("adjoint fixed / truss fixed", b"fixed_truss_visco"),
 ]
 MODE_COLORS = {
-    "exact": "#222222",
+    "exact": "#CC79A7",
     "adjoint float / truss float": "#2b738e",
     "adjoint float / truss fixed": "#f9826b",
     "adjoint fixed / truss fixed": "#6f6f6f",
@@ -243,10 +243,10 @@ MODE_OVERFLOW_LIMITS = {
 
 SCENARIOS = [
     {
-        "description": r"Exact vs REMAT adjoint, constant strain rate, $\tau=0.1$, $\Delta t=10^{-3}$",
+        "description": r"Analytical vs REMAT adjoint, constant strain rate, $\tau=0.1$, $\Delta t=10^{-3}$",
         "relaxation_time": 0.1,
         "dt": 1.0e-3,
-        "Nsteps": 30,
+        "Nsteps": 500,
         "Nsub_steps": 1,
         "epsilon0": 2,
         "bc_name": "right_node_constant_rate",
@@ -286,7 +286,7 @@ def plot_exact_vs_modes(params, mode_results):
         exact_time,
         exact_lambda,
         linewidth=1.8,
-        label="exact (baseline)",
+        label="analytical (baseline)",
         color=MODE_COLORS["exact"],
     )
 
@@ -318,8 +318,8 @@ def plot_exact_vs_modes(params, mode_results):
     ax_state.legend(loc="best", fontsize="small")
 
     ax_error.set_xlabel("time (s)", fontsize="large")
-    ax_error.set_ylabel(r"$\lambda^\mathrm{mode}-\lambda^\mathrm{exact}$", fontsize="large")
-    ax_error.legend(loc="best", fontsize="small")
+    ax_error.set_ylabel(r"$\lambda^\mathrm{mode}-\lambda^\mathrm{analytical}$", fontsize="large")
+    # ax_error.legend(loc="best", fontsize="small")
 
     ax_state.set_xlim(0, params["dt"] * params["Nsteps"])
     fig.tight_layout()
@@ -342,7 +342,7 @@ def summarize_diagnostics(params, mode_results):
         metrics = compute_relative_metrics(exact_lambda, aligned)
         print(
             f"  {mode_name}: "
-            f"max|mode-exact|={metrics['max_abs']:.6e}, relL2={metrics['rel_l2']:.6e}"
+            f"max|mode-analytical|={metrics['max_abs']:.6e}, relL2={metrics['rel_l2']:.6e}"
         )
     print("-" * 80)
 
