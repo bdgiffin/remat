@@ -56,6 +56,15 @@ blt_add_executable(NAME       test_UniaxialViscoplasticity
 blt_add_test(NAME    test_UniaxialViscoplasticity
 	     COMMAND test_UniaxialViscoplasticity)
 
+blt_add_executable(NAME       test_UniaxialViscoelasticity
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_UniaxialViscoelasticity.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+		 
+blt_add_test(NAME    test_UniaxialViscoelasticity
+	     COMMAND test_UniaxialViscoelasticity)
+
 blt_add_executable(NAME       test_System
                    SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_System.cpp
                    INCLUDES   ${test_include_dirs}
@@ -64,4 +73,3 @@ blt_add_executable(NAME       test_System
 		 
 blt_add_test(NAME    test_System
 	     COMMAND test_System)
-
