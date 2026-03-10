@@ -244,11 +244,11 @@ MODE_OVERFLOW_LIMITS = {
 SCENARIOS = [
     {
         "description": r"Analytical vs REMAT adjoint, constant strain rate, $\tau=0.1$, $\Delta t=10^{-3}$",
-        "relaxation_time": 0.1,
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 500,
         "Nsub_steps": 1,
-        "epsilon0": 2,
+        "epsilon0": 0.3,
         "bc_name": "right_node_constant_rate",
     },
 ]
