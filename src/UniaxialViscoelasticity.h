@@ -85,7 +85,7 @@ class UniaxialViscoelasticity {
     if (params.count("mat_overflow_limit") > 0) { mat_overflow_limit = int(params["mat_overflow_limit"]); }
   }
 
-  int num_state_vars(void) { return 9; }
+  int num_state_vars(void) { return 8; }
 
   std::vector<std::string> get_field_names(void) {
     return std::vector<std::string>({ "axial_stress",
@@ -94,7 +94,6 @@ class UniaxialViscoelasticity {
                                       "dual_viscous_strain",
                                       "overflow_counter",
                                       "df_dtau",
-                                      "df_dE",
                                       "lambda_adjoint",
                                       "dual_lambda_adjoint" });
   }
@@ -110,9 +109,8 @@ class UniaxialViscoelasticity {
     save_as_Real(FixedE(0.0), state[3]); // dual_viscous_strain
     state[4] = Real(0); // overflow_counter
     state[5] = 0.0; // accumulated sensitivity df/dtau
-    state[6] = 0.0; // accumulated sensitivity df/dE
-    save_as_Real(LambdaAdj(0.0), state[7]); // lambda_adjoint
-    save_as_Real(LambdaAdj(0.0), state[8]); // dual_lambda_adjoint
+    save_as_Real(LambdaAdj(0.0), state[6]); // lambda_adjoint
+    save_as_Real(LambdaAdj(0.0), state[7]); // dual_lambda_adjoint
   } // initialize()
 
   // Update the material state using the current stretch ratio
@@ -136,10 +134,9 @@ class UniaxialViscoelasticity {
 
     // Accumulated gradient and adjoint lambda
     Real df_dtau_accum = state[5];
-    Real df_dE_accum   = state[6];
     LambdaAdj lambda_p, lambda_d;
-    load_from_Real(state[7], lambda_p);
-    load_from_Real(state[8], lambda_d);
+    load_from_Real(state[6], lambda_p);
+    load_from_Real(state[7], lambda_d);
     Dual<LambdaAdj> lambda_adjoint(lambda_p, lambda_d);
 
     // Load the overflow counter from memory
@@ -187,7 +184,6 @@ class UniaxialViscoelasticity {
       Real sigma_n = E * elastic_strain_prev;
 
       df_dtau_accum += lambda_n_plus_one * (vs_prev - strain_n_plus_one) * A_real * (dt_abs/(tau*tau));
-      df_dE_accum   += 0.5 * elastic_strain_prev * elastic_strain_prev;
 
       // Same style as viscous_strain reverse update: lambda_n from lambda_{n+1}
       // lambda_n = -sigma_n + A*lambda_{n+1}
@@ -213,9 +209,8 @@ class UniaxialViscoelasticity {
     save_as_Real(viscous_strain.second, state[3]);
     state[4] = Real(overflow_counter);
     state[5] = df_dtau_accum;
-    state[6] = df_dE_accum;
-    save_as_Real(lambda_adjoint.first,  state[7]);
-    save_as_Real(lambda_adjoint.second, state[8]);
+    save_as_Real(lambda_adjoint.first,  state[6]);
+    save_as_Real(lambda_adjoint.second, state[7]);
 
     psi = 0.5 * stress * elastic_strain;
   }
@@ -225,7 +220,7 @@ class UniaxialViscoelasticity {
     if ((int(state[4]) == 0) && (overflow_state.size() >= 2)) {
       state[4] = Real(mat_overflow_limit);
       // Load in reverse order of storage
-      state[8] = overflow_state.back(); overflow_state.pop_back(); // dual_lambda_adjoint
+      state[7] = overflow_state.back(); overflow_state.pop_back(); // dual_lambda_adjoint
       state[3] = overflow_state.back(); overflow_state.pop_back(); // dual_viscous_strain
     }
   }
@@ -236,9 +231,9 @@ class UniaxialViscoelasticity {
       state[4] = Real(0);
       // Store in forward order to match reverse loading
       overflow_state.push_back(state[3]); // dual_viscous_strain
-      overflow_state.push_back(state[8]); // dual_lambda_adjoint
+      overflow_state.push_back(state[7]); // dual_lambda_adjoint
       state[3] = Real(0.0);
-      state[8] = Real(0.0);
+      state[7] = Real(0.0);
     }
   }
 
@@ -264,9 +259,8 @@ class UniaxialViscoelasticity {
     load_from_Real(state[3], temp); field_data[3] = Real(temp); // dual_viscous_strain
     field_data[4] = state[4]; // overflow_counter
     field_data[5] = state[5]; // df_dtau accumulation
-    field_data[6] = state[6]; // df_dE accumulation
-    load_from_Real(state[7], lambda_temp); field_data[7] = Real(lambda_temp); // lambda_adjoint
-    load_from_Real(state[8], lambda_temp); field_data[8] = Real(lambda_temp); // dual_lambda_adjoint
+    load_from_Real(state[6], lambda_temp); field_data[6] = Real(lambda_temp); // lambda_adjoint
+    load_from_Real(state[7], lambda_temp); field_data[7] = Real(lambda_temp); // dual_lambda_adjoint
   }
 
   bool is_dead(Real*) { return false; }

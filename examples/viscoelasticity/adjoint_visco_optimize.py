@@ -151,12 +151,10 @@ def run_forward_backward(
         REMAT.API.update_state(-dt, nsub_steps)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
-    grad_E = float(np.sum(REMAT.get_field(b"truss", "df_dE")))
 
     result = {
         "loss": float(loss),
         "grad_tau": grad_tau,
-        "grad_E": grad_E,
     }
     if store_histories:
         result["time_history"] = np.asarray(time_history)
@@ -176,7 +174,6 @@ def finite_difference_gradients(
     lumped_point_mass,
     mat_overflow_limit,
     fd_step_tau,
-    fd_step_E,
     integrator_type,
 ):
     plus_tau = run_forward_only(
@@ -204,34 +201,7 @@ def finite_difference_gradients(
         integrator_type=integrator_type,
     )["loss"]
     fd_tau = (plus_tau - minus_tau) / (2.0 * fd_step_tau)
-
-    plus_E = run_forward_only(
-        num_elements=num_elements,
-        dt=dt,
-        nsteps=nsteps,
-        nsub_steps=nsub_steps,
-        tau=tau,
-        youngs_modulus=youngs_modulus + fd_step_E,
-        impact_velocity=impact_velocity,
-        lumped_point_mass=lumped_point_mass,
-        mat_overflow_limit=mat_overflow_limit,
-        integrator_type=integrator_type,
-    )["loss"]
-    minus_E = run_forward_only(
-        num_elements=num_elements,
-        dt=dt,
-        nsteps=nsteps,
-        nsub_steps=nsub_steps,
-        tau=tau,
-        youngs_modulus=youngs_modulus - fd_step_E,
-        impact_velocity=impact_velocity,
-        lumped_point_mass=lumped_point_mass,
-        mat_overflow_limit=mat_overflow_limit,
-        integrator_type=integrator_type,
-    )["loss"]
-    fd_E = (plus_E - minus_E) / (2.0 * fd_step_E)
-
-    return float(fd_tau), float(fd_E)
+    return float(fd_tau)
 
 
 def optimize_case(
@@ -242,32 +212,25 @@ def optimize_case(
     nsteps,
     nsub_steps,
     tau0,
-    E0,
+    youngs_modulus,
     max_iters,
     lr_tau,
-    lr_E,
     min_tau,
-    min_E,
     optimize_tau,
-    optimize_E,
     impact_velocity,
     lumped_point_mass,
     mat_overflow_limit,
     integrator_type,
     fd_check,
     fd_step_tau,
-    fd_step_E,
     store_histories=False,
 ):
     tau = tau0
-    youngs_modulus = E0
 
     hist_iter = []
     hist_loss = []
     hist_tau = []
-    hist_E = []
     hist_grad_tau = []
-    hist_grad_E = []
 
     first_history = None
     last_history = None
@@ -304,22 +267,18 @@ def optimize_case(
 
         loss = run["loss"]
         grad_tau = run["grad_tau"]
-        grad_E = run["grad_E"]
 
         hist_iter.append(it)
         hist_loss.append(loss)
         hist_tau.append(tau)
-        hist_E.append(youngs_modulus)
         hist_grad_tau.append(grad_tau)
-        hist_grad_E.append(grad_E)
 
         print(
-            f"iter={it:03d}  loss={loss: .8e}  tau={tau: .8e}  E={youngs_modulus: .8e}  "
-            f"grad_tau={grad_tau: .8e}  grad_E={grad_E: .8e}"
+            f"iter={it:03d}  loss={loss: .8e}  tau={tau: .8e}  grad_tau={grad_tau: .8e}"
         )
 
         if fd_check and it == 0:
-            fd_tau, fd_E = finite_difference_gradients(
+            fd_tau = finite_difference_gradients(
                 num_elements=num_elements,
                 dt=dt,
                 nsteps=nsteps,
@@ -330,21 +289,14 @@ def optimize_case(
                 lumped_point_mass=lumped_point_mass,
                 mat_overflow_limit=mat_overflow_limit,
                 fd_step_tau=fd_step_tau,
-                fd_step_E=fd_step_E,
                 integrator_type=integrator_type,
             )
 
             rel_tau = abs(grad_tau - fd_tau) / max(abs(fd_tau), 1.0e-14)
-            rel_E = abs(grad_E - fd_E) / max(abs(fd_E), 1.0e-14)
-            print(
-                f"FD check: fd_tau={fd_tau: .8e}, fd_E={fd_E: .8e}, "
-                f"rel_err_tau={rel_tau: .3e}, rel_err_E={rel_E: .3e}"
-            )
+            print(f"FD check: fd_tau={fd_tau: .8e}, rel_err_tau={rel_tau: .3e}")
 
         if optimize_tau:
             tau = max(min_tau, tau - lr_tau * grad_tau)
-        if optimize_E:
-            youngs_modulus = max(min_E, youngs_modulus - lr_E * grad_E)
 
     result = {
         "case_name": case_name,
@@ -352,9 +304,7 @@ def optimize_case(
         "iters": np.asarray(hist_iter),
         "loss": np.asarray(hist_loss),
         "tau": np.asarray(hist_tau),
-        "E": np.asarray(hist_E),
         "grad_tau": np.asarray(hist_grad_tau),
-        "grad_E": np.asarray(hist_grad_E),
         "first_history": first_history,
         "last_history": last_history,
     }
@@ -373,15 +323,11 @@ def plot_optimization_result(result, out_prefix):
     fig1.savefig(f"{out_prefix}_{case_name}_loss.svg", dpi=200)
     plt.close(fig1)
 
-    fig2, (ax_tau, ax_E) = plt.subplots(2, 1, sharex=True, figsize=(6.0, 5.0))
+    fig2, ax_tau = plt.subplots(figsize=(6.0, 3.6))
     ax_tau.plot(result["iters"], result["tau"], linewidth=1.6, color="#f9826b")
+    ax_tau.set_xlabel("optimization iteration", fontsize="large")
     ax_tau.set_ylabel(r"$\\tau$", fontsize="large")
     ax_tau.set_title(f"{result['case_name']}: parameter history", fontsize="medium")
-
-    ax_E.plot(result["iters"], result["E"], linewidth=1.6, color="#6f6f6f")
-    ax_E.set_xlabel("optimization iteration", fontsize="large")
-    ax_E.set_ylabel(r"$E$", fontsize="large")
-
     fig2.tight_layout()
     fig2.savefig(f"{out_prefix}_{case_name}_params.svg", dpi=200)
     plt.close(fig2)
@@ -413,21 +359,18 @@ def plot_optimization_result(result, out_prefix):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Adjoint-based viscoelastic optimization for tau and E (1-element and multi-element truss chains)."
+        description="Adjoint-based viscoelastic optimization for tau (1-element and multi-element truss chains)."
     )
     parser.add_argument("--dt", type=float, default=1.0e-3)
     parser.add_argument("--nsteps", type=int, default=200)
     parser.add_argument("--nsub-steps", type=int, default=1)
 
     parser.add_argument("--tau0", type=float, default=0.30)
-    parser.add_argument("--E0", type=float, default=10.0)
+    parser.add_argument("--youngs-modulus", type=float, default=10.0)
     parser.add_argument("--max-iters", type=int, default=50)
     parser.add_argument("--lr-tau", type=float, default=1.0e-3)
-    parser.add_argument("--lr-E", type=float, default=1.0e-3)
     parser.add_argument("--min-tau", type=float, default=1.0e-4)
-    parser.add_argument("--min-E", type=float, default=1.0)
     parser.add_argument("--disable-optimize-tau", action="store_true")
-    parser.add_argument("--disable-optimize-E", action="store_true")
 
     parser.add_argument("--impact-velocity", type=float, default=2.0)
     parser.add_argument("--point-mass", type=float, default=1.0)
@@ -442,7 +385,6 @@ def parse_args():
     parser.add_argument("--fd-check", action="store_true")
     # Fixed-point truss mode benefits from larger FD perturbations.
     parser.add_argument("--fd-step-tau", type=float, default=1.0e-2)
-    parser.add_argument("--fd-step-E", type=float, default=1.0e-3)
 
     parser.add_argument("--plot", action="store_true")
     parser.add_argument("--plot-prefix", type=str, default="adjoint_visco_optimize")
@@ -453,9 +395,8 @@ def main():
     args = parse_args()
 
     optimize_tau = not args.disable_optimize_tau
-    optimize_E = not args.disable_optimize_E
-    if (not optimize_tau) and (not optimize_E):
-        raise ValueError("At least one optimization variable must be enabled.")
+    if not optimize_tau:
+        raise ValueError("Tau optimization must be enabled.")
 
     case_results = []
 
@@ -467,21 +408,17 @@ def main():
             nsteps=args.nsteps,
             nsub_steps=args.nsub_steps,
             tau0=args.tau0,
-            E0=args.E0,
+            youngs_modulus=args.youngs_modulus,
             max_iters=args.max_iters,
             lr_tau=args.lr_tau,
-            lr_E=args.lr_E,
             min_tau=args.min_tau,
-            min_E=args.min_E,
             optimize_tau=optimize_tau,
-            optimize_E=optimize_E,
             impact_velocity=args.impact_velocity,
             lumped_point_mass=args.point_mass,
             mat_overflow_limit=args.mat_overflow_limit,
             integrator_type=args.integrator_type.encode("utf-8"),
             fd_check=args.fd_check,
             fd_step_tau=args.fd_step_tau,
-            fd_step_E=args.fd_step_E,
             store_histories=args.plot,
         )
         case_results.append(one_case)
@@ -494,21 +431,17 @@ def main():
             nsteps=args.nsteps,
             nsub_steps=args.nsub_steps,
             tau0=args.tau0,
-            E0=args.E0,
+            youngs_modulus=args.youngs_modulus,
             max_iters=args.max_iters,
             lr_tau=args.lr_tau,
-            lr_E=args.lr_E,
             min_tau=args.min_tau,
-            min_E=args.min_E,
             optimize_tau=optimize_tau,
-            optimize_E=optimize_E,
             impact_velocity=args.impact_velocity,
             lumped_point_mass=args.point_mass,
             mat_overflow_limit=args.mat_overflow_limit,
             integrator_type=args.integrator_type.encode("utf-8"),
             fd_check=args.fd_check,
             fd_step_tau=args.fd_step_tau,
-            fd_step_E=args.fd_step_E,
             store_histories=args.plot,
         )
         case_results.append(many_case)
@@ -520,8 +453,7 @@ def main():
         print(
             f"{result['case_name']}: "
             f"loss={result['loss'][-1]: .8e}, "
-            f"tau={result['tau'][-1]: .8e}, "
-            f"E={result['E'][-1]: .8e}"
+            f"tau={result['tau'][-1]: .8e}"
         )
 
     if args.plot:

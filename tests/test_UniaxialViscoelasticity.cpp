@@ -21,7 +21,6 @@ using FixedViscoModel = UniaxialViscoelasticity<FixedE,Rational,Real>;
 struct GradResult {
   Real loss;
   Real df_dtau;
-  Real df_dE;
 };
 
 template<class ModelT>
@@ -61,7 +60,7 @@ GradResult run_objective_and_gradients(Real tau, Real E,
     }
   }
 
-  return { loss, state[5], state[6] };
+  return { loss, state[5] };
 }
 
 } // end anonymous namespace
@@ -129,24 +128,4 @@ TEST(test_UniaxialViscoelasticity, gradient_df_dtau_matches_finite_difference) {
 
   Real tol = 1.0e-2 * std::max(Real(1.0),std::fabs(fd_dtau));
   ASSERT_NEAR(adj.df_dtau,fd_dtau,tol);
-}
-
-TEST(test_UniaxialViscoelasticity, gradient_df_dE_matches_finite_difference) {
-  const Real tau = 0.35;
-  const Real E   = 2.0;
-  const Real dt  = 2.5e-3;
-  const Real h_E = 1.0e-4;
-
-  std::vector<Real> strain_history = {
-    0.0000, 0.0050, 0.0100, 0.0140, 0.0120, 0.0080,
-    0.0040, 0.0010, -0.0010, 0.0000, 0.0020, 0.0040
-  };
-
-  GradResult adj = run_objective_and_gradients(tau,E,strain_history,dt,true);
-  GradResult plus  = run_objective_and_gradients(tau,E + h_E,strain_history,dt,false);
-  GradResult minus = run_objective_and_gradients(tau,E - h_E,strain_history,dt,false);
-  Real fd_dE = (plus.loss - minus.loss)/(2.0*h_E);
-
-  Real tol = 1.0e-2 * std::max(Real(1.0),std::fabs(fd_dE));
-  ASSERT_NEAR(adj.df_dE,fd_dE,tol);
 }

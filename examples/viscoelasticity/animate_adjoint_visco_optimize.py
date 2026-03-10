@@ -66,12 +66,10 @@ def run_iteration(
         REMAT.API.update_state(-dt, nsub_steps)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
-    grad_E = float(np.sum(REMAT.get_field(b"truss", "df_dE")))
 
     return {
         "loss": float(loss),
         "grad_tau": grad_tau,
-        "grad_E": grad_E,
         "time_history": np.asarray(time_history),
         "mean_stress_history": np.asarray(mean_stress_history),
         "right_disp_history": np.asarray(right_disp_history),
@@ -81,7 +79,7 @@ def run_iteration(
 
 def collect_iteration_data(args):
     tau = args.tau0
-    youngs_modulus = args.E0
+    youngs_modulus = args.youngs_modulus
 
     records = []
 
@@ -102,10 +100,8 @@ def collect_iteration_data(args):
         record = {
             "iter": it + 1,
             "tau": tau,
-            "E": youngs_modulus,
             "loss": run["loss"],
             "grad_tau": run["grad_tau"],
-            "grad_E": run["grad_E"],
             "time_history": run["time_history"],
             "mean_stress_history": run["mean_stress_history"],
             "right_disp_history": run["right_disp_history"],
@@ -116,14 +112,11 @@ def collect_iteration_data(args):
         print(
             f"iter={record['iter']:03d}  "
             f"loss={record['loss']: .8e}  "
-            f"tau={record['tau']: .8e}  E={record['E']: .8e}  "
-            f"grad_tau={record['grad_tau']: .8e}  grad_E={record['grad_E']: .8e}"
+            f"tau={record['tau']: .8e}  grad_tau={record['grad_tau']: .8e}"
         )
 
         if args.optimize_tau:
             tau = max(args.min_tau, tau - args.lr_tau * record["grad_tau"])
-        if args.optimize_E:
-            youngs_modulus = max(args.min_E, youngs_modulus - args.lr_E * record["grad_E"])
 
     return records
 
@@ -271,9 +264,7 @@ def make_animation(records, args):
                 f"iter {record['iter']}/{num_iters}",
                 f"J = {record['loss']:.6e}",
                 f"tau = {record['tau']:.4e}",
-                f"E = {record['E']:.4e}",
                 f"dJ/dtau = {record['grad_tau']:.3e}",
-                f"dJ/dE = {record['grad_E']:.3e}",
                 f"decrease vs iter 1 = {loss_drop_pct:.2f}%",
             ])
 )
@@ -326,14 +317,11 @@ def parse_args():
     parser.add_argument("--nsub-steps", type=int, default=1)
 
     parser.add_argument("--tau0", type=float, default=0.30)
-    parser.add_argument("--E0", type=float, default=1.0)
+    parser.add_argument("--youngs-modulus", type=float, default=1.0)
     parser.add_argument("--max-iters", type=int, default=8)
     parser.add_argument("--lr-tau", type=float, default=1.0e-3)
-    parser.add_argument("--lr-E", type=float, default=2.0e-3)
     parser.add_argument("--min-tau", type=float, default=1.0e-4)
-    parser.add_argument("--min-E", type=float, default=1.0)
     parser.add_argument("--disable-optimize-tau", action="store_true")
-    parser.add_argument("--disable-optimize-E", action="store_true")
 
     parser.add_argument("--impact-velocity", type=float, default=2.0)
     parser.add_argument("--point-mass", type=float, default=0.5)
@@ -352,10 +340,8 @@ def parse_args():
     args = parser.parse_args()
 
     args.optimize_tau = not args.disable_optimize_tau
-    args.optimize_E = not args.disable_optimize_E
-
-    if (not args.optimize_tau) and (not args.optimize_E):
-        raise ValueError("At least one optimization variable must be enabled.")
+    if not args.optimize_tau:
+        raise ValueError("Tau optimization must be enabled.")
 
     return args
 
