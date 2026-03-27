@@ -501,6 +501,65 @@ def fit_affine_map(source_points: np.ndarray, target_points: np.ndarray) -> Dict
     }
 
 
+def propagate_box_corners_float_x_scale(
+    initial_corners: np.ndarray,
+    p: int,
+    q: int,
+    max_iterations: int,
+) -> List[np.ndarray]:
+    if q == 0:
+        raise ValueError("q must be non-zero for floating-point corner propagation")
+    scale = float(p) / float(q)
+    states = [initial_corners.astype(float)]
+    current = initial_corners.astype(float)
+    for _ in range(max_iterations):
+        next_state = np.empty_like(current, dtype=float)
+        next_state[:, 0] = current[:, 0] * scale
+        next_state[:, 1] = current[:, 1]
+        states.append(next_state)
+        current = next_state
+    return states
+
+
+def box_corners_progression_frame(
+    progression: Dict[str, Dict[str, object]],
+    box_tracking_mode: str,
+) -> pd.DataFrame:
+    records: List[Dict[str, float | int | str]] = []
+    for ordering in ORDERINGS.keys():
+        data = progression[ordering]
+        states: List[np.ndarray] = data["states"]  # type: ignore[assignment]
+        base_corners: np.ndarray = data["box_corners"]  # type: ignore[assignment]
+
+        corners_by_iteration: List[np.ndarray] = [base_corners]
+        if box_tracking_mode == "affine":
+            fit_by_iteration: Dict[int, Dict[str, np.ndarray | float]] = data["fit_by_iteration"]  # type: ignore[assignment]
+            for iteration in range(1, len(states)):
+                fit = fit_by_iteration[iteration]
+                a = fit["A"]  # type: ignore[index]
+                b = fit["b"]  # type: ignore[index]
+                corners_by_iteration.append(base_corners @ a.T + b)
+        elif box_tracking_mode == "float-x-scale":
+            float_states: List[np.ndarray] = data["float_box_corners_by_iteration"]  # type: ignore[assignment]
+            corners_by_iteration = float_states
+        else:
+            raise ValueError(f"unsupported cloud box tracking mode: {box_tracking_mode}")
+
+        for iteration, corners in enumerate(corners_by_iteration):
+            for corner_idx, (x_val, x_star_val) in enumerate(corners):
+                records.append(
+                    {
+                        "ordering": ordering,
+                        "box_tracking_mode": box_tracking_mode,
+                        "iteration": int(iteration),
+                        "corner_index": int(corner_idx),
+                        "x": float(x_val),
+                        "x_star": float(x_star_val),
+                    }
+                )
+    return pd.DataFrame.from_records(records)
+
+
 def run_cloud_affine_study(
     p: int,
     q: int,
@@ -513,12 +572,15 @@ def run_cloud_affine_study(
     random_count: int,
     random_seed: Optional[int],
     fd_delta: float,
+    box_tracking_mode: str = "affine",
     reference_half_width: Optional[int] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Dict[str, object]], int]:
     if p <= 0 or q <= 0:
         raise ValueError("cloud study requires positive --cloud-p and --cloud-q")
     if max_iterations <= 0:
         raise ValueError("--cloud-max-iterations must be positive")
+    if box_tracking_mode not in {"affine", "float-x-scale"}:
+        raise ValueError("cloud box tracking mode must be 'affine' or 'float-x-scale'")
 
     cleaned_half_widths: List[int] = []
     seen = set()
@@ -620,6 +682,15 @@ def run_cloud_affine_study(
                     "fit_by_iteration": fit_by_iteration,
                     "box_corners": box_corners,
                 }
+                if box_tracking_mode == "float-x-scale":
+                    progression[ordering]["float_box_corners_by_iteration"] = (
+                        propagate_box_corners_float_x_scale(
+                            initial_corners=box_corners,
+                            p=p,
+                            q=q,
+                            max_iterations=max_iterations,
+                        )
+                    )
 
     metrics = pd.DataFrame.from_records(records)
     return metrics, progression, ref_half_width
@@ -629,10 +700,13 @@ def plot_cloud_deformation_progression(
     progression: Dict[str, Dict[str, object]],
     reference_half_width: int,
     out_path: Path,
+    box_tracking_mode: str = "affine",
 ) -> None:
     n_rows = len(ORDERINGS)
     if n_rows == 0:
         return
+    if box_tracking_mode not in {"affine", "float-x-scale"}:
+        raise ValueError("cloud box tracking mode must be 'affine' or 'float-x-scale'")
     sample_ordering = next(iter(ORDERINGS.keys()))
     n_cols = len(progression[sample_ordering]["states"])
     fig, axes = plt.subplots(
@@ -658,6 +732,9 @@ def plot_cloud_deformation_progression(
             "fit_by_iteration"
         ]  # type: ignore[assignment]
         box_corners: np.ndarray = progression[ordering]["box_corners"]  # type: ignore[assignment]
+        float_box_states: Optional[List[np.ndarray]] = None
+        if box_tracking_mode == "float-x-scale":
+            float_box_states = progression[ordering]["float_box_corners_by_iteration"]  # type: ignore[assignment]
         source_points = states[0]
         corner_scalar = source_points[:, 0] + source_points[:, 1]
         scalar_min = float(corner_scalar.min())
@@ -685,10 +762,14 @@ def plot_cloud_deformation_progression(
                 mapped_corners = box_corners
                 style = {"linestyle": "--", "linewidth": 1.2}
             else:
-                fit = fit_by_iteration[iteration]
-                a = fit["A"]  # type: ignore[index]
-                b = fit["b"]  # type: ignore[index]
-                mapped_corners = box_corners @ a.T + b
+                if box_tracking_mode == "affine":
+                    fit = fit_by_iteration[iteration]
+                    a = fit["A"]  # type: ignore[index]
+                    b = fit["b"]  # type: ignore[index]
+                    mapped_corners = box_corners @ a.T + b
+                else:
+                    assert float_box_states is not None
+                    mapped_corners = float_box_states[iteration]
                 style = {"linestyle": "-", "linewidth": 1.2}
 
             polygon = np.vstack([mapped_corners, mapped_corners[0]])
@@ -707,7 +788,7 @@ def plot_cloud_deformation_progression(
                     fontsize="large",
                 )
             if row == n_rows - 1:
-                ax.set_xlabel("mapped x", fontsize=9)
+                ax.set_xlabel("mapped x", fontsize="large")
             ax.grid(alpha=0.2, linestyle=":")
 
     if np.isfinite(global_x_min) and np.isfinite(global_x_max) and np.isfinite(global_y_min) and np.isfinite(global_y_max):
@@ -724,10 +805,8 @@ def plot_cloud_deformation_progression(
                 ax.set_ylim(lim_min, lim_max)
                 ax.set_aspect("equal", adjustable="box")
 
-    fig.suptitle(
-        f"Cloud deformation and fitted box (half-width={reference_half_width})",
-        fontsize=11,
-    )
+    mode_label = "fitted affine box" if box_tracking_mode == "affine" else "float box x <- x*p/q, x* fixed"
+    # fig.suptitle(f"Cloud deformation and {mode_label} (half-width={reference_half_width})", fontsize=11)
     fig.savefig(out_path, dpi=300)
     plt.close(fig)
 
@@ -908,7 +987,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cloud-max-iterations",
         type=int,
-        default=4,
+        default=2,
         help="max number of repeated squeeze mappings for cloud study",
     )
     parser.add_argument(
@@ -940,6 +1019,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="half-width used for deformation progression plot (defaults to first value in --cloud-box-half-widths)",
+    )
+    parser.add_argument(
+        "--cloud-box-tracking-mode",
+        choices=["affine", "float-x-scale"],
+        default="float-x-scale",
+        help="how to propagate the plotted box: affine fit or floating-point x <- x*p/q with x* unchanged",
     )
     return parser.parse_args()
 
@@ -983,6 +1068,7 @@ def main() -> None:
             random_count=args.cloud_random_count,
             random_seed=args.cloud_random_seed,
             fd_delta=args.fd_delta,
+            box_tracking_mode=args.cloud_box_tracking_mode,
             reference_half_width=args.cloud_reference_half_width,
         )
 
@@ -990,13 +1076,25 @@ def main() -> None:
         cloud_progress_path = out_dir / "squeeze_cloud_deformation_progression.svg"
         cloud_a01_path = out_dir / "squeeze_cloud_A01_vs_box.svg"
         cloud_non_affinity_path = out_dir / "squeeze_cloud_non_affinity_vs_box.svg"
+        cloud_box_corners_path = out_dir / "squeeze_cloud_box_corners.csv"
+        cloud_box_corners = box_corners_progression_frame(
+            cloud_progression,
+            box_tracking_mode=args.cloud_box_tracking_mode,
+        )
 
         cloud_metrics.to_csv(cloud_metrics_path, index=False)
-        plot_cloud_deformation_progression(cloud_progression, ref_half_width, cloud_progress_path)
+        cloud_box_corners.to_csv(cloud_box_corners_path, index=False)
+        plot_cloud_deformation_progression(
+            cloud_progression,
+            ref_half_width,
+            cloud_progress_path,
+            box_tracking_mode=args.cloud_box_tracking_mode,
+        )
         plot_a01_vs_box(cloud_metrics, cloud_a01_path)
         plot_non_affinity_vs_box(cloud_metrics, cloud_non_affinity_path)
 
         print(f"[write] {cloud_metrics_path}")
+        print(f"[write] {cloud_box_corners_path}")
         print(f"[write] {cloud_progress_path}")
         print(f"[write] {cloud_a01_path}")
         print(f"[write] {cloud_non_affinity_path}")
