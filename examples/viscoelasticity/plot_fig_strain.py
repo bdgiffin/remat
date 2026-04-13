@@ -140,14 +140,14 @@ def run_truss_relaxation(
             recorded_state_values[name].append(float(field[0]))
 
     for _ in range(1, Nsteps + 1):
-        current_time = REMAT.API.update_state(+dt, Nsub_steps)
+        current_time = REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_FORWARD)
         forward_times.append(current_time)
         if state_names:
             capture_state()
 
     if include_backward:
         for _ in range(Nsteps, 0, -1):
-            REMAT.API.update_state(-dt, Nsub_steps)
+            REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_BACKWARD)
 
     result = {"forward_time": np.asarray(forward_times)}
     if state_names:

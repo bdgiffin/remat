@@ -1,12 +1,28 @@
 #ifndef ELEMENT_H
 #define ELEMENT_H
 
+#include "PassPhase.h"
 #include "Parameters.h"
 #include <vector>
 #include <math.h>
+#include <type_traits>
+#include <utility>
 
 template<typename Material_T>
 class Element {
+ private:
+  template<typename M = Material_T>
+  auto call_material_update(Real (&F)[2][2], Real &psi, Real* model_state, Real dt, PassPhase phase, int)
+    -> decltype(std::declval<M&>().update(F,psi,model_state,dt,phase), void()) {
+    m_model.update(F,psi,model_state,dt,phase);
+  }
+
+  template<typename M = Material_T>
+  void call_material_update(Real (&F)[2][2], Real &psi, Real* model_state, Real dt, PassPhase phase, long) {
+    Real signed_dt = is_reverse_phase(phase) ? -std::fabs(dt) : std::fabs(dt);
+    m_model.update(F,psi,model_state,signed_dt);
+  }
+
 public:
   Material_T m_model; // material model
 
@@ -92,7 +108,7 @@ public:
   } // initialize_variable_properties()
     
   // Update the element state using the current nodal displacements
-  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real &E, Real* state, Real dt) {
+  void update(Real (&x)[8], Real (&u)[8], Real (&m)[8], Real (&f)[8], Real &E, Real* state, Real dt, PassPhase phase) {
 
     // Determine nodal masses:
     {
@@ -175,9 +191,9 @@ public:
 	F[1][1] = J[1][0]*invJ0[0][1] + J[1][1]*invJ0[1][1];
 
 	// update the material state
-	Real* model_state = &state[(q+1)*num_state_vars];
-	Real psi;
-	m_model.update(F,psi,model_state,dt);
+		Real* model_state = &state[(q+1)*num_state_vars];
+		Real psi;
+		call_material_update(F,psi,model_state,dt,phase,0);
 
 	// sum contributions to element-averaged state
 	for (int i=0; i<num_state_vars; i++) {

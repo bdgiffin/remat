@@ -82,10 +82,10 @@ def run_forward(
     REMAT.API.initialize()
 
     for _ in range(Nsteps):
-        REMAT.API.update_state(dt, 1)
+        REMAT.API.update_state(dt,1,REMAT.PASS_FORWARD)
     if run_backward:
         for _ in range(Nsteps):
-            REMAT.API.update_state(-dt, 1)
+            REMAT.API.update_state(dt,1,REMAT.PASS_BACKWARD_ADJOINT)
 
     df_dtau_val = REMAT.get_field(b"truss", "df_dtau")[0]
     return df_dtau_val

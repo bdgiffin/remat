@@ -1,13 +1,29 @@
 #ifndef TRUSS_H
 #define TRUSS_H
 
+#include "PassPhase.h"
 #include "Parameters.h"
 #include <vector>
 #include <string>
 #include <math.h>
+#include <type_traits>
+#include <utility>
 
 template<typename Material_T>
 class Truss {
+private:
+  template<typename M = Material_T>
+  auto call_material_update(Real lambda, Real &psi, Real* state, Real dt, PassPhase phase, int)
+    -> decltype(std::declval<M&>().update(lambda,psi,state,dt,phase), void()) {
+    m_model.update(lambda,psi,state,dt,phase);
+  }
+
+  template<typename M = Material_T>
+  void call_material_update(Real lambda, Real &psi, Real* state, Real dt, PassPhase phase, long) {
+    Real signed_dt = is_reverse_phase(phase) ? -std::fabs(dt) : std::fabs(dt);
+    m_model.update(lambda,psi,state,signed_dt);
+  }
+
 public:
   Material_T m_model; // material model
 
@@ -29,7 +45,7 @@ public:
   } // initialize()
     
   // Update the element state using the current nodal displacements
-  void update(Real (&x)[4], Real (&u)[4], Real (&m)[4], Real (&f)[4], Real &E, Real* state, Real dt) {
+  void update(Real (&x)[4], Real (&u)[4], Real (&m)[4], Real (&f)[4], Real &E, Real* state, Real dt, PassPhase phase) {
 
     // Determine nodal masses:
     {
@@ -86,7 +102,7 @@ public:
 
       // update the material state
       Real psi;
-      m_model.update(lambda,psi,state,dt);
+      call_material_update(lambda,psi,state,dt,phase,0);
 
       // Compute the tangent vector
       Real t[2] = { J[0]/normJ, J[1]/normJ };

@@ -99,4 +99,14 @@ import REMAT
 ```
 The `examples` subdirectory provides further illustrative cases of invocations of the library within the context of a Python workflow.
 
+## Pass phases
+
+REMAT uses an explicit pass phase argument for solver direction control:
+
+- `Forward`: forward integration.
+- `Backward`: reverse rematerialization only (no adjoint/gradient accumulation).
+- `BackwardAdjoint`: reverse rematerialization with adjoint/gradient accumulation.
+
+The public API expects `dt > 0` for all phases (`update_state(dt, Nsub_steps, phase)`). Reverse traversal is selected by phase, not by the sign of `dt`. Reverse rematerialization is driven by reversible arithmetic plus stored overflow/history buffers, without trajectory checkpoint tape.
+
 When packaging a pygame project that uses REMAT using pygbag for execution in a web browser, make sure that you have compiled the REMAT library using Emscripten (see above note on configuring CMake using `emcmake`), and include the `install/package` files directly within the local directory for your project. The provided `examples` offer a demonstration of how this can be accomplished, with the appropriate invocations of pygbag included in the `examples/Makefile`.

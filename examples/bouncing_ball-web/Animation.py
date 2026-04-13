@@ -224,12 +224,12 @@ class Animation:
             # Update the simulation state backward-in-time
             if (keys[pygame.K_LEFT] and (self.step_id > 0)):
                 self.step_id = self.step_id - 1
-                time = REMAT.API.update_state(-self.dt,self.Nsub_steps)
+                time = REMAT.API.update_state(self.dt,self.Nsub_steps,REMAT.PASS_BACKWARD)
     
             # Update the simulation state forward-in-time
             if (keys[pygame.K_RIGHT] and (self.step_id < self.Nsteps)):
                 self.step_id = self.step_id + 1
-                time = REMAT.API.update_state(+self.dt,self.Nsub_steps)
+                time = REMAT.API.update_state(self.dt,self.Nsub_steps,REMAT.PASS_FORWARD)
         
             # Display the current state of the simulation
             await self.display_state()

@@ -75,7 +75,13 @@ TEST(test_System, initialize) {
   double time = 0.0;
   Real dt = 1.0e-7;
   for (int i = 0; i<Nsteps; i++) {
-    time = problem.update_state(dt);
+    time = problem.update_state(dt,PassPhase::Forward);
   }
+  ASSERT_GT(time,0.0);
+
+  for (int i = 0; i<Nsteps; i++) {
+    time = problem.update_state(dt,PassPhase::Backward);
+  }
+  ASSERT_NEAR(time,0.0,1.0e-12);
   
 } /* TEST(test_Matrix, initialize) */

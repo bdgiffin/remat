@@ -60,10 +60,10 @@ def run_iteration(
         right_disp_history.append(float(node_disp_x[-1]))
         right_vel_history.append(float(node_vel_x[-1]))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_FORWARD)
 
     for _ in range(nsteps):
-        REMAT.API.update_state(-dt, nsub_steps)
+        REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_BACKWARD_ADJOINT)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
 

@@ -6,12 +6,14 @@
 #include "ContactInteraction.h"
 #include "Dual.h"
 #include "Integrator.h"
+#include "PassPhase.h"
 #include "Parameters.h"
 #include <limits>
 #include <vector>
 #include <algorithm> // For std::fill
 #include <iostream>
 #include <math.h>
+#include <stdlib.h> // exit
 
 // Declare a non-templated base class to enable instantiation with variably typed 
 struct SystemBase {
@@ -59,7 +61,7 @@ struct SystemBase {
   // ===================================================================== //
 
   // Procedure to update the system state for a given time step
-  virtual double update_state(Real dt) = 0;
+  virtual double update_state(Real dt, PassPhase phase) = 0;
   
   // ===================================================================== //
 
@@ -528,7 +530,7 @@ struct System : public SystemBase {
     enforce_prescribed_velocities();
     
     // Update accelerations and damping factors for each DoF
-    update_accelerations(0.0);
+    update_accelerations(0.0,PassPhase::Forward);
 
     // Update kinetic energy
     update_kinetic_energy();
@@ -538,24 +540,40 @@ struct System : public SystemBase {
   // ===================================================================== //
 
   // Procedure to update the system state for a given time step
-  virtual double update_state(Real dt) {
+  virtual double update_state(Real dt, PassPhase phase) {
+
+    if (dt <= 0.0) {
+      std::cout << "System::update_state requires dt > 0.0; received dt = " << dt << std::endl;
+      exit(EXIT_FAILURE);
+    }
 
     const int Nstate_vars_per_truss = m_truss.num_state_vars();
     const int Nstate_vars_per_elem = m_element.num_state_vars();
+    const bool reverse_phase = is_reverse_phase(phase);
+
+    Real dt_step = dt;
+    Real signed_dt = dt;
 
     // Update the time step ID and conditionally load overflow dual velocities
-    if (dt < 0.0) {
+    if (reverse_phase) {
+      if (m_dt_history.empty()) {
+        std::cout << "System::update_state reverse requested with empty time-step history" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+
       m_time_step--;
-      dt = -m_dt_history.back();
+      dt_step = m_dt_history.back();
       m_dt_history.pop_back();
+      signed_dt = -dt_step;
+
       if (m_overflow_counter == 0) {
-	m_overflow_counter = m_overflow_limit;
-	std::vector<FixedV>& last_v_overflow = v_overflow.back();
-	for (int i=0; i<Ndofs; i++) {
-	  v[i].second = last_v_overflow[i];
-	}
-	v_overflow.pop_back();
-	std::cout << "Loading velocity overflow: count = " << v_overflow.size() << std::endl;
+        m_overflow_counter = m_overflow_limit;
+        std::vector<FixedV>& last_v_overflow = v_overflow.back();
+        for (int i=0; i<Ndofs; i++) {
+          v[i].second = last_v_overflow[i];
+        }
+        v_overflow.pop_back();
+        std::cout << "Loading velocity overflow: count = " << v_overflow.size() << std::endl;
       }
       m_overflow_counter--;
 
@@ -563,9 +581,9 @@ struct System : public SystemBase {
       // Load truss overflow
       int Ntruss_overflow = 0;
       for (int e=0; e<Ntruss; e++) {
-	int old_state_overflow_size = truss_state_overflow[e].size();
-	m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
-	if (truss_state_overflow[e].size() < old_state_overflow_size) { Ntruss_overflow++; }
+        int old_state_overflow_size = truss_state_overflow[e].size();
+        m_truss.load_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
+        if (truss_state_overflow[e].size() < old_state_overflow_size) { Ntruss_overflow++; }
       }
       if (Ntruss_overflow > 0) { std::cout << "Loaded " << Ntruss_overflow << " truss overflow states" << std::endl; }
 
@@ -573,67 +591,65 @@ struct System : public SystemBase {
       // Load element overflow
       int Nelem_overflow = 0;
       for (int e=0; e<Nelems; e++) {
-	int old_state_overflow_size = element_state_overflow[e].size();
+        int old_state_overflow_size = element_state_overflow[e].size();
         m_element.load_state(&state[Nstate_vars_per_elem*e],element_state_overflow[e]);
-	if (element_state_overflow[e].size() < old_state_overflow_size) { Nelem_overflow++; }
+        if (element_state_overflow[e].size() < old_state_overflow_size) { Nelem_overflow++; }
       }
       if (Nelem_overflow > 0) { std::cout << "Loaded " << Nelem_overflow << " element overflow states" << std::endl; }
-      
     }
 
     // Update velocities to the half-step
-    m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+    m_integrator.first_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
 
     // Update displacement to the next whole-step
-    m_integrator.whole_step_displacement_update(dt,v.data(),u.data(),Ndofs);
+    m_integrator.whole_step_displacement_update(signed_dt,v.data(),u.data(),Ndofs);
 
     // Storing/restoring time history
-    // Real target_time = m_time + dt;
-    if (dt > 0.0) {
+    if (signed_dt > 0.0) {
       m_time_history.push_back(m_time);
-      m_time = m_time + dt;
-    } else if (dt < 0.0) {
+      m_time = m_time + signed_dt;
+    } else if (signed_dt < 0.0) {
       m_time = m_time_history.back();
       m_time_history.pop_back();
     }
 
     // Enforce prescribed displacement boundary conditions at the new analysis time
-    apply_displacement_bcs(m_time,dt);
-    
+    apply_displacement_bcs(m_time,signed_dt);
+
     // Update masses, residual forces, and accelerations at the whole-step
-    update_accelerations(dt);
+    update_accelerations(signed_dt,phase);
     // enforce_prescribed_velocities();
     // Update velocities to the whole-step
-    m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+    m_integrator.second_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
     enforce_prescribed_velocities();
 
     // Update kinetic energy
     update_kinetic_energy();
 
     // Update time step ID and conditionally store overflow dual velocities
-    if (dt > 0.0) {
-      m_dt_history.push_back(dt);
+    if (!reverse_phase) {
+      m_dt_history.push_back(dt_step);
       m_time_step++;
       m_overflow_counter++;
       if (m_overflow_counter == m_overflow_limit) {
-	m_overflow_counter = 0;
-	std::vector<FixedV> new_v_overflow(Ndofs,FixedV(0.0));
-	for (int i=0; i<Ndofs; i++) {
-	  //if ((v[i].first == FixedV(0.0)) and !fixity[i]) exit(1);
-	  new_v_overflow[i] = v[i].second;
-	  v[i].second = FixedV(0.0);
-	}
-	v_overflow.push_back(new_v_overflow);
-	std::cout << "Storing velocity overflow: count = " << v_overflow.size() << std::endl;
+        m_overflow_counter = 0;
+        std::vector<FixedV> new_v_overflow(Ndofs,FixedV(0.0));
+        for (int i=0; i<Ndofs; i++) {
+          //if ((v[i].first == FixedV(0.0)) and !fixity[i]) exit(1);
+          new_v_overflow[i] = v[i].second;
+          v[i].second = FixedV(0.0);
+        }
+        v_overflow.push_back(new_v_overflow);
+        std::cout << "Storing velocity overflow: count = " << v_overflow.size() << std::endl;
       }
 
       // Conditionally store material history parameters in memory
       // Store truss overflow
       int Ntruss_overflow = 0;
       for (int e=0; e<Ntruss; e++) {
-	int old_state_overflow_size = truss_state_overflow[e].size();
-	m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
-	if (truss_state_overflow[e].size() > old_state_overflow_size) { Ntruss_overflow++; }
+        int old_state_overflow_size = truss_state_overflow[e].size();
+        m_truss.store_state(&truss_state[Nstate_vars_per_truss*e],truss_state_overflow[e]);
+        if (truss_state_overflow[e].size() > old_state_overflow_size) { Ntruss_overflow++; }
       }
       if (Ntruss_overflow > 0) { std::cout << "Stored " << Ntruss_overflow << " truss overflow states" << std::endl; }
 
@@ -641,12 +657,11 @@ struct System : public SystemBase {
       // Store element overflow
       int Nelem_overflow = 0;
       for (int e=0; e<Nelems; e++) {
-	int old_state_overflow_size = element_state_overflow[e].size();
+        int old_state_overflow_size = element_state_overflow[e].size();
         m_element.store_state(&state[Nstate_vars_per_elem*e],element_state_overflow[e]);
-	if (element_state_overflow[e].size() > old_state_overflow_size) { Nelem_overflow++; }
+        if (element_state_overflow[e].size() > old_state_overflow_size) { Nelem_overflow++; }
       }
       if (Nelem_overflow > 0) { std::cout << "Stored " << Nelem_overflow << " element overflow states" << std::endl; }
-      
     }
     
     std::cout << "Time step: " << m_time_step << " at time: " << m_time << std::endl;
@@ -914,7 +929,7 @@ private:
   // ===================================================================== //
 
   // Procedure to update the accelerations
-  void update_accelerations(Real dt) {
+  void update_accelerations(Real dt, PassPhase phase) {
 
 
     // Zero-initialize forces and masses
@@ -952,7 +967,7 @@ private:
       Real me[8] = { 0.0 };
       Real fe[8] = { 0.0 };
       Real Ee = 0.0;
-      m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt);
+      m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt,phase);
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
@@ -992,7 +1007,7 @@ private:
       Real me[4] = { 0.0 };
       Real fe[4] = { 0.0 };
       Real Ee = 0.0;
-      m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt);
+      m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt,phase);
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!

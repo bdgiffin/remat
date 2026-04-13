@@ -105,7 +105,7 @@ def run_forward_only(
             time_history.append(REMAT.API.get_time())
             mean_stress_history.append(float(np.mean(stress)))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_FORWARD)
 
     result = {"loss": float(loss)}
     if store_histories:
@@ -145,10 +145,10 @@ def run_forward_backward(
             time_history.append(REMAT.API.get_time())
             mean_stress_history.append(float(np.mean(stress)))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_FORWARD)
 
     for _ in range(nsteps):
-        REMAT.API.update_state(-dt, nsub_steps)
+        REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_BACKWARD_ADJOINT)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
 

@@ -107,13 +107,13 @@ if (not sys.platform == "emscripten"):
     # perform the forward-in-time analysis
     while (step_id < Nsteps):
         step_id = step_id + 1
-        time = REMAT.API.update_state(+dt,Nsub_steps)
+        time = REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_FORWARD)
         exo.output_state()
 
     # perform the time-reversed analysis
     while (step_id > 0):
         step_id = step_id - 1
-        time = REMAT.API.update_state(-dt,Nsub_steps)
+        time = REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_BACKWARD)
         exo.output_state()
 
     exo.finalize()

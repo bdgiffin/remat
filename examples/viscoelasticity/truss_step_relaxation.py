@@ -134,13 +134,13 @@ Nsub_steps = 100
 
 # Forward integration
 for step in range(1, Nsteps + 1):
-    REMAT.API.update_state(+dt, Nsub_steps)
+    REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_FORWARD)
     if exo:
         exo.output_state()
 
 # Backward integration
 for step in range(Nsteps, 0, -1):
-    REMAT.API.update_state(-dt, Nsub_steps)
+    REMAT.API.update_state(dt,Nsub_steps,REMAT.PASS_BACKWARD)
     if exo:
         exo.output_state()
 

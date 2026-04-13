@@ -79,7 +79,7 @@ API.initialize.argtypes = None
 API.initialize.restype  = None
 API.initialize_variable_properties.argtypes = [c_function_2d]
 API.initialize_variable_properties.restype  = None
-API.update_state.argtypes = [c_double, c_int]
+API.update_state.argtypes = [c_double, c_int, c_int]
 API.update_state.restype  = c_double
 API.get_num_dim.argtypes      = None
 API.get_num_dim.restype       = c_int
@@ -97,6 +97,11 @@ API.get_fields.argtypes       = [c_char_p, ND_POINTER_2]
 API.get_fields.restype        = None
 API.get_time.argtypes         = None
 API.get_time.restype          = c_double
+
+# Pass phases for explicit solver direction control
+PASS_FORWARD = 0
+PASS_BACKWARD = 1
+PASS_BACKWARD_ADJOINT = 2
 
 # ---------------------------------------------------------------------------- #
 # Prevent garbage collection

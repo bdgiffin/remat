@@ -144,13 +144,19 @@ extern "C" {
   // ------------------------------------------------------------------------ //
 
   // Update the System state
-  double update_state(double dt, int Nsub_steps) {
+  double update_state(double dt, int Nsub_steps, int phase) {
     // Record the starting wall time
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    double time;
+    if (phase < int(PassPhase::Forward) || phase > int(PassPhase::BackwardAdjoint)) {
+      std::cerr << "Invalid pass phase value: " << phase << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    PassPhase pass_phase = static_cast<PassPhase>(phase);
+
+    double time = remat->get_time();
     for (int i=0; i<Nsub_steps; i++) {
-      time = remat->update_state(dt);
+      time = remat->update_state(dt,pass_phase);
     }
     
     // Record the ending wall time
