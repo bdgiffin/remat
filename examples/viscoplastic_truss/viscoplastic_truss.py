@@ -54,6 +54,10 @@ REMAT.API.define_parameter(b"mat_overflow_limit", 50.0)
 
 # Set the integrator type: "float" (default), "fixed", or "mixed"
 REMAT.API.set_integrator_type(b"fixed")
+if hasattr(REMAT.API, "set_objective_policy"):
+    REMAT.API.set_objective_policy(b"none")
+if hasattr(REMAT.API, "get_truss_adjoint_status"):
+    print("Truss adjoint support:", REMAT.API.get_truss_adjoint_status().decode("utf-8"))
 
 # Pre-process mesh/geometry ------------------------------------------------
 

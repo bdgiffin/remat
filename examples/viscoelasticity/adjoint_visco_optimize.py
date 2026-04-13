@@ -90,6 +90,7 @@ def run_forward_only(
     define_parameters(tau, youngs_modulus, mat_overflow_limit)
     create_chain_problem(num_elements, impact_velocity, lumped_point_mass)
     REMAT.API.initialize()
+    REMAT.API.set_objective_policy(b"truss_stress_squared_over_E")
 
     loss = 0.0
     time_history = []
@@ -105,7 +106,7 @@ def run_forward_only(
             time_history.append(REMAT.API.get_time())
             mean_stress_history.append(float(np.mean(stress)))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.step_forward(dt, nsub_steps)
 
     result = {"loss": float(loss)}
     if store_histories:
@@ -132,6 +133,7 @@ def run_forward_backward(
     define_parameters(tau, youngs_modulus, mat_overflow_limit)
     create_chain_problem(num_elements, impact_velocity, lumped_point_mass)
     REMAT.API.initialize()
+    REMAT.API.set_objective_policy(b"truss_stress_squared_over_E")
 
     loss = 0.0
     time_history = []
@@ -145,10 +147,10 @@ def run_forward_backward(
             time_history.append(REMAT.API.get_time())
             mean_stress_history.append(float(np.mean(stress)))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.step_forward(dt, nsub_steps)
 
     for _ in range(nsteps):
-        REMAT.API.update_state(-dt, nsub_steps)
+        REMAT.API.step_adjoint_backward(nsub_steps)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
 

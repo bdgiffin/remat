@@ -31,6 +31,7 @@ set(REMAT_python
     )
 
 set(REMAT_headers
+    ${CMAKE_CURRENT_LIST_DIR}/AdjointFramework.h
     ${CMAKE_CURRENT_LIST_DIR}/Dual.h
     ${CMAKE_CURRENT_LIST_DIR}/ContactInteraction.h
     ${CMAKE_CURRENT_LIST_DIR}/Element.h
@@ -45,6 +46,7 @@ set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/Truss.h
     ${CMAKE_CURRENT_LIST_DIR}/UniaxialMaterial.h
     ${CMAKE_CURRENT_LIST_DIR}/UniaxialViscoelasticity.h
+    ${CMAKE_CURRENT_LIST_DIR}/UniaxialViscoplasticity.h
     ${CMAKE_CURRENT_LIST_DIR}/arithmetic.h
     ${CMAKE_CURRENT_LIST_DIR}/types.h
     PARENT_SCOPE

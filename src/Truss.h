@@ -2,12 +2,33 @@
 #define TRUSS_H
 
 #include "Parameters.h"
+#include "types.h"
 #include <vector>
 #include <string>
 #include <math.h>
+#include <cmath>
+#include <type_traits>
+#include <utility>
 
 template<typename Material_T>
 class Truss {
+public:
+  using MaterialType = Material_T;
+
+private:
+  template <typename M, typename = void>
+  struct SupportsExplicitMaterialModes : std::false_type { };
+
+  template <typename M>
+  struct SupportsExplicitMaterialModes<M,
+                                       std::void_t<typename M::MaterialUpdateMode,
+                                                   decltype(std::declval<M&>().update(
+                                                     std::declval<Real>(),
+                                                     std::declval<Real&>(),
+                                                     std::declval<Real*>(),
+                                                     std::declval<Real>(),
+                                                     std::declval<typename M::MaterialUpdateMode>()))>> : std::true_type { };
+
 public:
   Material_T m_model; // material model
 
@@ -117,6 +138,37 @@ public:
   
   // Report the element death status of the current element
   bool is_dead(Real* state) { return m_model.is_dead(state); }
+
+  int adjoint_support_level(void) { return m_model.adjoint_support_level(); }
+  const char* adjoint_support_status(void) { return m_model.adjoint_support_status(); }
+  void set_adjoint_enabled(bool enabled) { m_model.set_adjoint_enabled(enabled); }
+
+  // Explicit constitutive mode wrappers (when supported by material model).
+  void update_forward_mode(Real lambda, Real& psi, Real* state, Real dt) {
+    if constexpr (SupportsExplicitMaterialModes<Material_T>::value) {
+      m_model.update(lambda,psi,state,std::fabs(dt),Material_T::MaterialUpdateMode::Forward);
+    } else {
+      m_model.update(lambda,psi,state,std::fabs(dt));
+    }
+  }
+
+  void update_remat_backward_mode(Real lambda, Real& psi, Real* state, Real dt) {
+    if constexpr (SupportsExplicitMaterialModes<Material_T>::value) {
+      m_model.update(lambda,psi,state,std::fabs(dt),Material_T::MaterialUpdateMode::RematBackward);
+    } else {
+      m_model.update(lambda,psi,state,-std::fabs(dt));
+    }
+  }
+
+  void update_adjoint_backward_mode(Real lambda, Real& psi, Real* state, Real dt) {
+    if constexpr (SupportsExplicitMaterialModes<Material_T>::value) {
+      m_model.update(lambda,psi,state,std::fabs(dt),Material_T::MaterialUpdateMode::AdjointBackward);
+    }
+  }
+
+  constexpr bool supports_explicit_material_modes(void) const {
+    return SupportsExplicitMaterialModes<Material_T>::value;
+  }
     
   // Return the number of nodes per element
   constexpr int num_nodes(void) { return 2; }

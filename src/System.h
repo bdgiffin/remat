@@ -7,9 +7,12 @@
 #include "Dual.h"
 #include "Integrator.h"
 #include "Parameters.h"
+#include "AdjointFramework.h"
 #include <limits>
 #include <vector>
 #include <algorithm> // For std::fill
+#include <type_traits>
+#include <utility>
 #include <iostream>
 #include <math.h>
 
@@ -60,6 +63,18 @@ struct SystemBase {
 
   // Procedure to update the system state for a given time step
   virtual double update_state(Real dt) = 0;
+
+  // Explicit step driver APIs
+  virtual double step_forward(Real dt) = 0;
+  virtual double step_remat_backward(void) = 0;
+  virtual double step_adjoint_backward(void) = 0;
+
+  // Set objective seed policy used for adjoint updates
+  virtual void set_objective_policy(ObjectivePolicyType policy) = 0;
+
+  // Query truss adjoint kernel capability
+  virtual int get_truss_adjoint_support(void) = 0;
+  virtual const char* get_truss_adjoint_status(void) = 0;
   
   // ===================================================================== //
 
@@ -194,7 +209,13 @@ struct System : public SystemBase {
   std::vector<int> truss_connect; // The nodal connectivity array for all truss elements
   std::vector<Real>  truss_state; // Truss element state variable data
   std::vector<std::vector<Real> > truss_state_overflow; // Truss element state variable overflow data
+  std::vector<std::vector<Real> > truss_strain_tape; // per-step truss strain history
+  std::vector<Real> truss_initial_strain; // truss strain at initial state (step 0)
+  std::vector<Real> truss_state_adjoint_work; // scratch state used by adjoint-only reverse sweep
+  int m_adjoint_step_cursor = 0;
+  bool m_adjoint_initialized = false;
   std::vector<std::string> truss_field_names;
+  ObjectivePolicyType m_objective_policy = ObjectivePolicyType::TrussStressSquaredOverE;
 
   // Point mass data
   int              Npoints = 0; // The total number of point masses
@@ -211,6 +232,43 @@ struct System : public SystemBase {
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
+
+ private:
+  template <typename MaterialModelT, typename = void>
+  struct SupportsExplicitMaterialModes : std::false_type { };
+
+  template <typename MaterialModelT>
+  struct SupportsExplicitMaterialModes<MaterialModelT,
+                                       std::void_t<typename MaterialModelT::MaterialUpdateMode,
+                                                   decltype(std::declval<MaterialModelT&>().update(
+                                                     std::declval<Real>(),
+                                                     std::declval<Real&>(),
+                                                     std::declval<Real*>(),
+                                                     std::declval<Real>(),
+                                                     std::declval<typename MaterialModelT::MaterialUpdateMode>()))>> : std::true_type { };
+
+  template <typename MaterialModelT>
+  typename MaterialModelT::LocalAdjointSeed build_local_seed_for_policy(const MaterialModelT& model,
+                                                                         const Real* state_n) const {
+    typename MaterialModelT::LocalAdjointSeed seed;
+    if (m_objective_policy == ObjectivePolicyType::None) {
+      return seed;
+    }
+
+    if (m_objective_policy == ObjectivePolicyType::TrussStressSquaredOverE) {
+      const Real E = model.youngs_modulus();
+      if (E != 0.0) {
+        const Real sigma_n = state_n[0];
+        const Real sigma_over_E = sigma_n/E;
+        seed.bar_sigma_n = sigma_over_E;
+        seed.bar_sigma_np1 = 0.0;
+        seed.direct_dE = -0.5*sigma_over_E*sigma_over_E;
+      }
+    }
+    return seed;
+  }
+
+ public:
     
   // ===================================================================== //
   
@@ -374,6 +432,11 @@ struct System : public SystemBase {
     truss_connect.resize(Ntruss_dofs);
     truss_state.resize(Nstate);
     truss_state_overflow.resize(Ntruss);
+    truss_strain_tape.clear();
+    truss_initial_strain.assign(Ntruss,0.0);
+    truss_state_adjoint_work.clear();
+    m_adjoint_step_cursor = 0;
+    m_adjoint_initialized = false;
 
     // Initialize connectivity data for all truss elements
     for (int i=0; i<Ntruss_dofs; i++) {
@@ -522,6 +585,10 @@ struct System : public SystemBase {
     m_overflow_counter = 0;
     m_dt_history.clear();
     m_time_history.clear();
+    truss_strain_tape.clear();
+    truss_state_adjoint_work.clear();
+    m_adjoint_step_cursor = 0;
+    m_adjoint_initialized = false;
 
     // Apply any prescribed displacement boundary conditions at the initial time
     apply_displacement_bcs(m_time,0.0);
@@ -529,6 +596,15 @@ struct System : public SystemBase {
     
     // Update accelerations and damping factors for each DoF
     update_accelerations(0.0);
+
+    // Capture initial truss strains for adjoint stepping.
+    if (Ntruss > 0) {
+      const int Nstate_vars_per_truss = m_truss.num_state_vars();
+      truss_initial_strain.assign(Ntruss,0.0);
+      for (int e=0; e<Ntruss; e++) {
+        truss_initial_strain[e] = truss_state[Nstate_vars_per_truss*e+1];
+      }
+    }
 
     // Update kinetic energy
     update_kinetic_energy();
@@ -542,11 +618,18 @@ struct System : public SystemBase {
 
     const int Nstate_vars_per_truss = m_truss.num_state_vars();
     const int Nstate_vars_per_elem = m_element.num_state_vars();
+    const bool is_reverse_step = (dt < 0.0);
+    Real signed_dt = dt;
+    Real dt_abs = std::fabs(dt);
+
+    if (is_reverse_step && m_dt_history.empty()) {
+      return m_time;
+    }
 
     // Update the time step ID and conditionally load overflow dual velocities
-    if (dt < 0.0) {
+    if (is_reverse_step) {
       m_time_step--;
-      dt = -m_dt_history.back();
+      dt_abs = m_dt_history.back();
       m_dt_history.pop_back();
       if (m_overflow_counter == 0) {
 	m_overflow_counter = m_overflow_limit;
@@ -558,6 +641,7 @@ struct System : public SystemBase {
 	std::cout << "Loading velocity overflow: count = " << v_overflow.size() << std::endl;
       }
       m_overflow_counter--;
+      signed_dt = -dt_abs;
 
       // Conditionally load material history parameters from memory
       // Load truss overflow
@@ -578,41 +662,41 @@ struct System : public SystemBase {
 	if (element_state_overflow[e].size() < old_state_overflow_size) { Nelem_overflow++; }
       }
       if (Nelem_overflow > 0) { std::cout << "Loaded " << Nelem_overflow << " element overflow states" << std::endl; }
-      
+		      
     }
 
     // Update velocities to the half-step
-    m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+    m_integrator.first_half_step_velocity_update(dt_abs,v.data(),a.data(),alpha.data(),Ndofs);
 
     // Update displacement to the next whole-step
-    m_integrator.whole_step_displacement_update(dt,v.data(),u.data(),Ndofs);
+    m_integrator.whole_step_displacement_update(dt_abs,v.data(),u.data(),Ndofs);
 
     // Storing/restoring time history
     // Real target_time = m_time + dt;
-    if (dt > 0.0) {
+    if (!is_reverse_step) {
       m_time_history.push_back(m_time);
-      m_time = m_time + dt;
-    } else if (dt < 0.0) {
+      m_time = m_time + dt_abs;
+    } else {
       m_time = m_time_history.back();
       m_time_history.pop_back();
     }
 
     // Enforce prescribed displacement boundary conditions at the new analysis time
-    apply_displacement_bcs(m_time,dt);
+    apply_displacement_bcs(m_time,signed_dt);
     
     // Update masses, residual forces, and accelerations at the whole-step
-    update_accelerations(dt);
+    update_accelerations(signed_dt);
     // enforce_prescribed_velocities();
     // Update velocities to the whole-step
-    m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
+    m_integrator.second_half_step_velocity_update(dt_abs,v.data(),a.data(),alpha.data(),Ndofs);
     enforce_prescribed_velocities();
 
     // Update kinetic energy
     update_kinetic_energy();
 
     // Update time step ID and conditionally store overflow dual velocities
-    if (dt > 0.0) {
-      m_dt_history.push_back(dt);
+    if (!is_reverse_step) {
+      m_dt_history.push_back(dt_abs);
       m_time_step++;
       m_overflow_counter++;
       if (m_overflow_counter == m_overflow_limit) {
@@ -646,7 +730,29 @@ struct System : public SystemBase {
 	if (element_state_overflow[e].size() > old_state_overflow_size) { Nelem_overflow++; }
       }
       if (Nelem_overflow > 0) { std::cout << "Stored " << Nelem_overflow << " element overflow states" << std::endl; }
-      
+
+      // Store truss strain step record for explicit reverse/adjoint drivers.
+      if (Ntruss > 0) {
+        std::vector<Real> step_strain(Ntruss,0.0);
+        for (int e=0; e<Ntruss; e++) {
+          step_strain[e] = truss_state[Nstate_vars_per_truss*e+1];
+        }
+        truss_strain_tape.push_back(step_strain);
+      }
+
+      // Forward trajectory changed; cached adjoint work is no longer valid.
+      m_adjoint_initialized = false;
+      truss_state_adjoint_work.clear();
+      m_adjoint_step_cursor = 0;
+
+    } else {
+      // Remove the latest truss strain record when rematerializing backwards.
+      if (!truss_strain_tape.empty()) truss_strain_tape.pop_back();
+
+      // Reverse rematerialization changed the trajectory tail.
+      m_adjoint_initialized = false;
+      truss_state_adjoint_work.clear();
+      m_adjoint_step_cursor = 0;
     }
     
     std::cout << "Time step: " << m_time_step << " at time: " << m_time << std::endl;
@@ -658,9 +764,125 @@ struct System : public SystemBase {
   
   // ===================================================================== //
 
+  // Explicit API: one forward step with positive |dt|.
+  virtual double step_forward(Real dt) {
+    const Real dt_abs = std::fabs(dt);
+    if (dt_abs == 0.0) { return m_time; }
+    return update_state(dt_abs);
+  }
+
+  // ===================================================================== //
+
+  // Explicit API: one reverse rematerialization step, with adjoint disabled.
+  virtual double step_remat_backward(void) {
+    if (m_dt_history.empty()) { return m_time; }
+    m_truss.set_adjoint_enabled(false);
+    const double time = update_state(-m_dt_history.back());
+    m_truss.set_adjoint_enabled(true);
+    return time;
+  }
+
+  // ===================================================================== //
+
+  // Explicit API: one reverse adjoint step over truss material states only.
+  // This does not advance the primal system state in time.
+  virtual double step_adjoint_backward(void) {
+    if (Ntruss == 0) { return m_time; }
+    if (truss_strain_tape.empty() || m_dt_history.empty()) { return m_time; }
+
+    using TrussMaterial = typename Truss_T::MaterialType;
+    if constexpr (!SupportsExplicitMaterialModes<TrussMaterial>::value) {
+      return m_time;
+    } else {
+      const int Nstate_vars_per_truss = m_truss.num_state_vars();
+      const int Nsteps_recorded = int(truss_strain_tape.size());
+      if (Nsteps_recorded <= 0) { return m_time; }
+
+      if (!m_adjoint_initialized) {
+        truss_state_adjoint_work = truss_state;
+        for (int e=0; e<Ntruss; e++) {
+          Real* work_state = &truss_state_adjoint_work[Nstate_vars_per_truss*e];
+          Real* visible_state = &truss_state[Nstate_vars_per_truss*e];
+          m_truss.m_model.reset_adjoint_state(work_state);
+          m_truss.m_model.reset_adjoint_state(visible_state);
+        }
+        m_adjoint_step_cursor = Nsteps_recorded;
+        m_adjoint_initialized = true;
+      }
+
+      if (m_adjoint_step_cursor <= 0) {
+        m_adjoint_initialized = false;
+        return m_time;
+      }
+
+      const int step_id = m_adjoint_step_cursor - 1;
+      if (step_id < 0) {
+        m_adjoint_initialized = false;
+        return m_time;
+      }
+
+      const Real dt_step = (step_id < int(m_dt_history.size())) ? m_dt_history[step_id] : m_dt_history.back();
+      const bool has_prev = (step_id > 0);
+      const std::vector<Real>& strain_n = has_prev ? truss_strain_tape[step_id-1] : truss_initial_strain;
+
+      for (int e=0; e<Ntruss; e++) {
+        Real* state_np1_work = &truss_state_adjoint_work[Nstate_vars_per_truss*e];
+        std::vector<Real> state_n_tmp(Nstate_vars_per_truss,0.0);
+        std::copy(state_np1_work,state_np1_work+Nstate_vars_per_truss,state_n_tmp.data());
+
+        const Real lambda_n = 1.0 + strain_n[e];
+        Real psi = 0.0;
+
+        // Rematerialize to state n in a temporary buffer used for objective seeding.
+        m_truss.m_model.update(lambda_n,psi,state_n_tmp.data(),dt_step,
+                               TrussMaterial::MaterialUpdateMode::RematBackward);
+
+        // Objective policy is external to materials; pass the computed seed in.
+        typename TrussMaterial::LocalAdjointSeed seed =
+          build_local_seed_for_policy(m_truss.m_model,state_n_tmp.data());
+        m_truss.m_model.set_external_objective_seed(seed);
+
+        // Apply local adjoint update at step n, then rematerialize working state.
+        m_truss.m_model.update(lambda_n,psi,state_np1_work,dt_step,
+                               TrussMaterial::MaterialUpdateMode::AdjointBackward);
+        m_truss.m_model.update(lambda_n,psi,state_np1_work,dt_step,
+                               TrussMaterial::MaterialUpdateMode::RematBackward);
+
+        // Export adjoint/gradient fields while preserving visible primal final state.
+        auto grads = m_truss.m_model.read_gradient_state(state_np1_work);
+        auto adj = m_truss.m_model.read_adjoint_state(state_np1_work);
+        Real* visible_state = &truss_state[Nstate_vars_per_truss*e];
+        m_truss.m_model.write_gradient_state(grads,visible_state);
+        m_truss.m_model.write_adjoint_state(adj,visible_state);
+      }
+
+      m_adjoint_step_cursor--;
+      if (m_adjoint_step_cursor <= 0) {
+        m_adjoint_initialized = false;
+      }
+      return m_time;
+    }
+  }
+
+  // ===================================================================== //
+
+  virtual void set_objective_policy(ObjectivePolicyType policy) {
+    m_objective_policy = policy;
+    m_adjoint_initialized = false;
+    truss_state_adjoint_work.clear();
+    m_adjoint_step_cursor = 0;
+  }
+
+  // ===================================================================== //
+
+  virtual int get_truss_adjoint_support(void) { return m_truss.adjoint_support_level(); }
+  virtual const char* get_truss_adjoint_status(void) { return m_truss.adjoint_support_status(); }
+
+  // ===================================================================== //
+
   // Procedure to get the current system state data
   virtual double get_field_data(double *ux, double *uy,
-	 	                double *vx, double *vy,
+		                double *vx, double *vy,
 		                double *fx, double *fy,
 			        double *dual_ux, double *dual_uy,
 	 	                double *dual_vx, double *dual_vy,

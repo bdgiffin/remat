@@ -152,3 +152,39 @@ TEST(test_UniaxialViscoplasticity, update) {
   }
   
 } /* TEST(test_UniaxialViscoplasticity, update) */
+
+TEST(test_UniaxialViscoplasticity, adjoint_scaffold_reports_unsupported) {
+  Parameters params;
+  params["truss_density"] = 1.0;
+  params["area"] = 1.0;
+  params["truss_youngs_modulus"] = 2000.0;
+  params["viscosity"] = 1.0e+1;
+  params["yield_stress"] = 30.0;
+  params["eps_fail"] = 0.3;
+  params["mat_overflow_limit"] = 50;
+  UniaxialViscoplasticity<FixedE,Rational> model(params);
+
+  EXPECT_EQ(model.adjoint_support_level(),int(AdjointSupportLevel::ScaffoldOnly));
+  EXPECT_STREQ(model.adjoint_support_status(),"scaffold_only");
+
+  std::vector<Real> state(model.num_state_vars(),0.0);
+  model.initialize(state.data());
+
+  ScalarStepInput input;
+  input.strain_n = 0.0;
+  input.strain_np1 = 1.0e-3;
+  input.dt = 1.0e-3;
+
+  ScalarLocalSeed seed;
+  seed.bar_sigma_n = 1.0;
+  seed.bar_sigma_np1 = 0.0;
+  seed.direct_dE = 0.0;
+
+  UniaxialViscoplasticity<FixedE,Rational>::GradientAccumulator grad;
+  auto response = model.adjoint_update(input,state.data(),seed,grad);
+
+  EXPECT_FALSE(response.supported);
+  EXPECT_EQ(grad.df_dtau,0.0);
+  EXPECT_EQ(grad.df_dE,0.0);
+  EXPECT_FALSE(grad.supported);
+}

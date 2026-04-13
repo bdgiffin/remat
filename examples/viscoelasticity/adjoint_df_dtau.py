@@ -80,12 +80,13 @@ def run_forward(
     bc_function = build_bc_function(left_x, epsilon0)
     REMAT.define_displacement_bc(np.array([1], dtype=np.int32), 0, bc_function)
     REMAT.API.initialize()
+    REMAT.API.set_objective_policy(b"truss_stress_squared_over_E")
 
     for _ in range(Nsteps):
-        REMAT.API.update_state(dt, 1)
+        REMAT.API.step_forward(dt, 1)
     if run_backward:
         for _ in range(Nsteps):
-            REMAT.API.update_state(-dt, 1)
+            REMAT.API.step_adjoint_backward(1)
 
     df_dtau_val = REMAT.get_field(b"truss", "df_dtau")[0]
     return df_dtau_val

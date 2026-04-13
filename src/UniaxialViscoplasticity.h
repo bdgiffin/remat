@@ -2,6 +2,7 @@
 #define UNIAXIAL_VISCOPLASTICITY_H
 
 #include <math.h>
+#include <cmath>
 #include <iostream>
 #include <stdlib.h> // exit
 #include <limits>
@@ -9,6 +10,7 @@
 #include "types.h"
 #include "Dual.h"
 #include "Parameters.h"
+#include "AdjointFramework.h"
 
 template<class FixedE, class Ratio>
 class UniaxialViscoplasticity {
@@ -23,6 +25,33 @@ class UniaxialViscoplasticity {
   int  mat_overflow_limit = std::numeric_limits<int>::max();
   FixedE yield_strain; // Yield strain
  public:
+  struct MaterialPrimalState {
+    Real axial_force = 0.0;
+    Real axial_strain = 0.0;
+  };
+
+  struct MaterialAdjointState {
+    Real placeholder = 0.0;
+  };
+
+  struct GradientAccumulator {
+    Real df_dtau = 0.0;
+    Real df_dE = 0.0;
+    bool supported = false;
+  };
+
+  struct MaterialForwardResponse {
+    Real stress = 0.0;
+    Real energy = 0.0;
+  };
+
+  struct MaterialAdjointResponse {
+    bool supported = false;
+    Real bar_strain_n = 0.0;
+    Real bar_strain_np1 = 0.0;
+    Real grad_dtau_increment = 0.0;
+    Real grad_dE_increment = 0.0;
+  };
 
   // Empty constructor
   UniaxialViscoplasticity(void) { }
@@ -287,6 +316,37 @@ class UniaxialViscoplasticity {
 
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(E/rho); }
+
+  // ------------------- Generalized-kernel scaffold hooks ------------------- //
+  MaterialForwardResponse forward_update(const ScalarStepInput& input, Real* state) {
+    Real psi = 0.0;
+    update(1.0 + input.strain_np1,psi,state,std::fabs(input.dt));
+    MaterialForwardResponse response;
+    response.stress = state[0]/area;
+    response.energy = psi;
+    return response;
+  }
+
+  MaterialForwardResponse remat_backward_update(const ScalarStepInput& input, Real* state) {
+    Real psi = 0.0;
+    update(1.0 + input.strain_n,psi,state,-std::fabs(input.dt));
+    MaterialForwardResponse response;
+    response.stress = state[0]/area;
+    response.energy = psi;
+    return response;
+  }
+
+  MaterialAdjointResponse adjoint_update(const ScalarStepInput&, Real*, const ScalarLocalSeed&, GradientAccumulator&) {
+    // Scaffold-only: full viscoplastic adjoint math is intentionally deferred.
+    MaterialAdjointResponse response;
+    response.supported = false;
+    return response;
+  }
+
+  int adjoint_support_level(void) { return int(AdjointSupportLevel::ScaffoldOnly); }
+  const char* adjoint_support_status(void) { return "scaffold_only"; }
+  void set_adjoint_enabled(bool) { }
+  void reset_adjoint_state(Real*) { }
 
 }; /* UniaxialViscoplasticity */
 

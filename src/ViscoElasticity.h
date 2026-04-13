@@ -10,6 +10,7 @@
 #include "Rational.h"
 #include <limits>
 #include "types.h"
+#include "AdjointFramework.h"
 
 
 template<class FixedE, class Ratio>
@@ -377,6 +378,11 @@ class ViscoElasticity {
 
   // Return the initial sound speed
   //Real initial_sound_speed(void) { return sqrt(pmod/rho); }
+
+  int adjoint_support_level(void) { return int(AdjointSupportLevel::ScaffoldOnly); }
+  const char* adjoint_support_status(void) { return "scaffold_only"; }
+  void set_adjoint_enabled(bool) { }
+  void reset_adjoint_state(Real*) { }
 
 }; /* ViscoElasticity */
 

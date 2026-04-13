@@ -148,7 +148,7 @@ extern "C" {
     // Record the starting wall time
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    double time;
+    double time = remat->get_time();
     for (int i=0; i<Nsub_steps; i++) {
       time = remat->update_state(dt);
     }
@@ -167,6 +167,81 @@ extern "C" {
     return time;
     
   } // update_state()
+
+  // ------------------------------------------------------------------------ //
+
+  // Explicit forward stepping API.
+  double step_forward(double dt, int Nsub_steps) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    double time = remat->get_time();
+    for (int i=0; i<Nsub_steps; i++) {
+      time = remat->step_forward(dt);
+    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_duration = end_time - start_time;
+    auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
+    std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
+    return time;
+  } // step_forward()
+
+  // ------------------------------------------------------------------------ //
+
+  // Explicit reverse rematerialization stepping API.
+  double step_remat_backward(int Nsub_steps) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    double time = remat->get_time();
+    for (int i=0; i<Nsub_steps; i++) {
+      time = remat->step_remat_backward();
+    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_duration = end_time - start_time;
+    auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
+    std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
+    return time;
+  } // step_remat_backward()
+
+  // ------------------------------------------------------------------------ //
+
+  // Explicit reverse adjoint stepping API.
+  double step_adjoint_backward(int Nsub_steps) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    double time = remat->get_time();
+    for (int i=0; i<Nsub_steps; i++) {
+      time = remat->step_adjoint_backward();
+    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_duration = end_time - start_time;
+    auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
+    std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
+    return time;
+  } // step_adjoint_backward()
+
+  // ------------------------------------------------------------------------ //
+
+  void set_objective_policy(const char* policy_name) {
+    std::string objective_policy = (policy_name == nullptr) ? "truss_stress_squared_over_E" : std::string(policy_name);
+    if (objective_policy == "none") {
+      remat->set_objective_policy(ObjectivePolicyType::None);
+    } else if ((objective_policy == "truss_stress_squared_over_E") ||
+               (objective_policy == "stress")) {
+      remat->set_objective_policy(ObjectivePolicyType::TrussStressSquaredOverE);
+    } else {
+      std::cerr << "Unknown objective policy: " << objective_policy << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  } // set_objective_policy()
+
+  // ------------------------------------------------------------------------ //
+
+  int get_truss_adjoint_support(void) {
+    return remat->get_truss_adjoint_support();
+  } // get_truss_adjoint_support()
+
+  // ------------------------------------------------------------------------ //
+
+  const char* get_truss_adjoint_status(void) {
+    return remat->get_truss_adjoint_status();
+  } // get_truss_adjoint_status()
   
   // ------------------------------------------------------------------------ //
 

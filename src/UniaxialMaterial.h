@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdlib.h> // exit
 #include "Parameters.h"
+#include "AdjointFramework.h"
 
 class UniaxialMaterial {
  protected:
@@ -99,6 +100,12 @@ class UniaxialMaterial {
 
   // Return the initial sound speed
   Real initial_sound_speed(void) { return sqrt(E/rho); }
+
+  // Adjoint support (elastic truss has no local history adjoint state).
+  int adjoint_support_level(void) { return int(AdjointSupportLevel::Unsupported); }
+  const char* adjoint_support_status(void) { return "unsupported"; }
+  void set_adjoint_enabled(bool) { }
+  void reset_adjoint_state(Real*) { }
 
 }; /* UniaxialMaterial */
 

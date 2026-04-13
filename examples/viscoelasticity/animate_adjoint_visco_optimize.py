@@ -41,6 +41,7 @@ def run_iteration(
     avo.define_parameters(tau, youngs_modulus, mat_overflow_limit)
     avo.create_chain_problem(num_elements, impact_velocity, lumped_point_mass)
     REMAT.API.initialize()
+    REMAT.API.set_objective_policy(b"truss_stress_squared_over_E")
 
     loss = 0.0
     time_history = []
@@ -60,10 +61,10 @@ def run_iteration(
         right_disp_history.append(float(node_disp_x[-1]))
         right_vel_history.append(float(node_vel_x[-1]))
 
-        REMAT.API.update_state(+dt, nsub_steps)
+        REMAT.API.step_forward(dt, nsub_steps)
 
     for _ in range(nsteps):
-        REMAT.API.update_state(-dt, nsub_steps)
+        REMAT.API.step_adjoint_backward(nsub_steps)
 
     grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
 
