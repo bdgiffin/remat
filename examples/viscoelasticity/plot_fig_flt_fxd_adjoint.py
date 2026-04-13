@@ -177,7 +177,7 @@ def run_truss_relaxation(
 STATE_TO_PLOT = "lambda_adjoint"
 PRECISION_MODES = [
     ("adjoint float / truss float", b"float_truss_visco"),
-    ("adjoint float / truss fixed", b"fixed_truss_visco_adj_float"),
+    ("adjoint float / truss fixed", b"fixed_truss_visco_adj_float_adjoint"),
     ("adjoint fixed / truss fixed", b"fixed_truss_visco"),
 ]
 MODE_COLORS = {

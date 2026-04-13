@@ -32,6 +32,7 @@ set(REMAT_python
 
 set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/Dual.h
+    ${CMAKE_CURRENT_LIST_DIR}/ConstitutiveAdjoint.h
     ${CMAKE_CURRENT_LIST_DIR}/ContactInteraction.h
     ${CMAKE_CURRENT_LIST_DIR}/Element.h
     ${CMAKE_CURRENT_LIST_DIR}/Fixed.h

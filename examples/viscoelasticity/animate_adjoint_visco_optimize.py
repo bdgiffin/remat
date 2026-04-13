@@ -65,7 +65,7 @@ def run_iteration(
     for _ in range(nsteps):
         REMAT.API.update_state(-dt, nsub_steps)
 
-    grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
+    grad_tau = float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0])
 
     return {
         "loss": float(loss),
@@ -327,7 +327,7 @@ def parse_args():
     parser.add_argument("--point-mass", type=float, default=0.5)
     parser.add_argument("--mat-overflow-limit", type=float, default=1.0e6)
 
-    parser.add_argument("--integrator-type", type=str, default="fixed_truss_visco_adj_float")
+    parser.add_argument("--integrator-type", type=str, default="float_truss_visco_adjoint")
     parser.add_argument(
         "--output",
         type=str,

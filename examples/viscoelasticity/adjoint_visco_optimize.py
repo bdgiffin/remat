@@ -150,7 +150,7 @@ def run_forward_backward(
     for _ in range(nsteps):
         REMAT.API.update_state(-dt, nsub_steps)
 
-    grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
+    grad_tau = float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0])
 
     result = {
         "loss": float(loss),
@@ -369,7 +369,7 @@ def parse_args():
     parser.add_argument("--youngs-modulus", type=float, default=10.0)
     parser.add_argument("--max-iters", type=int, default=50)
     parser.add_argument("--lr-tau", type=float, default=1.0e-3)
-    parser.add_argument("--min-tau", type=float, default=1.0e-4)
+    parser.add_argument("--min-tau", type=float, default=1.0e-3)
     parser.add_argument("--disable-optimize-tau", action="store_true")
 
     parser.add_argument("--impact-velocity", type=float, default=2.0)
@@ -381,7 +381,8 @@ def parse_args():
     parser.add_argument("--skip-one", action="store_true")
     parser.add_argument("--skip-many", action="store_true")
 
-    parser.add_argument("--integrator-type", type=str, default="fixed_truss_visco_adj_float")
+    parser.add_argument("--integrator-type", type=str, default="fixed_truss_visco_adj_float_adjoint")
+
     parser.add_argument("--fd-check", action="store_true")
     # Fixed-point truss mode benefits from larger FD perturbations.
     parser.add_argument("--fd-step-tau", type=float, default=1.0e-2)

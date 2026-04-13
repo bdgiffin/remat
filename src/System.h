@@ -4,6 +4,7 @@
 #include "types.h"
 #include "BoundaryCondition.h"
 #include "ContactInteraction.h"
+#include "ConstitutiveAdjoint.h"
 #include "Dual.h"
 #include "Integrator.h"
 #include "Parameters.h"
@@ -12,6 +13,7 @@
 #include <algorithm> // For std::fill
 #include <iostream>
 #include <math.h>
+#include <stdlib.h> // exit
 
 // Declare a non-templated base class to enable instantiation with variably typed 
 struct SystemBase {
@@ -119,7 +121,7 @@ struct SystemBase {
 
 // ....................................................................... //
 
-template<class Element_T, class Truss_T, class FixedV, class FixedU, class Ratio>
+template<class Element_T, class Truss_T, class FixedV, class FixedU, class Ratio, bool EnableAdjoint = false>
 struct System : public SystemBase {
 
   // Data members:
@@ -171,6 +173,8 @@ struct System : public SystemBase {
   std::vector<Dual<FixedU> >   u; // The (primal/dual) system displacement degrees of freedom
   std::vector<Dual<FixedV> >   v; // The (primal/dual) system velocity degrees of freedom
   std::vector<std::vector<FixedV> > v_overflow; // Additional storage for velocity overflow
+  std::vector<Real> m_adjoint_u; // Internal nodal displacement adjoint state (adjoint modes only)
+  std::vector<Real> m_adjoint_v; // Internal nodal velocity adjoint state (adjoint modes only)
   std::vector<Real>            m; // The (primal) system masses for each DoF
   std::vector<Real>            f; // The (primal) system forces for each DoF
   std::vector<Dual<Real> >     a; // The (primal) system accelerations for each DoF
@@ -208,6 +212,8 @@ struct System : public SystemBase {
   Real potential_energy;
   Real total_energy;
   std::vector<std::string> global_field_names;
+  ParameterAccumulator<Real> m_truss_param_grads;
+  std::vector<int> m_truss_param_id_by_local_index;
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
@@ -233,6 +239,8 @@ struct System : public SystemBase {
     m_time = 0.0;
     m_dt_history.clear();
     m_time_history.clear();
+    m_truss_param_grads.clear();
+    m_truss_param_id_by_local_index.clear();
     if (params.count("body_force_x") > 0) m_bx = params["body_force_x"];
     if (params.count("body_force_y") > 0) m_by = params["body_force_y"];
     if (params.count("initial_velocity_x") > 0) m_vx0 = params["initial_velocity_x"];
@@ -241,6 +249,25 @@ struct System : public SystemBase {
     if (params.count("mass_damping_factor") > 0) m_alpha = params["mass_damping_factor"];
     if (params.count("contact_stiffness") > 0) m_contact_stiffness = params["contact_stiffness"];
     if (params.count("overflow_limit") > 0) m_overflow_limit = int(params["overflow_limit"]);
+
+    // Reset per-problem registries/state that should not persist across re-initialization.
+    m_contact_interactions.clear();
+    node_field_names.clear();
+    element_field_names.clear();
+    truss_field_names.clear();
+    point_field_names.clear();
+    global_field_names.clear();
+    point_ids.clear();
+    point_mass.clear();
+    connect.clear();
+    state.clear();
+    element_state_overflow.clear();
+    truss_connect.clear();
+    truss_state.clear();
+    truss_state_overflow.clear();
+    v_overflow.clear();
+    Npoints = 0;
+    Ntruss = 0;
 
     // Initialize the element/material object
     m_element = Element_T(params);
@@ -268,6 +295,8 @@ struct System : public SystemBase {
     xt.resize(Ndofs);
     u.resize(Ndofs,Dual<FixedU>(0.0,0.0));
     v.resize(Ndofs,Dual<FixedV>(0.0,0.0));
+    m_adjoint_u.resize(Ndofs,0.0);
+    m_adjoint_v.resize(Ndofs,0.0);
     m.resize(Ndofs);
     f.resize(Ndofs);
     a.resize(Ndofs,Dual<Real>(0.0,0.0));
@@ -383,6 +412,10 @@ struct System : public SystemBase {
     // Initialize state variable data for all truss elements
     for (int e=0; e<Ntruss; e++) {
       m_truss.initialize(&truss_state[Nstate_vars_per_truss*e]);
+    }
+
+    if constexpr (EnableAdjoint) {
+      initialize_truss_parameter_adjoint_registry();
     }
     
     std::cout << "| ========================================================== |" << std::endl;
@@ -522,6 +555,11 @@ struct System : public SystemBase {
     m_overflow_counter = 0;
     m_dt_history.clear();
     m_time_history.clear();
+    if constexpr (EnableAdjoint) {
+      std::fill(m_adjoint_u.begin(),m_adjoint_u.end(),0.0);
+      std::fill(m_adjoint_v.begin(),m_adjoint_v.end(),0.0);
+      m_truss_param_grads.zero();
+    }
 
     // Apply any prescribed displacement boundary conditions at the initial time
     apply_displacement_bcs(m_time,0.0);
@@ -581,6 +619,19 @@ struct System : public SystemBase {
       
     }
 
+    if constexpr (EnableAdjoint) {
+      if (dt > 0.0) {
+        std::fill(m_adjoint_u.begin(),m_adjoint_u.end(),0.0);
+        std::fill(m_adjoint_v.begin(),m_adjoint_v.end(),0.0);
+      } else if (dt < 0.0) {
+        enforce_adjoint_assumptions();
+        const Real dt_abs = std::fabs(dt);
+        apply_truss_kick_adjoint_contribution(0.5*dt_abs);
+        apply_drift_adjoint_update(dt_abs);
+        enforce_adjoint_constraints();
+      }
+    }
+
     // Update velocities to the half-step
     m_integrator.first_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
 
@@ -602,6 +653,14 @@ struct System : public SystemBase {
     
     // Update masses, residual forces, and accelerations at the whole-step
     update_accelerations(dt);
+    if constexpr (EnableAdjoint) {
+      if (dt < 0.0) {
+        const Real dt_abs = std::fabs(dt);
+        apply_truss_running_objective_source();
+        apply_truss_kick_adjoint_contribution(0.5*dt_abs);
+        enforce_adjoint_constraints();
+      }
+    }
     // enforce_prescribed_velocities();
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(dt,v.data(),a.data(),alpha.data(),Ndofs);
@@ -794,6 +853,13 @@ struct System : public SystemBase {
       field_data[1] = kinetic_energy;
       field_data[2] = potential_energy;
       field_data[3] = total_energy;
+      if constexpr (EnableAdjoint) {
+        update_truss_parameter_gradients_from_state();
+        int global_field_id = 4;
+        for (int p=0; p<m_truss_param_grads.size(); ++p) {
+          field_data[global_field_id++] = m_truss_param_grads.get(p);
+        }
+      }
     } else if (entity_type == "node")    {
       const int Nstate = get_num_fields(entity_type);
       for (int i=0; i<Nnodes; i++) {
@@ -840,6 +906,49 @@ struct System : public SystemBase {
   
   // ===================================================================== //
 private:
+  // ===================================================================== //
+
+  void append_global_field_name_if_missing(const std::string& field_name) {
+    if (std::find(global_field_names.begin(),global_field_names.end(),field_name) == global_field_names.end()) {
+      global_field_names.push_back(field_name);
+    }
+  } // append_global_field_name_if_missing()
+
+  // ===================================================================== //
+
+  void initialize_truss_parameter_adjoint_registry() {
+    if constexpr (!EnableAdjoint) { return; }
+    m_truss_param_grads.clear();
+    m_truss_param_id_by_local_index.clear();
+    const int num_params = m_truss.m_model.num_params();
+    m_truss_param_id_by_local_index.assign(num_params,-1);
+    for (int p=0; p<num_params; ++p) {
+      const char* param_name = m_truss.m_model.param_name(p);
+      if (param_name == nullptr) { continue; }
+      const int param_id = m_truss_param_grads.register_param(param_name);
+      m_truss_param_id_by_local_index[p] = param_id;
+      append_global_field_name_if_missing("dL_dparam_" + std::string(param_name));
+    }
+  } // initialize_truss_parameter_adjoint_registry()
+
+  // ===================================================================== //
+
+  void update_truss_parameter_gradients_from_state() {
+    if constexpr (!EnableAdjoint) { return; }
+    m_truss_param_grads.zero();
+    if (Ntruss == 0) { return; }
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    const int num_params = m_truss.m_model.num_params();
+    for (int e=0; e<Ntruss; ++e) {
+      const Real* state_ptr = &truss_state[Nstate_vars_per_truss*e];
+      for (int p=0; p<num_params; ++p) {
+        if (p >= int(m_truss_param_id_by_local_index.size())) { continue; }
+        const int param_id = m_truss_param_id_by_local_index[p];
+        m_truss_param_grads.add(param_id,m_truss.m_model.get_param_gradient(state_ptr,p));
+      }
+    }
+  } // update_truss_parameter_gradients_from_state()
+
   // ===================================================================== //
 
   // Check if a specified DoF is controlled by a time-varying boundary condition
@@ -910,6 +1019,176 @@ private:
       }
     }
   } // enforce_prescribed_velocities()
+
+  // ===================================================================== //
+
+  void enforce_adjoint_assumptions() {
+    if constexpr (!EnableAdjoint) { return; }
+
+    // Assumption required by the coupled adjoint update implemented below:
+    // the leapfrog update is the undamped kick-drift-kick form.
+    if (std::fabs(m_alpha) > 0.0) {
+      std::cerr << "adjoint mode requires mass_damping_factor == 0.0" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  } // enforce_adjoint_assumptions()
+
+  // ===================================================================== //
+
+  void enforce_adjoint_constraints() {
+    if constexpr (!EnableAdjoint) { return; }
+    for (int i=0; i<Ndofs; ++i) {
+      if (fixity[i] || has_time_varying_bc(i)) {
+        m_adjoint_u[i] = 0.0;
+        m_adjoint_v[i] = 0.0;
+      }
+    }
+  } // enforce_adjoint_constraints()
+
+  // ===================================================================== //
+
+  void apply_drift_adjoint_update(Real dt_abs) {
+    if constexpr (!EnableAdjoint) { return; }
+    for (int i=0; i<Ndofs; ++i) {
+      m_adjoint_v[i] += m_adjoint_u[i]*dt_abs;
+    }
+  } // apply_drift_adjoint_update()
+
+  // ===================================================================== //
+
+  void apply_truss_running_objective_source() {
+    if constexpr (!EnableAdjoint) { return; }
+    if (Ntruss == 0) { return; }
+
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    for (int e=0; e<Ntruss; ++e) {
+      const int node0 = truss_connect[2*e+0];
+      const int node1 = truss_connect[2*e+1];
+      const int dof[4] = { 2*node0+0, 2*node0+1, 2*node1+0, 2*node1+1 };
+
+      const Real X0 = x[dof[0]];
+      const Real Y0 = x[dof[1]];
+      const Real X1 = x[dof[2]];
+      const Real Y1 = x[dof[3]];
+
+      const Real x0 = X0 + Real(u[dof[0]].first);
+      const Real y0 = Y0 + Real(u[dof[1]].first);
+      const Real x1 = X1 + Real(u[dof[2]].first);
+      const Real y1 = Y1 + Real(u[dof[3]].first);
+
+      const Real dx0 = X1 - X0;
+      const Real dy0 = Y1 - Y0;
+      const Real L0 = std::sqrt(dx0*dx0 + dy0*dy0);
+      if (L0 <= 0.0) { continue; }
+
+      const Real dx = x1 - x0;
+      const Real dy = y1 - y0;
+      const Real L = std::sqrt(dx*dx + dy*dy);
+      if (L <= 0.0) { continue; }
+
+      const Real tx = dx/L;
+      const Real ty = dy/L;
+      Real* state_ptr = &truss_state[Nstate_vars_per_truss*e];
+      const Real sigma = m_truss.m_model.axial_stress(state_ptr);
+
+      // Running objective uses sigma_n at the current reversed state n.
+      const Real coeff = sigma/L0;
+      m_adjoint_u[dof[0]] += -coeff*tx;
+      m_adjoint_u[dof[1]] += -coeff*ty;
+      m_adjoint_u[dof[2]] += +coeff*tx;
+      m_adjoint_u[dof[3]] += +coeff*ty;
+    }
+  } // apply_truss_running_objective_source()
+
+  // ===================================================================== //
+
+  void apply_truss_kick_adjoint_contribution(Real half_dt) {
+    if constexpr (!EnableAdjoint) { return; }
+    if (Ntruss == 0) { return; }
+
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+
+    for (int e=0; e<Ntruss; ++e) {
+      const int node0 = truss_connect[2*e+0];
+      const int node1 = truss_connect[2*e+1];
+      const int dof[4] = { 2*node0+0, 2*node0+1, 2*node1+0, 2*node1+1 };
+
+      const Real X0 = x[dof[0]];
+      const Real Y0 = x[dof[1]];
+      const Real X1 = x[dof[2]];
+      const Real Y1 = x[dof[3]];
+
+      const Real x0 = X0 + Real(u[dof[0]].first);
+      const Real y0 = Y0 + Real(u[dof[1]].first);
+      const Real x1 = X1 + Real(u[dof[2]].first);
+      const Real y1 = Y1 + Real(u[dof[3]].first);
+
+      const Real dx0 = X1 - X0;
+      const Real dy0 = Y1 - Y0;
+      const Real L0 = std::sqrt(dx0*dx0 + dy0*dy0);
+      if (L0 <= 0.0) { continue; }
+
+      const Real dx = x1 - x0;
+      const Real dy = y1 - y0;
+      const Real L = std::sqrt(dx*dx + dy*dy);
+      if (L <= 0.0) { continue; }
+
+      const Real tx = dx/L;
+      const Real ty = dy/L;
+      Real* state_ptr = &truss_state[Nstate_vars_per_truss*e];
+      const Real sigma = m_truss.m_model.axial_stress(state_ptr);
+      const Real tangent_modulus = m_truss.m_model.axial_tangent_modulus(state_ptr);
+
+      const Real k_mat = tangent_modulus/L0;
+      const Real k_geo = sigma/L;
+
+      const Real tt[2][2] = {
+        { tx*tx, tx*ty },
+        { tx*ty, ty*ty }
+      };
+      const Real P[2][2] = {
+        { 1.0 - tx*tx, -tx*ty },
+        { -tx*ty, 1.0 - ty*ty }
+      };
+
+      Real K_force[4][4] = { {0.0,0.0,0.0,0.0},
+                             {0.0,0.0,0.0,0.0},
+                             {0.0,0.0,0.0,0.0},
+                             {0.0,0.0,0.0,0.0} };
+
+      for (int a_node=0; a_node<2; ++a_node) {
+        for (int b_node=0; b_node<2; ++b_node) {
+          const Real block_sign = (a_node == b_node) ? -1.0 : +1.0;
+          for (int i=0; i<2; ++i) {
+            for (int j=0; j<2; ++j) {
+              K_force[2*a_node+i][2*b_node+j] =
+                block_sign*(k_mat*tt[i][j] + k_geo*P[i][j]);
+            }
+          }
+        }
+      }
+
+      MaterialReverseSeed<Real> stress_seed;
+      const Real dforce_dstress[4] = { +tx, +ty, -tx, -ty };
+      for (int i=0; i<4; ++i) {
+        const Real mi = m[dof[i]];
+        if (mi <= 0.0) { continue; }
+        const Real v_adj_i = m_adjoint_v[dof[i]];
+        stress_seed.dL_dstress += v_adj_i*(dforce_dstress[i]/mi);
+      }
+      m_truss.m_model.add_reverse_stress_seed(state_ptr,half_dt*stress_seed.dL_dstress);
+
+      for (int j=0; j<4; ++j) {
+        Real du_adj = 0.0;
+        for (int i=0; i<4; ++i) {
+          const Real mi = m[dof[i]];
+          if (mi <= 0.0) { continue; }
+          du_adj += m_adjoint_v[dof[i]]*(K_force[i][j]/mi);
+        }
+        m_adjoint_u[dof[j]] += half_dt*du_adj;
+      }
+    }
+  } // apply_truss_kick_adjoint_contribution()
 
   // ===================================================================== //
 

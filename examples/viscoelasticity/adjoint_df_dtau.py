@@ -1,5 +1,5 @@
 """
-Minimal driver to compute objective f and its sensitivity df/dtau for the
+Minimal driver to compute objective L and its sensitivity dL/dtau for the
 uniaxial viscoelastic truss used in plot_fig_dual_vs_tau.py.
 """
 
@@ -71,7 +71,7 @@ def run_forward(
     relaxation_time,
     overflow_limit,
     run_backward=True,
-    integrator_type=b"fixed_truss_visco_adj_float",
+    integrator_type=b"fixed_truss_visco_adj_float_adjoint",
 ):
     REMAT.API.set_integrator_type(integrator_type)
     set_material_parameters(relaxation_time, overflow_limit)
@@ -87,16 +87,16 @@ def run_forward(
         for _ in range(Nsteps):
             REMAT.API.update_state(-dt, 1)
 
-    df_dtau_val = REMAT.get_field(b"truss", "df_dtau")[0]
-    return df_dtau_val
+    dL_dtau_val = REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0]
+    return dL_dtau_val
 
 
 def main():
-    # Pick integrator type to switch internal-variable/adjoint storage combinations:
-    # b"fixed_truss_visco"           -> viscous strain fixed,  lambda fixed
-    # b"fixed_truss_visco_adj_float" -> viscous strain fixed,  lambda float
-    # b"float_truss_visco"           -> viscous strain float,  lambda float
-    integrator_type = b"fixed_truss_visco_adj_float"
+    # Pick integrator type to switch precision/storage combinations:
+    # b"fixed_truss_visco"               -> viscous strain fixed, constitutive adjoint fixed
+    # b"fixed_truss_visco_adj_float_adjoint" -> viscous strain fixed, constitutive adjoint float, coupled adjoint
+    # b"float_truss_visco_adjoint"       -> viscous strain float, constitutive adjoint float, coupled adjoint
+    integrator_type = b"fixed_truss_visco_adj_float_adjoint"
 
     dt = 1.0e-3
     Nsteps = 4500
@@ -107,9 +107,9 @@ def main():
     sweep_taus = np.logspace(-3, 1, num=20)
     sweep_taus = np.round(sweep_taus, decimals=6)
     print(f"Sweeping tau values: {sweep_taus}")
-    df_vals = []
+    dL_dtau_vals = []
     for tau_i in sweep_taus:
-        df_i = run_forward(
+        dL_dtau_i = run_forward(
             dt,
             Nsteps,
             epsilon0,
@@ -118,20 +118,20 @@ def main():
             run_backward=True,
             integrator_type=integrator_type,
         )
-        df_vals.append(df_i)
+        dL_dtau_vals.append(dL_dtau_i)
 
     sweep_taus = np.asarray(sweep_taus)
-    df_vals = np.asarray(df_vals)
+    dL_dtau_vals = np.asarray(dL_dtau_vals)
 
-    print(f"Sweep results (tau, df/dtau):")
-    for tau_i, df_i in zip(sweep_taus, df_vals):
-        print(f"tau: {tau_i:.6f}, df/dtau: {df_i:.10f}")
+    print(f"Sweep results (tau, dL/dtau):")
+    for tau_i, dL_dtau_i in zip(sweep_taus, dL_dtau_vals):
+        print(f"tau: {tau_i:.6f}, dL/dtau: {dL_dtau_i:.10f}")
 
     fig, ax0 = plt.subplots(1, 1, figsize=(7, 4.0))
 
-    ax0.semilogx(sweep_taus, df_vals)
+    ax0.semilogx(sweep_taus, dL_dtau_vals)
     ax0.set_xlabel(r"$\tau$", fontsize="large")
-    ax0.set_ylabel(r"$df/d\tau$", fontsize="large")
+    ax0.set_ylabel(r"$dL/d\tau$", fontsize="large")
 
     fig.tight_layout()
     fig.savefig("sensitivity_vs_tau.svg", dpi=200)

@@ -26,6 +26,7 @@ typedef Element<ViscoElasticity<Real,Real> >              ElementT_float_visco;
 typedef Element<ViscoElasticity<Fixed_E,Rational> >       ElementT_fixed_visco;
 typedef Truss<UniaxialViscoplasticity<Real,Real> >        TrussT_float;
 typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational> > TrussT_fixed;
+typedef Truss<UniaxialViscoplasticity<Fixed_E,Rational,Real> > TrussT_fixed_viscoplastic_adj_float;
 typedef Truss<UniaxialViscoelasticity<Real,Real,Real> >           TrussT_float_visco_truss;
 typedef Truss<UniaxialViscoelasticity<Fixed_E,Rational,Fixed_E> > TrussT_fixed_visco_truss;
 typedef Truss<UniaxialViscoelasticity<Fixed_E,Rational,Real> >    TrussT_fixed_visco_truss_adj_float;
@@ -41,7 +42,10 @@ System<ElementT_float_visco,TrussT_float,Real,Real,Real>           remat_float_v
 System<ElementT_fixed_visco,TrussT_fixed,Fixed_V,Fixed_U,Rational> remat_fixed_visco;
 System<ElementT,TrussT_float_visco_truss,Real,Real,Real>           remat_float_truss_visco;
 System<ElementT,TrussT_fixed_visco_truss,Fixed_V,Fixed_U,Rational> remat_fixed_truss_visco;
-System<ElementT,TrussT_fixed_visco_truss_adj_float,Fixed_V,Fixed_U,Rational> remat_fixed_truss_visco_adj_float;
+System<ElementT,TrussT_float,Real,Real,Real,true> remat_float_truss_viscoplastic_adjoint;
+System<ElementT,TrussT_fixed_viscoplastic_adj_float,Fixed_V,Fixed_U,Rational,true> remat_fixed_truss_viscoplastic_adj_float_adjoint;
+System<ElementT,TrussT_float_visco_truss,Real,Real,Real,true> remat_float_truss_visco_adjoint;
+System<ElementT,TrussT_fixed_visco_truss_adj_float,Fixed_V,Fixed_U,Rational,true> remat_fixed_truss_visco_adj_float_adjoint;
 SystemBase* remat = &remat_float;
 
 // ======================================================================== //
@@ -68,8 +72,14 @@ extern "C" {
       remat = &remat_float_truss_visco;
     } else if (integrator_type_string == "fixed_truss_visco") {
       remat = &remat_fixed_truss_visco;
-    } else if (integrator_type_string == "fixed_truss_visco_adj_float") {
-      remat = &remat_fixed_truss_visco_adj_float;
+    } else if (integrator_type_string == "float_truss_viscoplastic_adjoint") {
+      remat = &remat_float_truss_viscoplastic_adjoint;
+    } else if (integrator_type_string == "fixed_truss_viscoplastic_adj_float_adjoint") {
+      remat = &remat_fixed_truss_viscoplastic_adj_float_adjoint;
+    } else if (integrator_type_string == "float_truss_visco_adjoint") {
+      remat = &remat_float_truss_visco_adjoint;
+    } else if (integrator_type_string == "fixed_truss_visco_adj_float_adjoint") {
+      remat = &remat_fixed_truss_visco_adj_float_adjoint;
     } else {
       std::cerr << "Invalid integrator type specified: " << integrator_type_string << std::endl;
       exit(EXIT_FAILURE);

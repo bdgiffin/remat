@@ -73,3 +73,21 @@ blt_add_executable(NAME       test_System
 		 
 blt_add_test(NAME    test_System
 	     COMMAND test_System)
+
+blt_add_executable(NAME       test_AdjointVisco
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_AdjointVisco.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+
+blt_add_test(NAME    test_AdjointVisco
+	     COMMAND test_AdjointVisco)
+
+blt_add_executable(NAME       test_AdjointViscoplastic
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_AdjointViscoplastic.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+
+blt_add_test(NAME    test_AdjointViscoplastic
+	     COMMAND test_AdjointViscoplastic)

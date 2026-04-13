@@ -2,9 +2,33 @@
 #define TRUSS_H
 
 #include "Parameters.h"
+#include "ConstitutiveAdjoint.h"
 #include <vector>
 #include <string>
 #include <math.h>
+#include <type_traits>
+#include <utility>
+
+namespace detail {
+template<class ModelT, class = void>
+struct has_generic_material_forward : std::false_type { };
+
+template<class ModelT>
+struct has_generic_material_forward<ModelT,
+  std::void_t<decltype(std::declval<ModelT&>().forward(std::declval<const MaterialPointKinematics<Real>&>(),
+                                                       std::declval<Real*>(),
+                                                       std::declval<MaterialForwardOutput<Real>&>()))>> : std::true_type { };
+
+template<class ModelT, class = void>
+struct has_generic_material_reverse : std::false_type { };
+
+template<class ModelT>
+struct has_generic_material_reverse<ModelT,
+  std::void_t<decltype(std::declval<ModelT&>().reverse(std::declval<const MaterialPointKinematics<Real>&>(),
+                                                       std::declval<Real*>(),
+                                                       std::declval<const MaterialReverseSeed<Real>&>(),
+                                                       std::declval<MaterialReverseOutput<Real>&>()))>> : std::true_type { };
+}
 
 template<typename Material_T>
 class Truss {
@@ -84,9 +108,30 @@ public:
       // Compute the current axial stretch ratio lambda = normJ/normJ0
       Real lambda = normJ/normJ0;
 
-      // update the material state
-      Real psi;
-      m_model.update(lambda,psi,state,dt);
+	      // update the material state
+	      Real psi = 0.0;
+	      MaterialPointKinematics<Real> kin;
+	      kin.primary_measure = lambda;
+	      kin.dt = dt;
+	      if constexpr (detail::has_generic_material_forward<Material_T>::value &&
+	                    detail::has_generic_material_reverse<Material_T>::value) {
+		if (dt >= 0.0) {
+		  MaterialForwardOutput<Real> out;
+		  m_model.forward(kin,state,out);
+		  psi = out.psi;
+		} else {
+		  MaterialReverseSeed<Real> seed;
+		  MaterialReverseOutput<Real> out;
+		  m_model.reverse(kin,state,seed,out);
+		  psi = out.psi;
+		}
+	      } else if constexpr (detail::has_generic_material_forward<Material_T>::value) {
+		MaterialForwardOutput<Real> out;
+		m_model.forward(kin,state,out);
+		psi = out.psi;
+	      } else {
+		m_model.update(lambda,psi,state,dt);
+	      }
 
       // Compute the tangent vector
       Real t[2] = { J[0]/normJ, J[1]/normJ };

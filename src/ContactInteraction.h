@@ -110,15 +110,15 @@ struct ContactInteraction {
     }
 
     // Resolve contact interactions for all nodes
-    for (int j=0; j<nodes.size(); j++) {
+    for (int j=0; j<int(nodes.size()); j++) {
       // Get the coordinates of the current node
       Real x0 = x_nodes[Ndofs_per_node*j+0];
       Real y0 = x_nodes[Ndofs_per_node*j+1];
       
       // Find the nearest segment_node to each node (by an exhaustive search)
-      int nearest;
+      int nearest = -1;
       Real min_distance = std::numeric_limits<Real>::max();
-      for (int i = 0; i < segment_nodes.size(); i++) {
+      for (int i = 0; i < int(segment_nodes.size()); i++) {
 	Real dx = x0 - x_segment_nodes[Ndofs_per_node*i+0];
 	Real dy = y0 - x_segment_nodes[Ndofs_per_node*i+1];
 	Real distance = std::sqrt(dx*dx + dy*dy);
@@ -127,6 +127,8 @@ struct ContactInteraction {
 	  nearest = i;
 	}
       }
+
+      if (nearest < 0) { continue; }
 
       // Only apply forces if the nearest node lies within the specified search radius
       if (min_distance < m_search_radius) {
