@@ -215,6 +215,8 @@ struct System : public SystemBase {
   std::vector<Real> u_adjoint;
   std::vector<Real> v_adjoint;
   std::vector<Real> kick_force_seed;
+  Real adjoint_mass_damping_gradient = 0.0;
+  Real adjoint_contact_stiffness_gradient = 0.0;
   std::vector<std::string> adjoint_param_names;
   std::vector<Real> adjoint_param_gradients;
   
@@ -249,6 +251,8 @@ struct System : public SystemBase {
     global_field_names.clear();
     adjoint_param_names.clear();
     adjoint_param_gradients.clear();
+    adjoint_mass_damping_gradient = 0.0;
+    adjoint_contact_stiffness_gradient = 0.0;
     if (params.count("body_force_x") > 0) m_bx = params["body_force_x"];
     if (params.count("body_force_y") > 0) m_by = params["body_force_y"];
     if (params.count("initial_velocity_x") > 0) m_vx0 = params["initial_velocity_x"];
@@ -547,6 +551,8 @@ struct System : public SystemBase {
     std::fill(u_adjoint.begin(),u_adjoint.end(),0.0);
     std::fill(v_adjoint.begin(),v_adjoint.end(),0.0);
     std::fill(kick_force_seed.begin(),kick_force_seed.end(),0.0);
+    adjoint_mass_damping_gradient = 0.0;
+    adjoint_contact_stiffness_gradient = 0.0;
 
     // Apply any prescribed displacement boundary conditions at the initial time
     apply_displacement_bcs(m_time,0.0);
@@ -624,6 +630,7 @@ struct System : public SystemBase {
 
     if (phase == PassPhase::BackwardAdjoint) {
       enforce_backward_adjoint_guardrails();
+      apply_second_kick_damping_pullback(dt_step);
       // Second kick adjoint at the current reconstructed state (n+1).
       apply_global_kick_adjoint(dt_step,false);
     }
@@ -658,6 +665,10 @@ struct System : public SystemBase {
     // enforce_prescribed_velocities();
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
+
+    if (phase == PassPhase::BackwardAdjoint) {
+      apply_first_kick_damping_pullback(dt_step);
+    }
 
     enforce_prescribed_velocities();
 
@@ -917,6 +928,8 @@ private:
   }
 
   void register_adjoint_params_from_materials() {
+    register_adjoint_param_name("mass_damping_factor");
+    register_adjoint_param_name("contact_stiffness");
     for (int i=0; i<m_element.adjoint_num_params(); i++) {
       register_adjoint_param_name(m_element.adjoint_param_name(i));
     }
@@ -951,23 +964,53 @@ private:
         }
       }
     }
+
+    int alpha_idx = adjoint_param_index("mass_damping_factor");
+    if (alpha_idx >= 0) {
+      adjoint_param_gradients[alpha_idx] += adjoint_mass_damping_gradient;
+    }
+    int wall_idx = adjoint_param_index("contact_stiffness");
+    if (wall_idx >= 0) {
+      adjoint_param_gradients[wall_idx] += adjoint_contact_stiffness_gradient;
+    }
   }
 
   void enforce_backward_adjoint_guardrails() const {
-    if (std::fabs(m_alpha) > 0.0) {
-      std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
-                << "mass damping (mass_damping_factor) must be zero in Slice C v1." << std::endl;
-      exit(EXIT_FAILURE);
-    }
     if (!m_contact_interactions.empty()) {
       std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
-                << "contact interaction adjoint terms are not included in Slice C v1." << std::endl;
+                << "segment-contact interaction adjoint terms are not included in Slice D." << std::endl;
       exit(EXIT_FAILURE);
     }
-    if (std::fabs(m_contact_stiffness) > 0.0) {
-      std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
-                << "rigid-wall contact adjoint terms are not included in Slice C v1." << std::endl;
-      exit(EXIT_FAILURE);
+  }
+
+  void apply_second_kick_damping_pullback(Real dt_step) {
+    if ((dt_step <= 0.0) || (std::fabs(m_alpha) == 0.0)) { return; }
+    const Real half_dt = 0.5*dt_step;
+    for (int i=0; i<Ndofs; i++) {
+      if (fixity[i]) { continue; }
+      if (has_time_varying_bc(i)) { continue; }
+      const Real phi2 = 1.0 + half_dt*alpha[i];
+      if (phi2 == 0.0) {
+        std::cout << "BackwardAdjoint damping pullback encountered zero phi2 at dof " << i << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      const Real bar_v_np1 = v_adjoint[i];
+      const Real bar_v_half = bar_v_np1/phi2;
+      adjoint_mass_damping_gradient += -half_dt*bar_v_half*Real(v[i].first);
+      v_adjoint[i] = bar_v_half;
+    }
+  }
+
+  void apply_first_kick_damping_pullback(Real dt_step) {
+    if ((dt_step <= 0.0) || (std::fabs(m_alpha) == 0.0)) { return; }
+    const Real half_dt = 0.5*dt_step;
+    for (int i=0; i<Ndofs; i++) {
+      if (fixity[i]) { continue; }
+      if (has_time_varying_bc(i)) { continue; }
+      const Real phi1 = 1.0 - half_dt*alpha[i];
+      const Real bar_v_half = v_adjoint[i];
+      adjoint_mass_damping_gradient += -half_dt*bar_v_half*Real(v[i].first);
+      v_adjoint[i] = phi1*bar_v_half;
     }
   }
 
@@ -1208,6 +1251,20 @@ private:
       u_adjoint[2*n0+1] += dxi[0]*bar_Jy;
       u_adjoint[2*n1+0] += dxi[1]*bar_Jx;
       u_adjoint[2*n1+1] += dxi[1]*bar_Jy;
+    }
+
+    // Rigid-wall contact contribution (f_y += k * max(0,-y)).
+    if ((Ndofs_per_node > 1) && (std::fabs(m_contact_stiffness) > 0.0)) {
+      for (int i=0; i<Nnodes; i++) {
+        const int dof_y = Ndofs_per_node*i+1;
+        const Real y = x[dof_y] + Real(u[dof_y].first);
+        if (y < 0.0) {
+          const Real penetration = -y;
+          const Real bar_fy = kick_force_seed[dof_y];
+          u_adjoint[dof_y] += -m_contact_stiffness*bar_fy;
+          adjoint_contact_stiffness_gradient += penetration*bar_fy;
+        }
+      }
     }
   }
 

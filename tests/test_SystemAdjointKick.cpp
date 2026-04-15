@@ -25,6 +25,11 @@ using ElementSystem = System<
   Truss<UniaxialMaterial>,
   Real, Real, Real>;
 
+using PointMassSystem = System<
+  Element<Material>,
+  Truss<UniaxialMaterial>,
+  Real, Real, Real>;
+
 Real global_field_by_name(SystemBase& sys, const std::string& name) {
   const int n = sys.get_num_fields("global");
   std::vector<double> values(n,0.0);
@@ -164,6 +169,65 @@ ElementKickRun run_element_case(Real tau, Real mu_e, int steps, Real dt, Real se
   return { grad_tau, grad_mu_e, phi };
 }
 
+struct PointMassKickRun {
+  Real grad_alpha;
+  Real grad_k;
+  Real phi;
+};
+
+PointMassKickRun run_point_mass_case(Real alpha_coeff, Real wall_k, Real y0, Real vy0,
+                                     int steps, Real dt, Real seed, bool run_adjoint) {
+  PointMassSystem sys;
+
+  const int Nnodes = 1;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 0;
+  const int Nnodes_per_elem = 4;
+
+  double coordinates[2] = { 0.0, y0 };
+  double velocities[2]  = { 0.0, vy0 };
+  bool fixity[2]        = { true, false };
+  int connectivity_dummy[4] = { 0,0,0,0 };
+
+  Parameters params;
+  params["density"] = 1.0;
+  params["youngs_modulus"] = 1.0;
+  params["poissons_ratio"] = 0.25;
+  params["mass_damping_factor"] = alpha_coeff;
+  params["contact_stiffness"] = wall_k;
+  params["body_force_x"] = 0.0;
+  params["body_force_y"] = 0.0;
+
+  sys.initialize(coordinates,velocities,fixity,Nnodes,Ndofs_per_node,
+                 connectivity_dummy,Nelems,Nnodes_per_elem,params);
+  int point_ids[1] = { 0 };
+  double point_mass[1] = { 1.0 };
+  sys.initialize_point_mass(point_ids,point_mass,1,params);
+  sys.initialize_state();
+
+  for (int i=0; i<steps; i++) {
+    sys.update_state(dt,PassPhase::Forward);
+  }
+
+  const int seed_dof = 1; // y dof
+  Real phi = seed*Real(sys.v[seed_dof].first);
+
+  Real grad_alpha = 0.0;
+  Real grad_k = 0.0;
+  if (run_adjoint) {
+    std::fill(sys.u_adjoint.begin(),sys.u_adjoint.end(),0.0);
+    std::fill(sys.v_adjoint.begin(),sys.v_adjoint.end(),0.0);
+    sys.v_adjoint[seed_dof] = seed;
+    for (int i=0; i<steps; i++) {
+      sys.update_state(dt,PassPhase::BackwardAdjoint);
+    }
+    grad_alpha = global_field_by_name(sys,"dL_dparam_mass_damping_factor");
+    grad_k = global_field_by_name(sys,"dL_dparam_contact_stiffness");
+  }
+
+  return { grad_alpha, grad_k, phi };
+}
+
 } // anonymous namespace
 
 TEST(test_SystemAdjointKick, truss_delta_matches_terminal_velocity_fd) {
@@ -224,4 +288,86 @@ TEST(test_SystemAdjointKick, element_delta_matches_terminal_velocity_fd) {
   Real tol_mu = 1.2e-1 * std::max(Real(1.0),std::fabs(fd_mu));
   ASSERT_NEAR(delta_tau,fd_tau,tol_tau);
   ASSERT_NEAR(delta_mu,fd_mu,tol_mu);
+}
+
+TEST(test_SystemAdjointKick, damping_only_delta_matches_terminal_velocity_fd) {
+  const Real alpha_coeff = 0.35;
+  const Real wall_k = 0.0;
+  const Real y0 = 0.25;
+  const Real vy0 = 0.18;
+  const int steps = 30;
+  const Real dt = 2.0e-3;
+  const Real seed = 0.8;
+
+  PointMassKickRun base = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,0.0,true);
+  PointMassKickRun seeded = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,seed,true);
+
+  const Real h_alpha = 1.0e-4;
+  Real phi_plus = run_point_mass_case(alpha_coeff+h_alpha,wall_k,y0,vy0,steps,dt,seed,false).phi;
+  Real phi_minus = run_point_mass_case(alpha_coeff-h_alpha,wall_k,y0,vy0,steps,dt,seed,false).phi;
+  Real fd_alpha = (phi_plus - phi_minus)/(2.0*h_alpha);
+
+  Real delta_alpha = seeded.grad_alpha - base.grad_alpha;
+  Real delta_k = seeded.grad_k - base.grad_k;
+
+  Real tol_alpha = 8.0e-2 * std::max(Real(1.0),std::fabs(fd_alpha));
+  ASSERT_NEAR(delta_alpha,fd_alpha,tol_alpha);
+  ASSERT_NEAR(delta_k,0.0,1.0e-12);
+}
+
+TEST(test_SystemAdjointKick, rigid_wall_only_delta_matches_terminal_velocity_fd) {
+  const Real alpha_coeff = 0.0;
+  const Real wall_k = 7.0;
+  const Real y0 = -0.3;
+  const Real vy0 = 0.0;
+  const int steps = 24;
+  const Real dt = 1.0e-3;
+  const Real seed = 0.6;
+
+  PointMassKickRun base = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,0.0,true);
+  PointMassKickRun seeded = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,seed,true);
+
+  const Real h_k = 1.0e-4;
+  Real phi_plus = run_point_mass_case(alpha_coeff,wall_k+h_k,y0,vy0,steps,dt,seed,false).phi;
+  Real phi_minus = run_point_mass_case(alpha_coeff,wall_k-h_k,y0,vy0,steps,dt,seed,false).phi;
+  Real fd_k = (phi_plus - phi_minus)/(2.0*h_k);
+
+  Real delta_alpha = seeded.grad_alpha - base.grad_alpha;
+  Real delta_k = seeded.grad_k - base.grad_k;
+
+  Real tol_k = 1.2e-1 * std::max(Real(1.0),std::fabs(fd_k));
+  ASSERT_NEAR(delta_k,fd_k,tol_k);
+  ASSERT_NEAR(delta_alpha,0.0,1.0e-12);
+}
+
+TEST(test_SystemAdjointKick, damping_and_wall_delta_match_terminal_velocity_fd) {
+  const Real alpha_coeff = 0.22;
+  const Real wall_k = 5.0;
+  const Real y0 = -0.3;
+  const Real vy0 = 0.05;
+  const int steps = 24;
+  const Real dt = 1.0e-3;
+  const Real seed = 0.65;
+
+  PointMassKickRun base = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,0.0,true);
+  PointMassKickRun seeded = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,seed,true);
+
+  const Real h_alpha = 1.0e-4;
+  const Real h_k = 1.0e-4;
+
+  Real phi_alpha_plus = run_point_mass_case(alpha_coeff+h_alpha,wall_k,y0,vy0,steps,dt,seed,false).phi;
+  Real phi_alpha_minus = run_point_mass_case(alpha_coeff-h_alpha,wall_k,y0,vy0,steps,dt,seed,false).phi;
+  Real fd_alpha = (phi_alpha_plus - phi_alpha_minus)/(2.0*h_alpha);
+
+  Real phi_k_plus = run_point_mass_case(alpha_coeff,wall_k+h_k,y0,vy0,steps,dt,seed,false).phi;
+  Real phi_k_minus = run_point_mass_case(alpha_coeff,wall_k-h_k,y0,vy0,steps,dt,seed,false).phi;
+  Real fd_k = (phi_k_plus - phi_k_minus)/(2.0*h_k);
+
+  Real delta_alpha = seeded.grad_alpha - base.grad_alpha;
+  Real delta_k = seeded.grad_k - base.grad_k;
+
+  Real tol_alpha = 1.5e-1 * std::max(Real(1.0),std::fabs(fd_alpha));
+  Real tol_k = 1.5e-1 * std::max(Real(1.0),std::fabs(fd_k));
+  ASSERT_NEAR(delta_alpha,fd_alpha,tol_alpha);
+  ASSERT_NEAR(delta_k,fd_k,tol_k);
 }
