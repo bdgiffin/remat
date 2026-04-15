@@ -82,3 +82,12 @@ blt_add_executable(NAME       test_ViscoElasticityAdjoint
 
 blt_add_test(NAME    test_ViscoElasticityAdjoint
 	     COMMAND test_ViscoElasticityAdjoint)
+
+blt_add_executable(NAME       test_SystemAdjointKick
+                   SOURCES    ${CMAKE_CURRENT_LIST_DIR}/test_SystemAdjointKick.cpp
+                   INCLUDES   ${test_include_dirs}
+                   DEPENDS_ON ${test_dependencies}
+		   )
+
+blt_add_test(NAME    test_SystemAdjointKick
+	     COMMAND test_SystemAdjointKick)

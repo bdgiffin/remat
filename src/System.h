@@ -6,6 +6,7 @@
 #include "ContactInteraction.h"
 #include "Dual.h"
 #include "Integrator.h"
+#include "MaterialAdjoint.h"
 #include "PassPhase.h"
 #include "Parameters.h"
 #include <limits>
@@ -213,6 +214,7 @@ struct System : public SystemBase {
   std::vector<std::string> global_field_names;
   std::vector<Real> u_adjoint;
   std::vector<Real> v_adjoint;
+  std::vector<Real> kick_force_seed;
   std::vector<std::string> adjoint_param_names;
   std::vector<Real> adjoint_param_gradients;
   
@@ -284,6 +286,7 @@ struct System : public SystemBase {
     v.resize(Ndofs,Dual<FixedV>(0.0,0.0));
     u_adjoint.resize(Ndofs,0.0);
     v_adjoint.resize(Ndofs,0.0);
+    kick_force_seed.resize(Ndofs,0.0);
     m.resize(Ndofs);
     f.resize(Ndofs);
     a.resize(Ndofs,Dual<Real>(0.0,0.0));
@@ -543,13 +546,14 @@ struct System : public SystemBase {
     m_time_history.clear();
     std::fill(u_adjoint.begin(),u_adjoint.end(),0.0);
     std::fill(v_adjoint.begin(),v_adjoint.end(),0.0);
+    std::fill(kick_force_seed.begin(),kick_force_seed.end(),0.0);
 
     // Apply any prescribed displacement boundary conditions at the initial time
     apply_displacement_bcs(m_time,0.0);
     enforce_prescribed_velocities();
     
     // Update accelerations and damping factors for each DoF
-    update_accelerations(0.0,PassPhase::Forward);
+    update_accelerations(0.0,PassPhase::Forward,0.0);
 
     // Update kinetic energy
     update_kinetic_energy();
@@ -618,6 +622,12 @@ struct System : public SystemBase {
       if (Nelem_overflow > 0) { std::cout << "Loaded " << Nelem_overflow << " element overflow states" << std::endl; }
     }
 
+    if (phase == PassPhase::BackwardAdjoint) {
+      enforce_backward_adjoint_guardrails();
+      // Second kick adjoint at the current reconstructed state (n+1).
+      apply_global_kick_adjoint(dt_step,false);
+    }
+
     // Update velocities to the half-step
     m_integrator.first_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
 
@@ -636,18 +646,18 @@ struct System : public SystemBase {
     // Enforce prescribed displacement boundary conditions at the new analysis time
     apply_displacement_bcs(m_time,signed_dt);
 
-    // Update masses, residual forces, and accelerations at the whole-step
-    update_accelerations(signed_dt,phase);
-    // enforce_prescribed_velocities();
-    // Update velocities to the whole-step
-    m_integrator.second_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
-
     if (phase == PassPhase::BackwardAdjoint) {
-      // Drift transpose contribution (u* -> v*) for kick-drift-kick adjoint wiring.
+      // Drift transpose contribution (u* -> v*) after reverse drift.
       for (int i=0; i<Ndofs; i++) {
         v_adjoint[i] += u_adjoint[i]*dt_step;
       }
     }
+
+    // Update masses, residual forces, and accelerations at the whole-step
+    update_accelerations(signed_dt,phase,dt_step);
+    // enforce_prescribed_velocities();
+    // Update velocities to the whole-step
+    m_integrator.second_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
 
     enforce_prescribed_velocities();
 
@@ -943,6 +953,264 @@ private:
     }
   }
 
+  void enforce_backward_adjoint_guardrails() const {
+    if (std::fabs(m_alpha) > 0.0) {
+      std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
+                << "mass damping (mass_damping_factor) must be zero in Slice C v1." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (!m_contact_interactions.empty()) {
+      std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
+                << "contact interaction adjoint terms are not included in Slice C v1." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (std::fabs(m_contact_stiffness) > 0.0) {
+      std::cout << "BackwardAdjoint currently supports only internal-force adjoint terms; "
+                << "rigid-wall contact adjoint terms are not included in Slice C v1." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  void build_kick_force_seed(Real dt_step, const std::vector<Real>& mass_values) {
+    std::fill(kick_force_seed.begin(),kick_force_seed.end(),0.0);
+    if (dt_step <= 0.0) { return; }
+    for (int i=0; i<Ndofs; i++) {
+      if (fixity[i]) { continue; }
+      if (has_time_varying_bc(i)) { continue; }
+      if (mass_values[i] <= 0.0) { continue; }
+      kick_force_seed[i] = 0.5*dt_step*v_adjoint[i]/mass_values[i];
+    }
+  }
+
+  void compute_mass_vector(std::vector<Real>& mass_values) {
+    mass_values.assign(Ndofs,0.0);
+
+    // Solid element mass contributions (same midpoint rule as Element::update).
+    for (int e=0; e<Nelems; e++) {
+      Real xe[8];
+      for (int j=0; j<Nnodes_per_elem; j++) {
+        const int jnode_id = connect[Nnodes_per_elem*e+j];
+        for (int i=0; i<Ndofs_per_node; i++) {
+          xe[Ndofs_per_node*j+i] = x[Ndofs_per_node*jnode_id+i];
+        }
+      }
+
+      Real dxi[4]  = { -0.25, +0.25, +0.25, -0.25 };
+      Real deta[4] = { -0.25, -0.25, +0.25, +0.25 };
+      Real J[2][2] = { {0.0,0.0}, {0.0,0.0} };
+      for (int i=0; i<4; i++) {
+        J[0][0] += xe[2*i+0] * dxi[i]; J[0][1] += xe[2*i+0] * deta[i];
+        J[1][0] += xe[2*i+1] * dxi[i]; J[1][1] += xe[2*i+1] * deta[i];
+      }
+      Real detJ = J[0][0]*J[1][1] - J[0][1]*J[1][0];
+      Real mass = detJ*m_element.m_model.density();
+      for (int j=0; j<4; j++) {
+        const int jnode_id = connect[Nnodes_per_elem*e+j];
+        mass_values[Ndofs_per_node*jnode_id+0] += mass;
+        mass_values[Ndofs_per_node*jnode_id+1] += mass;
+      }
+    }
+
+    // Truss element mass contributions (same midpoint rule as Truss::update).
+    for (int e=0; e<Ntruss; e++) {
+      const int n0 = truss_connect[2*e+0];
+      const int n1 = truss_connect[2*e+1];
+      Real dxi[2] = { -0.5, +0.5 };
+      Real J[2] = { 0.0, 0.0 };
+      J[0] += x[Ndofs_per_node*n0+0] * dxi[0];
+      J[1] += x[Ndofs_per_node*n0+1] * dxi[0];
+      J[0] += x[Ndofs_per_node*n1+0] * dxi[1];
+      J[1] += x[Ndofs_per_node*n1+1] * dxi[1];
+      Real normJ = std::sqrt(J[0]*J[0] + J[1]*J[1]);
+      Real mass = normJ*m_truss.m_model.mass_per_unit_length();
+      mass_values[Ndofs_per_node*n0+0] += mass;
+      mass_values[Ndofs_per_node*n0+1] += mass;
+      mass_values[Ndofs_per_node*n1+0] += mass;
+      mass_values[Ndofs_per_node*n1+1] += mass;
+    }
+
+    for (int i=0; i<Npoints; i++) {
+      mass_values[2*point_ids[i]+0] += point_mass[i];
+      mass_values[2*point_ids[i]+1] += point_mass[i];
+    }
+  }
+
+  void apply_global_kick_adjoint(Real dt_step, bool first_kick) {
+    if (!first_kick) {
+      build_kick_force_seed(dt_step,m);
+    }
+
+    // Early out when there is no kick seed.
+    Real max_seed = 0.0;
+    for (int i=0; i<Ndofs; i++) max_seed = std::max(max_seed,std::fabs(kick_force_seed[i]));
+    if (max_seed == 0.0) { return; }
+
+    // 2D element contribution.
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
+    const int Nmat_state = m_element.m_model.num_state_vars();
+    for (int e=0; e<Nelems; e++) {
+      Real xe[8];
+      Real ue[8];
+      int node_ids[4];
+      for (int j=0; j<Nnodes_per_elem; j++) {
+        const int jnode_id = connect[Nnodes_per_elem*e+j];
+        node_ids[j] = jnode_id;
+        xe[2*j+0] = x[Ndofs_per_node*jnode_id+0];
+        xe[2*j+1] = x[Ndofs_per_node*jnode_id+1];
+        ue[2*j+0] = u[Ndofs_per_node*jnode_id+0].first;
+        ue[2*j+1] = u[Ndofs_per_node*jnode_id+1].first;
+      }
+
+      const Real sqrt_third = 1.0/std::sqrt(3.0);
+      Real xi[4] = { -1.0, +1.0, +1.0, -1.0 };
+      Real eta[4] = { -1.0, -1.0, +1.0, +1.0 };
+
+      for (int q=0; q<4; q++) {
+        Real xiq = xi[q]*sqrt_third;
+        Real etaq = eta[q]*sqrt_third;
+
+        Real dxi[4], deta[4];
+        for (int i=0; i<4; i++) {
+          dxi[i]  = 0.25*xi[i]*(1.0+etaq*eta[i]);
+          deta[i] = 0.25*eta[i]*(1.0+xiq*xi[i]);
+        }
+
+        Real J0[2][2] = { {0.0,0.0}, {0.0,0.0} };
+        Real J[2][2]  = { {0.0,0.0}, {0.0,0.0} };
+        for (int i=0; i<4; i++) {
+          J0[0][0] += xe[2*i+0] * dxi[i]; J0[0][1] += xe[2*i+0] * deta[i];
+          J0[1][0] += xe[2*i+1] * dxi[i]; J0[1][1] += xe[2*i+1] * deta[i];
+          Real xtx = xe[2*i+0] + ue[2*i+0];
+          Real xty = xe[2*i+1] + ue[2*i+1];
+          J[0][0] += xtx * dxi[i]; J[0][1] += xtx * deta[i];
+          J[1][0] += xty * dxi[i]; J[1][1] += xty * deta[i];
+        }
+
+        Real inv_detJ0 = 1.0/(J0[0][0]*J0[1][1] - J0[0][1]*J0[1][0]);
+        Real invJ0[2][2];
+        invJ0[0][0] = +J0[1][1]*inv_detJ0;
+        invJ0[0][1] = -J0[0][1]*inv_detJ0;
+        invJ0[1][0] = -J0[1][0]*inv_detJ0;
+        invJ0[1][1] = +J0[0][0]*inv_detJ0;
+
+        Real* model_state = &state[Nstate_vars_per_elem*e + (q+1)*Nmat_state];
+        Real sxx = model_state[0];
+        Real syy = model_state[1];
+        Real sxy = model_state[5];
+
+        Real bar_P00 = 0.0, bar_P01 = 0.0, bar_P10 = 0.0, bar_P11 = 0.0;
+        for (int i=0; i<4; i++) {
+          Real bar_fe_x = -kick_force_seed[Ndofs_per_node*node_ids[i]+0];
+          Real bar_fe_y = -kick_force_seed[Ndofs_per_node*node_ids[i]+1];
+          bar_P00 += bar_fe_x*dxi[i];
+          bar_P01 += bar_fe_x*deta[i];
+          bar_P10 += bar_fe_y*dxi[i];
+          bar_P11 += bar_fe_y*deta[i];
+        }
+
+        Real cof00 = +J[1][1];
+        Real cof10 = -J[0][1];
+        Real cof01 = -J[1][0];
+        Real cof11 = +J[0][0];
+
+        Real bar_sxx = bar_P00*cof00 + bar_P01*cof01;
+        Real bar_syy = bar_P10*cof10 + bar_P11*cof11;
+        Real bar_sxy = bar_P00*cof10 + bar_P01*cof11 + bar_P10*cof00 + bar_P11*cof01;
+
+        if (!first_kick) {
+          material_adjoint_add_direct_param_seed_from_stress(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
+        }
+
+        Real bar_cof00 = bar_P00*sxx + bar_P10*sxy;
+        Real bar_cof01 = bar_P01*sxx + bar_P11*sxy;
+        Real bar_cof10 = bar_P00*sxy + bar_P10*syy;
+        Real bar_cof11 = bar_P01*sxy + bar_P11*syy;
+
+        Real bar_exx = 0.0, bar_eyy = 0.0, bar_gxy = 0.0;
+        material_adjoint_pullback_stress_to_strain(m_element.m_model,model_state,
+                                                   bar_sxx,bar_syy,bar_sxy,
+                                                   bar_exx,bar_eyy,bar_gxy);
+
+        Real bar_F00 = bar_exx;
+        Real bar_F11 = bar_eyy;
+        Real bar_F01 = bar_gxy;
+        Real bar_F10 = bar_gxy;
+
+        Real bar_J00 = bar_F00*invJ0[0][0] + bar_F01*invJ0[0][1];
+        Real bar_J01 = bar_F00*invJ0[1][0] + bar_F01*invJ0[1][1];
+        Real bar_J10 = bar_F10*invJ0[0][0] + bar_F11*invJ0[0][1];
+        Real bar_J11 = bar_F10*invJ0[1][0] + bar_F11*invJ0[1][1];
+
+        // cof(J) pullback
+        bar_J11 += bar_cof00;
+        bar_J01 += -bar_cof10;
+        bar_J10 += -bar_cof01;
+        bar_J00 += bar_cof11;
+
+        for (int i=0; i<4; i++) {
+          u_adjoint[Ndofs_per_node*node_ids[i]+0] += bar_J00*dxi[i] + bar_J01*deta[i];
+          u_adjoint[Ndofs_per_node*node_ids[i]+1] += bar_J10*dxi[i] + bar_J11*deta[i];
+        }
+      }
+    }
+
+    // Truss contribution.
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    for (int e=0; e<Ntruss; e++) {
+      int n0 = truss_connect[2*e+0];
+      int n1 = truss_connect[2*e+1];
+      Real xe[4] = { x[2*n0+0], x[2*n0+1], x[2*n1+0], x[2*n1+1] };
+      Real ue[4] = { u[2*n0+0].first, u[2*n0+1].first, u[2*n1+0].first, u[2*n1+1].first };
+      Real* state_e = &truss_state[Nstate_vars_per_truss*e];
+
+      const Real dxi[2] = { -0.5, +0.5 };
+      const Real wq = 2.0;
+      const Real c0 = dxi[0]*wq;
+      const Real c1 = dxi[1]*wq;
+
+      Real J0x = xe[0]*dxi[0] + xe[2]*dxi[1];
+      Real J0y = xe[1]*dxi[0] + xe[3]*dxi[1];
+      Real Jx = (xe[0]+ue[0])*dxi[0] + (xe[2]+ue[2])*dxi[1];
+      Real Jy = (xe[1]+ue[1])*dxi[0] + (xe[3]+ue[3])*dxi[1];
+      Real normJ0 = std::sqrt(J0x*J0x + J0y*J0y);
+      Real normJ = std::sqrt(Jx*Jx + Jy*Jy);
+      if ((normJ0 <= 0.0) || (normJ <= 0.0)) { continue; }
+
+      Real tx = Jx/normJ;
+      Real ty = Jy/normJ;
+      Real sigma = state_e[0];
+
+      Real bar_fe0x = -kick_force_seed[2*n0+0];
+      Real bar_fe0y = -kick_force_seed[2*n0+1];
+      Real bar_fe1x = -kick_force_seed[2*n1+0];
+      Real bar_fe1y = -kick_force_seed[2*n1+1];
+
+      Real bar_sigma = c0*(bar_fe0x*tx + bar_fe0y*ty) + c1*(bar_fe1x*tx + bar_fe1y*ty);
+      if (!first_kick) {
+        material_adjoint_add_direct_param_seed_from_stress(m_truss.m_model,state_e,bar_sigma);
+      }
+
+      Real bar_strain = 0.0;
+      material_adjoint_pullback_stress_to_strain(m_truss.m_model,state_e,bar_sigma,bar_strain);
+
+      Real bar_lambda = bar_strain;
+      Real bar_normJ = bar_lambda/normJ0;
+      Real bar_Jx = bar_normJ*tx;
+      Real bar_Jy = bar_normJ*ty;
+
+      Real bar_tx = sigma*(c0*bar_fe0x + c1*bar_fe1x);
+      Real bar_ty = sigma*(c0*bar_fe0y + c1*bar_fe1y);
+      Real bdot = bar_tx*tx + bar_ty*ty;
+      bar_Jx += (bar_tx - bdot*tx)/normJ;
+      bar_Jy += (bar_ty - bdot*ty)/normJ;
+
+      u_adjoint[2*n0+0] += dxi[0]*bar_Jx;
+      u_adjoint[2*n0+1] += dxi[0]*bar_Jy;
+      u_adjoint[2*n1+0] += dxi[1]*bar_Jx;
+      u_adjoint[2*n1+1] += dxi[1]*bar_Jy;
+    }
+  }
+
   // Check if a specified DoF is controlled by a time-varying boundary condition
   bool has_time_varying_bc(int dof) const { return (dof >= 0 && dof < int(m_has_time_bc.size())) ? m_has_time_bc[dof] : false; }
 
@@ -1015,8 +1283,15 @@ private:
   // ===================================================================== //
 
   // Procedure to update the accelerations
-  void update_accelerations(Real dt, PassPhase phase) {
-
+  void update_accelerations(Real dt, PassPhase phase, Real dt_step) {
+    const bool first_kick_adjoint = (phase == PassPhase::BackwardAdjoint) && (dt < 0.0);
+    if (first_kick_adjoint) {
+      std::vector<Real> kick_mass;
+      compute_mass_vector(kick_mass);
+      build_kick_force_seed(dt_step,kick_mass);
+    } else {
+      std::fill(kick_force_seed.begin(),kick_force_seed.end(),0.0);
+    }
 
     // Zero-initialize forces and masses
     std::fill(m.begin(), m.end(), 0.0);
@@ -1056,8 +1331,59 @@ private:
       m_element.adjoint_clear_step_seed(&state[Nstate_vars_per_elem*e]);
       if (phase == PassPhase::BackwardAdjoint) {
         m_element.adjoint_objective_seed(&state[Nstate_vars_per_elem*e]);
+        if (first_kick_adjoint) {
+          const int Nmat_state = m_element.m_model.num_state_vars();
+          const Real sqrt_third = 1.0/std::sqrt(3.0);
+          Real xi[4] = { -1.0, +1.0, +1.0, -1.0 };
+          Real eta[4] = { -1.0, -1.0, +1.0, +1.0 };
+          for (int q=0; q<4; q++) {
+            Real xiq = xi[q]*sqrt_third;
+            Real etaq = eta[q]*sqrt_third;
+
+            Real dxi[4], deta[4];
+            for (int i=0; i<4; i++) {
+              dxi[i]  = 0.25*xi[i]*(1.0+etaq*eta[i]);
+              deta[i] = 0.25*eta[i]*(1.0+xiq*xi[i]);
+            }
+
+            Real J0[2][2] = { {0.0,0.0}, {0.0,0.0} };
+            Real J[2][2]  = { {0.0,0.0}, {0.0,0.0} };
+            int node_ids[4];
+            for (int i=0; i<4; i++) {
+              node_ids[i] = connect[Nnodes_per_elem*e+i];
+              J0[0][0] += xe[2*i+0] * dxi[i]; J0[0][1] += xe[2*i+0] * deta[i];
+              J0[1][0] += xe[2*i+1] * dxi[i]; J0[1][1] += xe[2*i+1] * deta[i];
+              Real xtx = xe[2*i+0] + ue[2*i+0];
+              Real xty = xe[2*i+1] + ue[2*i+1];
+              J[0][0] += xtx * dxi[i]; J[0][1] += xtx * deta[i];
+              J[1][0] += xty * dxi[i]; J[1][1] += xty * deta[i];
+            }
+
+            Real bar_P00 = 0.0, bar_P01 = 0.0, bar_P10 = 0.0, bar_P11 = 0.0;
+            for (int i=0; i<4; i++) {
+              Real bar_fe_x = -kick_force_seed[Ndofs_per_node*node_ids[i]+0];
+              Real bar_fe_y = -kick_force_seed[Ndofs_per_node*node_ids[i]+1];
+              bar_P00 += bar_fe_x*dxi[i];
+              bar_P01 += bar_fe_x*deta[i];
+              bar_P10 += bar_fe_y*dxi[i];
+              bar_P11 += bar_fe_y*deta[i];
+            }
+
+            Real cof00 = +J[1][1];
+            Real cof10 = -J[0][1];
+            Real cof01 = -J[1][0];
+            Real cof11 = +J[0][0];
+
+            Real bar_sxx = bar_P00*cof00 + bar_P01*cof01;
+            Real bar_syy = bar_P10*cof10 + bar_P11*cof11;
+            Real bar_sxy = bar_P00*cof10 + bar_P01*cof11 + bar_P10*cof00 + bar_P11*cof01;
+
+            Real* model_state = &state[Nstate_vars_per_elem*e + (q+1)*Nmat_state];
+            material_adjoint_add_stress_seed(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
+          }
+        }
       }
-      m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt,phase);
+      m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt_step,phase);
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
@@ -1100,8 +1426,30 @@ private:
       m_truss.adjoint_clear_step_seed(&truss_state[Nstate_vars_per_truss*e]);
       if (phase == PassPhase::BackwardAdjoint) {
         m_truss.adjoint_objective_seed(&truss_state[Nstate_vars_per_truss*e]);
+        if (first_kick_adjoint) {
+          const int n0 = truss_connect[2*e+0];
+          const int n1 = truss_connect[2*e+1];
+          const Real dxi[2] = { -0.5, +0.5 };
+          const Real wq = 2.0;
+          const Real c0 = dxi[0]*wq;
+          const Real c1 = dxi[1]*wq;
+
+          Real Jx = (xe[0]+ue[0])*dxi[0] + (xe[2]+ue[2])*dxi[1];
+          Real Jy = (xe[1]+ue[1])*dxi[0] + (xe[3]+ue[3])*dxi[1];
+          Real normJ = std::sqrt(Jx*Jx + Jy*Jy);
+          if (normJ > 0.0) {
+            Real tx = Jx/normJ;
+            Real ty = Jy/normJ;
+            Real bar_fe0x = -kick_force_seed[2*n0+0];
+            Real bar_fe0y = -kick_force_seed[2*n0+1];
+            Real bar_fe1x = -kick_force_seed[2*n1+0];
+            Real bar_fe1y = -kick_force_seed[2*n1+1];
+            Real bar_sigma = c0*(bar_fe0x*tx + bar_fe0y*ty) + c1*(bar_fe1x*tx + bar_fe1y*ty);
+            material_adjoint_add_stress_seed(m_truss.m_model,&truss_state[Nstate_vars_per_truss*e],bar_sigma);
+          }
+        }
       }
-      m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt,phase);
+      m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt_step,phase);
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
@@ -1118,6 +1466,13 @@ private:
       elastic_strain_energy += Ee;
 
     } // End loop over all truss elements
+
+    if (first_kick_adjoint) {
+      // First kick adjoint at reconstructed state n:
+      // material seeds were injected before local backward updates;
+      // this call adds global geometric/kinematic pullback terms.
+      apply_global_kick_adjoint(dt_step,true);
+    }
 
     // Loop over all point masses
     for (int i=0; i<Npoints; i++) {

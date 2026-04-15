@@ -49,6 +49,30 @@ struct has_clear_step_seed : std::false_type { };
 template<typename M>
 struct has_clear_step_seed<M, std::void_t<decltype(std::declval<M&>().adjoint_clear_step_seed(std::declval<Real*>()))> > : std::true_type { };
 
+template<typename M, typename = void>
+struct has_scalar_pullback_stress_to_strain : std::false_type { };
+
+template<typename M>
+struct has_scalar_pullback_stress_to_strain<M, std::void_t<decltype(std::declval<const M&>().adjoint_pullback_stress_to_strain(std::declval<const Real*>(),Real(0.0),std::declval<Real&>()))> > : std::true_type { };
+
+template<typename M, typename = void>
+struct has_tensor_pullback_stress_to_strain : std::false_type { };
+
+template<typename M>
+struct has_tensor_pullback_stress_to_strain<M, std::void_t<decltype(std::declval<const M&>().adjoint_pullback_stress_to_strain(std::declval<const Real*>(),Real(0.0),Real(0.0),Real(0.0),std::declval<Real&>(),std::declval<Real&>(),std::declval<Real&>()))> > : std::true_type { };
+
+template<typename M, typename = void>
+struct has_scalar_direct_param_seed_from_stress : std::false_type { };
+
+template<typename M>
+struct has_scalar_direct_param_seed_from_stress<M, std::void_t<decltype(std::declval<M&>().adjoint_add_direct_param_seed_from_stress(std::declval<Real*>(),Real(0.0)))> > : std::true_type { };
+
+template<typename M, typename = void>
+struct has_tensor_direct_param_seed_from_stress : std::false_type { };
+
+template<typename M>
+struct has_tensor_direct_param_seed_from_stress<M, std::void_t<decltype(std::declval<M&>().adjoint_add_direct_param_seed_from_stress(std::declval<Real*>(),Real(0.0),Real(0.0),Real(0.0)))> > : std::true_type { };
+
 } // namespace material_adjoint_detail
 
 template<typename M>
@@ -121,6 +145,62 @@ inline void material_adjoint_clear_step_seed(M& model, Real* state) {
   } else {
     (void)model;
     (void)state;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_pullback_stress_to_strain(const M& model, const Real* state, Real stress_seed, Real& strain_seed) {
+  if constexpr (material_adjoint_detail::has_scalar_pullback_stress_to_strain<M>::value) {
+    model.adjoint_pullback_stress_to_strain(state,stress_seed,strain_seed);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed;
+    (void)strain_seed;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_pullback_stress_to_strain(const M& model, const Real* state,
+                                                       Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy,
+                                                       Real& strain_seed_xx, Real& strain_seed_yy, Real& strain_seed_xy) {
+  if constexpr (material_adjoint_detail::has_tensor_pullback_stress_to_strain<M>::value) {
+    model.adjoint_pullback_stress_to_strain(state,stress_seed_xx,stress_seed_yy,stress_seed_xy,
+                                            strain_seed_xx,strain_seed_yy,strain_seed_xy);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed_xx;
+    (void)stress_seed_yy;
+    (void)stress_seed_xy;
+    (void)strain_seed_xx;
+    (void)strain_seed_yy;
+    (void)strain_seed_xy;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_add_direct_param_seed_from_stress(M& model, Real* state, Real stress_seed) {
+  if constexpr (material_adjoint_detail::has_scalar_direct_param_seed_from_stress<M>::value) {
+    model.adjoint_add_direct_param_seed_from_stress(state,stress_seed);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_add_direct_param_seed_from_stress(M& model, Real* state,
+                                                               Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy) {
+  if constexpr (material_adjoint_detail::has_tensor_direct_param_seed_from_stress<M>::value) {
+    model.adjoint_add_direct_param_seed_from_stress(state,stress_seed_xx,stress_seed_yy,stress_seed_xy);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed_xx;
+    (void)stress_seed_yy;
+    (void)stress_seed_xy;
   }
 }
 

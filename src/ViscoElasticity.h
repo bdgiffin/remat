@@ -222,8 +222,8 @@ class ViscoElasticity {
 
   // Update the material state using the current deformation gradient F
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt, PassPhase phase) {
-    if (dt <= 0.0) {
-      std::cout << "ViscoElasticity::update requires dt > 0.0 for explicit phases" << std::endl;
+    if (dt < 0.0) {
+      std::cout << "ViscoElasticity::update requires dt >= 0.0 for explicit phases" << std::endl;
       exit(EXIT_FAILURE);
     }
 
@@ -479,6 +479,52 @@ class ViscoElasticity {
     state[STRESS_SEED_XX] = 0.0;
     state[STRESS_SEED_YY] = 0.0;
     state[STRESS_SEED_XY] = 0.0;
+  }
+
+  void adjoint_pullback_stress_to_strain(const Real* state,
+                                         Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy,
+                                         Real& strain_seed_xx, Real& strain_seed_yy, Real& strain_seed_xy) const {
+    const Real stiffness_scaling_factor = state[STIFFNESS_SCALING];
+    const Real mu2_scaled = stiffness_scaling_factor * mu2;
+    const Real mu_scaled  = stiffness_scaling_factor * mu;
+    const Real lam_scaled = stiffness_scaling_factor * lam;
+    const Real mu_e_scaled = stiffness_scaling_factor * mu_e;
+
+    const Real dxx_dexx = lam_scaled + mu2_scaled + mu_e_scaled;
+    const Real dxx_deyy = lam_scaled - mu_e_scaled;
+    const Real dyy_dexx = lam_scaled - mu_e_scaled;
+    const Real dyy_deyy = lam_scaled + mu2_scaled + mu_e_scaled;
+    const Real dxy_dgxy = mu_scaled + mu_e_scaled;
+
+    strain_seed_xx += dxx_dexx*stress_seed_xx + dyy_dexx*stress_seed_yy;
+    strain_seed_yy += dxx_deyy*stress_seed_xx + dyy_deyy*stress_seed_yy;
+    strain_seed_xy += dxy_dgxy*stress_seed_xy;
+  }
+
+  void adjoint_add_direct_param_seed_from_stress(Real* state,
+                                                  Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy) {
+    FixedE qxx_fix, qyy_fix, qxy_fix;
+    load_from_Real(state[VISCOUS_XX], qxx_fix);
+    load_from_Real(state[VISCOUS_YY], qyy_fix);
+    load_from_Real(state[VISCOUS_XY], qxy_fix);
+
+    const Real exx = state[STRAIN_XX];
+    const Real eyy = state[STRAIN_YY];
+    const Real gxy = state[STRAIN_XY];
+    const Real tr2 = exx + eyy;
+    const Real dev_xx = exx - 0.5*tr2;
+    const Real dev_yy = eyy - 0.5*tr2;
+    const Real dev_xy = gxy;
+
+    const Real dev_elastic_xx = dev_xx - Real(qxx_fix);
+    const Real dev_elastic_yy = dev_yy - Real(qyy_fix);
+    const Real dev_elastic_xy = dev_xy - Real(qxy_fix);
+
+    const Real stiffness_scaling_factor = state[STIFFNESS_SCALING];
+    state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT] +=
+      stress_seed_xx*(2.0*stiffness_scaling_factor*dev_elastic_xx) +
+      stress_seed_yy*(2.0*stiffness_scaling_factor*dev_elastic_yy) +
+      stress_seed_xy*(stiffness_scaling_factor*dev_elastic_xy);
   }
 
 

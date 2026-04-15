@@ -144,6 +144,14 @@ public:
 
   void adjoint_clear_step_seed(Real* state) { material_adjoint_clear_step_seed(m_model,state); }
 
+  void adjoint_pullback_stress_to_strain(const Real* state, Real stress_seed, Real& strain_seed) const {
+    material_adjoint_pullback_stress_to_strain(m_model,state,stress_seed,strain_seed);
+  }
+
+  void adjoint_add_direct_param_seed_from_stress(Real* state, Real stress_seed) {
+    material_adjoint_add_direct_param_seed_from_stress(m_model,state,stress_seed);
+  }
+
   Real get_state_variable(Real* state, std::string state_variable_name) { return m_model.get_state_variable(state,state_variable_name); }
   
   // Report the element death status of the current element

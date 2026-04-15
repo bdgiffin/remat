@@ -358,6 +358,17 @@ class UniaxialViscoelasticity {
 
   void adjoint_clear_step_seed(Real* state) { state[STRESS_SEED] = 0.0; }
 
+  void adjoint_pullback_stress_to_strain(const Real*, Real stress_seed, Real& strain_seed) const {
+    strain_seed += E*stress_seed;
+  }
+
+  void adjoint_add_direct_param_seed_from_stress(Real* state, Real stress_seed) {
+    FixedE q_n;
+    load_from_Real(state[VISCOUS_STRAIN], q_n);
+    Real elastic_strain = state[AXIAL_STRAIN] - Real(q_n);
+    state[DPARAM_YOUNGS_MODULUS] += stress_seed*elastic_strain;
+  }
+
   // Return the value of viscous_strain (Just for quick check, can be deleted later)
   // One could use the get_fields function
   Real get_state_variable(Real* state, std::string state_variable_name) {
