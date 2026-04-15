@@ -12,6 +12,7 @@
 #include <limits>
 #include <vector>
 #include <algorithm> // For std::fill
+#include <cctype>
 #include <iostream>
 #include <string>
 #include <math.h>
@@ -117,6 +118,21 @@ struct SystemBase {
   // Request the current analysis time
   virtual double get_time(void) = 0;
   
+  // ===================================================================== //
+
+  // Clear global adjoint state (u*, v*, kick seeds and global adjoint accumulators)
+  virtual void clear_adjoint_state(void) = 0;
+
+  // ===================================================================== //
+
+  // Add nodal velocity adjoint seeds (seed_xy stores [seed_x, seed_y] per node)
+  virtual void add_nodal_velocity_adjoint_seed(const int* node_ids, const double* seed_xy, int num_nodes) = 0;
+
+  // ===================================================================== //
+
+  // Add nodal displacement adjoint seeds (seed_xy stores [seed_x, seed_y] per node)
+  virtual void add_nodal_displacement_adjoint_seed(const int* node_ids, const double* seed_xy, int num_nodes) = 0;
+
   // ===================================================================== //
 
 }; // SystemBase
@@ -885,8 +901,31 @@ struct System : public SystemBase {
     } else if (entity_type == "element") {
       const int Nstate = m_element.num_state_vars();
       const int Nmat_state = get_num_fields(entity_type);
+      auto lower_string = [](const std::string& text) {
+        std::string out = text;
+        for (char& c : out) { c = char(std::tolower(static_cast<unsigned char>(c))); }
+        return out;
+      };
+
+      std::vector<int> adjoint_param_field_id(m_element.adjoint_num_params(),-1);
+      for (int p=0; p<m_element.adjoint_num_params(); p++) {
+        const std::string target_name = "dparam_" + lower_string(m_element.adjoint_param_name(p));
+        for (int i=0; i<Nmat_state; i++) {
+          if (lower_string(element_field_names[i]) == target_name) {
+            adjoint_param_field_id[p] = i;
+            break;
+          }
+        }
+      }
+
       for (int e=0; e<Nelems; e++) {
-        m_element.m_model.get_fields(&state[Nstate*e],&field_data[Nmat_state*e]);
+        Real* elem_state = &state[Nstate*e];
+        m_element.m_model.get_fields(elem_state,&field_data[Nmat_state*e]);
+        for (int p=0; p<m_element.adjoint_num_params(); p++) {
+          if (adjoint_param_field_id[p] >= 0) {
+            field_data[Nmat_state*e + adjoint_param_field_id[p]] = m_element.adjoint_get_param_gradient(elem_state,p);
+          }
+        }
       }
     } else if (entity_type == "truss")   {
       const int Nstate = m_truss.num_state_vars();
@@ -907,6 +946,85 @@ struct System : public SystemBase {
   // Request the current analysis time
   virtual double get_time(void) { return m_time; }
   
+  // ===================================================================== //
+
+  virtual void clear_adjoint_state(void) {
+    std::fill(u_adjoint.begin(),u_adjoint.end(),0.0);
+    std::fill(v_adjoint.begin(),v_adjoint.end(),0.0);
+    std::fill(kick_force_seed.begin(),kick_force_seed.end(),0.0);
+    adjoint_mass_damping_gradient = 0.0;
+    adjoint_contact_stiffness_gradient = 0.0;
+    std::fill(adjoint_param_gradients.begin(),adjoint_param_gradients.end(),0.0);
+  }
+
+  // ===================================================================== //
+
+  virtual void add_nodal_velocity_adjoint_seed(const int* node_ids, const double* seed_xy, int num_nodes) {
+    if (node_ids == nullptr) {
+      std::cout << "add_nodal_velocity_adjoint_seed received null node_ids pointer" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (seed_xy == nullptr) {
+      std::cout << "add_nodal_velocity_adjoint_seed received null seed pointer" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (num_nodes < 0) {
+      std::cout << "add_nodal_velocity_adjoint_seed received negative node count: " << num_nodes << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    for (int i=0; i<num_nodes; i++) {
+      const int node_id = node_ids[i];
+      if ((node_id < 0) || (node_id >= Nnodes)) {
+        std::cout << "add_nodal_velocity_adjoint_seed received invalid node id: " << node_id << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      const int dof_x = Ndofs_per_node*node_id + 0;
+      if ((dof_x >= 0) && (dof_x < Ndofs)) {
+        v_adjoint[dof_x] += seed_xy[2*i + 0];
+      }
+      if (Ndofs_per_node > 1) {
+        const int dof_y = Ndofs_per_node*node_id + 1;
+        if ((dof_y >= 0) && (dof_y < Ndofs)) {
+          v_adjoint[dof_y] += seed_xy[2*i + 1];
+        }
+      }
+    }
+  }
+
+  // ===================================================================== //
+
+  virtual void add_nodal_displacement_adjoint_seed(const int* node_ids, const double* seed_xy, int num_nodes) {
+    if (node_ids == nullptr) {
+      std::cout << "add_nodal_displacement_adjoint_seed received null node_ids pointer" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (seed_xy == nullptr) {
+      std::cout << "add_nodal_displacement_adjoint_seed received null seed pointer" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (num_nodes < 0) {
+      std::cout << "add_nodal_displacement_adjoint_seed received negative node count: " << num_nodes << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    for (int i=0; i<num_nodes; i++) {
+      const int node_id = node_ids[i];
+      if ((node_id < 0) || (node_id >= Nnodes)) {
+        std::cout << "add_nodal_displacement_adjoint_seed received invalid node id: " << node_id << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      const int dof_x = Ndofs_per_node*node_id + 0;
+      if ((dof_x >= 0) && (dof_x < Ndofs)) {
+        u_adjoint[dof_x] += seed_xy[2*i + 0];
+      }
+      if (Ndofs_per_node > 1) {
+        const int dof_y = Ndofs_per_node*node_id + 1;
+        if ((dof_y >= 0) && (dof_y < Ndofs)) {
+          u_adjoint[dof_y] += seed_xy[2*i + 1];
+        }
+      }
+    }
+  }
+
   // ===================================================================== //
 private:
   // ===================================================================== //
@@ -1161,6 +1279,7 @@ private:
         Real bar_sxy = bar_P00*cof10 + bar_P01*cof11 + bar_P10*cof00 + bar_P11*cof01;
 
         if (!first_kick) {
+          material_adjoint_add_history_seed_from_stress(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
           material_adjoint_add_direct_param_seed_from_stress(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
         }
 
@@ -1230,6 +1349,7 @@ private:
 
       Real bar_sigma = c0*(bar_fe0x*tx + bar_fe0y*ty) + c1*(bar_fe1x*tx + bar_fe1y*ty);
       if (!first_kick) {
+        material_adjoint_add_history_seed_from_stress(m_truss.m_model,state_e,bar_sigma);
         material_adjoint_add_direct_param_seed_from_stress(m_truss.m_model,state_e,bar_sigma);
       }
 

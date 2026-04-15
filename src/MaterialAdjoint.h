@@ -73,6 +73,18 @@ struct has_tensor_direct_param_seed_from_stress : std::false_type { };
 template<typename M>
 struct has_tensor_direct_param_seed_from_stress<M, std::void_t<decltype(std::declval<M&>().adjoint_add_direct_param_seed_from_stress(std::declval<Real*>(),Real(0.0),Real(0.0),Real(0.0)))> > : std::true_type { };
 
+template<typename M, typename = void>
+struct has_scalar_history_seed_from_stress : std::false_type { };
+
+template<typename M>
+struct has_scalar_history_seed_from_stress<M, std::void_t<decltype(std::declval<M&>().adjoint_add_history_seed_from_stress(std::declval<Real*>(),Real(0.0)))> > : std::true_type { };
+
+template<typename M, typename = void>
+struct has_tensor_history_seed_from_stress : std::false_type { };
+
+template<typename M>
+struct has_tensor_history_seed_from_stress<M, std::void_t<decltype(std::declval<M&>().adjoint_add_history_seed_from_stress(std::declval<Real*>(),Real(0.0),Real(0.0),Real(0.0)))> > : std::true_type { };
+
 } // namespace material_adjoint_detail
 
 template<typename M>
@@ -195,6 +207,31 @@ inline void material_adjoint_add_direct_param_seed_from_stress(M& model, Real* s
                                                                Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy) {
   if constexpr (material_adjoint_detail::has_tensor_direct_param_seed_from_stress<M>::value) {
     model.adjoint_add_direct_param_seed_from_stress(state,stress_seed_xx,stress_seed_yy,stress_seed_xy);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed_xx;
+    (void)stress_seed_yy;
+    (void)stress_seed_xy;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_add_history_seed_from_stress(M& model, Real* state, Real stress_seed) {
+  if constexpr (material_adjoint_detail::has_scalar_history_seed_from_stress<M>::value) {
+    model.adjoint_add_history_seed_from_stress(state,stress_seed);
+  } else {
+    (void)model;
+    (void)state;
+    (void)stress_seed;
+  }
+}
+
+template<typename M>
+inline void material_adjoint_add_history_seed_from_stress(M& model, Real* state,
+                                                          Real stress_seed_xx, Real stress_seed_yy, Real stress_seed_xy) {
+  if constexpr (material_adjoint_detail::has_tensor_history_seed_from_stress<M>::value) {
+    model.adjoint_add_history_seed_from_stress(state,stress_seed_xx,stress_seed_yy,stress_seed_xy);
   } else {
     (void)model;
     (void)state;

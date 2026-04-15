@@ -32,6 +32,7 @@ class ViscoElasticity {
   Real mu2_e;  // Twice the shear modulus of the Maxwell element spring
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
+  Real adjoint_material_objective_weight = 1.0;
  private:
   enum StateIndex {
     STRESS_XX = 0,
@@ -58,7 +59,8 @@ class ViscoElasticity {
     LAMBDA_Q_XY = 21,
     STRESS_SEED_XX = 22,
     STRESS_SEED_YY = 23,
-    STRESS_SEED_XY = 24
+    STRESS_SEED_XY = 24,
+    DPARAM_STIFFNESS_SCALING_FACTOR = 25
   };
 
 
@@ -148,10 +150,13 @@ class ViscoElasticity {
 
       mat_overflow_limit = int(params["mat_overflow_limit"]);
     }
+    if (params.count("adjoint_material_objective_weight") > 0) {
+      adjoint_material_objective_weight = params["adjoint_material_objective_weight"];
+    }
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 25; }
+ int num_state_vars(void) { return 26; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -170,6 +175,7 @@ class ViscoElasticity {
       "adjoint_stress_seed_xx",
       "adjoint_stress_seed_yy",
       "adjoint_stress_seed_xy",
+      "dparam_stiffness_scaling_factor",
     });
   }
 
@@ -205,6 +211,7 @@ class ViscoElasticity {
     state[STRESS_SEED_XX] = 0.0;
     state[STRESS_SEED_YY] = 0.0;
     state[STRESS_SEED_XY] = 0.0;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR] = 0.0;
   } // initialize()
 
   // Do we have to keep this?
@@ -265,6 +272,7 @@ class ViscoElasticity {
     Real lambda_q_np1[3] = { state[LAMBDA_Q_XX], state[LAMBDA_Q_YY], state[LAMBDA_Q_XY] };
     Real dparam_tau = state[DPARAM_RELAXATION_TIME];
     Real dparam_mu_e = state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT];
+    Real dparam_stiffness_scaling = state[DPARAM_STIFFNESS_SCALING_FACTOR];
     const Real stress_seed_xx = state[STRESS_SEED_XX];
     const Real stress_seed_yy = state[STRESS_SEED_YY];
     const Real stress_seed_xy = state[STRESS_SEED_XY];
@@ -342,13 +350,23 @@ class ViscoElasticity {
         const Real stress_xy_n = stress_xy_eq_n + mu_e_scaled*dev_elastic_n[2];
 
         // Built-in objective seed: 0.5*(sxx^2 + syy^2 + 2*sxy^2), plus external/global stress seeds.
-        const Real bar_sigma_xx = stress_xx_n + stress_seed_xx;
-        const Real bar_sigma_yy = stress_yy_n + stress_seed_yy;
-        const Real bar_sigma_xy = 2.0*stress_xy_n + stress_seed_xy;
+        const Real bar_sigma_xx = adjoint_material_objective_weight*stress_xx_n + stress_seed_xx;
+        const Real bar_sigma_yy = adjoint_material_objective_weight*stress_yy_n + stress_seed_yy;
+        const Real bar_sigma_xy = 2.0*adjoint_material_objective_weight*stress_xy_n + stress_seed_xy;
 
         dparam_tau += lambda_q_np1[0]*(q_n[0] - dev_strain_np1[0])*A*(dt_abs/(tau*tau));
         dparam_tau += lambda_q_np1[1]*(q_n[1] - dev_strain_np1[1])*A*(dt_abs/(tau*tau));
         dparam_tau += lambda_q_np1[2]*(q_n[2] - dev_strain_np1[2])*A*(dt_abs/(tau*tau));
+
+        const Real dsigma_xx_dscale =
+          (lam + mu2)*previous_strain[0] + lam*previous_strain[1] + mu2_e*dev_elastic_n[0];
+        const Real dsigma_yy_dscale =
+          lam*previous_strain[0] + (lam + mu2)*previous_strain[1] + mu2_e*dev_elastic_n[1];
+        const Real dsigma_xy_dscale =
+          mu*previous_strain[2] + mu_e*dev_elastic_n[2];
+        dparam_stiffness_scaling += bar_sigma_xx*dsigma_xx_dscale;
+        dparam_stiffness_scaling += bar_sigma_yy*dsigma_yy_dscale;
+        dparam_stiffness_scaling += bar_sigma_xy*dsigma_xy_dscale;
 
         dparam_mu_e += bar_sigma_xx*(2.0*stiffness_scaling_factor*dev_elastic_n[0]);
         dparam_mu_e += bar_sigma_yy*(2.0*stiffness_scaling_factor*dev_elastic_n[1]);
@@ -415,6 +433,7 @@ class ViscoElasticity {
     state[OVERFLOW_COUNTER] = Real(overflow_counter);
     state[DPARAM_RELAXATION_TIME] = dparam_tau;
     state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT] = dparam_mu_e;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR] = dparam_stiffness_scaling;
     state[STRESS_SEED_XX] = 0.0;
     state[STRESS_SEED_YY] = 0.0;
     state[STRESS_SEED_XY] = 0.0;
@@ -451,12 +470,13 @@ class ViscoElasticity {
     }
   }
 
-  int adjoint_num_params(void) const { return 2; }
+  int adjoint_num_params(void) const { return 3; }
 
   const char* adjoint_param_name(int i) const {
     switch (i) {
       case 0: return "relaxation_time";
       case 1: return "shear_modulus_Maxwell_element";
+      case 2: return "stiffness_scaling_factor";
       default: return "";
     }
   }
@@ -467,11 +487,24 @@ class ViscoElasticity {
     state[STRESS_SEED_XY] += seed_xy;
   }
 
+  // Second-kick stress seeds act at the current rematerialized state (n+1),
+  // so their history contribution must enter lambda_q_(n+1) directly.
+  void adjoint_add_history_seed_from_stress(Real* state,
+                                            Real seed_xx, Real seed_yy, Real seed_xy) {
+    const Real stiffness_scaling_factor = state[STIFFNESS_SCALING];
+    const Real mu2_e_scaled = stiffness_scaling_factor * mu2_e;
+    const Real mu_e_scaled  = stiffness_scaling_factor * mu_e;
+    state[LAMBDA_Q_XX] += -mu2_e_scaled*seed_xx;
+    state[LAMBDA_Q_YY] += -mu2_e_scaled*seed_yy;
+    state[LAMBDA_Q_XY] += -mu_e_scaled*seed_xy;
+  }
+
   void adjoint_objective_seed(Real*) { }
 
   Real adjoint_get_param_gradient(const Real* state, int i) const {
     if (i == 0) { return state[DPARAM_RELAXATION_TIME]; }
     if (i == 1) { return state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT]; }
+    if (i == 2) { return state[DPARAM_STIFFNESS_SCALING_FACTOR]; }
     return Real(0.0);
   }
 
@@ -525,6 +558,14 @@ class ViscoElasticity {
       stress_seed_xx*(2.0*stiffness_scaling_factor*dev_elastic_xx) +
       stress_seed_yy*(2.0*stiffness_scaling_factor*dev_elastic_yy) +
       stress_seed_xy*(stiffness_scaling_factor*dev_elastic_xy);
+
+    const Real dsigma_xx_dscale = (lam + mu2)*exx + lam*eyy + mu2_e*dev_elastic_xx;
+    const Real dsigma_yy_dscale = lam*exx + (lam + mu2)*eyy + mu2_e*dev_elastic_yy;
+    const Real dsigma_xy_dscale = mu*gxy + mu_e*dev_elastic_xy;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR] +=
+      stress_seed_xx*dsigma_xx_dscale +
+      stress_seed_yy*dsigma_yy_dscale +
+      stress_seed_xy*dsigma_xy_dscale;
   }
 
 
@@ -556,6 +597,7 @@ class ViscoElasticity {
     field_data[22] = state[STRESS_SEED_XX];
     field_data[23] = state[STRESS_SEED_YY];
     field_data[24] = state[STRESS_SEED_XY];
+    field_data[25] = state[DPARAM_STIFFNESS_SCALING_FACTOR];
   }
 
   // Return the initial sound speed

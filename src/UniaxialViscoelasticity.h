@@ -23,6 +23,7 @@ class UniaxialViscoelasticity {
   Real E;     // Young's modulus
   Real eta;   // Viscosity
   Real tau;   // Relaxation time
+  Real adjoint_material_objective_weight = 1.0;
   int  mat_overflow_limit = std::numeric_limits<int>::max();
 
   enum StateIndex {
@@ -141,6 +142,9 @@ class UniaxialViscoelasticity {
 
     // Get overflow limit for material history variables
     if (params.count("mat_overflow_limit") > 0) { mat_overflow_limit = int(params["mat_overflow_limit"]); }
+    if (params.count("adjoint_material_objective_weight") > 0) {
+      adjoint_material_objective_weight = params["adjoint_material_objective_weight"];
+    }
   }
 
   int num_state_vars(void) { return 10; }
@@ -270,8 +274,8 @@ class UniaxialViscoelasticity {
         // dL/dtau += bar(q_{n+1}) * dq_{n+1}/dtau
         ParameterGradient local_grad;
         local_grad.dTau() = lambda_n_plus_one * (q_n - strain_n_plus_one) * A_real * (dt_abs/(tau*tau));
-        // d/dE of psi_n = 0.5*E*(eps_n-q_n)^2 with q treated as fixed local state input
-        local_grad.dE() = 0.5*elastic_strain_n*elastic_strain_n;
+        // d/dE of built-in local objective term with q treated as fixed local state input
+        local_grad.dE() = adjoint_material_objective_weight*0.5*elastic_strain_n*elastic_strain_n;
         // external/global stress seeds contribute directly to dE via sigma_n = E*(eps_n-q_n)
         local_grad.dE() += incoming_stress_seed*elastic_strain_n;
         dparam_relaxation_time_accum += local_grad.dTau();
@@ -284,7 +288,7 @@ class UniaxialViscoelasticity {
         } else {
           lambda_adjoint = lambda_adjoint * A_rat;
         }
-        Dual<LambdaAdj> dlambda(LambdaAdj(-sigma_n - E*incoming_stress_seed), LambdaAdj(0.0));
+        Dual<LambdaAdj> dlambda(LambdaAdj(-adjoint_material_objective_weight*sigma_n - E*incoming_stress_seed), LambdaAdj(0.0));
         lambda_adjoint = lambda_adjoint + dlambda;
       }
 
@@ -347,6 +351,17 @@ class UniaxialViscoelasticity {
   }
 
   void adjoint_add_stress_seed(Real* state, Real seed) { state[STRESS_SEED] += seed; }
+
+  // Second-kick stress seeds act at the current rematerialized state (n+1),
+  // so their history contribution must enter lambda_(n+1) directly.
+  void adjoint_add_history_seed_from_stress(Real* state, Real seed) {
+    LambdaAdj lambda_p, lambda_d;
+    load_from_Real(state[LAMBDA_ADJOINT], lambda_p);
+    load_from_Real(state[DUAL_LAMBDA_ADJOINT], lambda_d);
+    lambda_p = lambda_p + LambdaAdj(-E*seed);
+    save_as_Real(lambda_p, state[LAMBDA_ADJOINT]);
+    save_as_Real(lambda_d, state[DUAL_LAMBDA_ADJOINT]);
+  }
 
   void adjoint_objective_seed(Real*) { }
 

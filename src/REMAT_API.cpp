@@ -143,6 +143,27 @@ extern "C" {
   
   // ------------------------------------------------------------------------ //
 
+  // Clear global adjoint state (u*, v*, kick seeds and global accumulators)
+  void clear_adjoint_state() {
+    remat->clear_adjoint_state();
+  } // clear_adjoint_state()
+
+  // ------------------------------------------------------------------------ //
+
+  // Add nodal velocity adjoint seeds (seed_xy stores [seed_x, seed_y] per node)
+  void add_nodal_velocity_adjoint_seed(int *node_ids, double *seed_xy, size_t Nnodes) {
+    remat->add_nodal_velocity_adjoint_seed(node_ids,seed_xy,static_cast<int>(Nnodes));
+  } // add_nodal_velocity_adjoint_seed()
+
+  // ------------------------------------------------------------------------ //
+
+  // Add nodal displacement adjoint seeds (seed_xy stores [seed_x, seed_y] per node)
+  void add_nodal_displacement_adjoint_seed(int *node_ids, double *seed_xy, size_t Nnodes) {
+    remat->add_nodal_displacement_adjoint_seed(node_ids,seed_xy,static_cast<int>(Nnodes));
+  } // add_nodal_displacement_adjoint_seed()
+  
+  // ------------------------------------------------------------------------ //
+
   // Update the System state
   double update_state(double dt, int Nsub_steps, int phase) {
     // Record the starting wall time

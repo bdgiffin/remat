@@ -77,6 +77,12 @@ API.define_displacement_bc.argtypes = [NI_POINTER_1, c_size_t, c_int, c_time_fun
 API.define_displacement_bc.restype  = None
 API.initialize.argtypes = None
 API.initialize.restype  = None
+API.clear_adjoint_state.argtypes = None
+API.clear_adjoint_state.restype  = None
+API.add_nodal_velocity_adjoint_seed.argtypes = [NI_POINTER_1, ND_POINTER_2, c_size_t]
+API.add_nodal_velocity_adjoint_seed.restype  = None
+API.add_nodal_displacement_adjoint_seed.argtypes = [NI_POINTER_1, ND_POINTER_2, c_size_t]
+API.add_nodal_displacement_adjoint_seed.restype  = None
 API.initialize_variable_properties.argtypes = [c_function_2d]
 API.initialize_variable_properties.restype  = None
 API.update_state.argtypes = [c_double, c_int, c_int]
@@ -175,5 +181,49 @@ def get_field(entity_type,field_name):
 
     # Return nothing if the indicated field does not exist
     return None
+
+# ---------------------------------------------------------------------------- #
+
+def clear_adjoint_state():
+    API.clear_adjoint_state()
+
+# ---------------------------------------------------------------------------- #
+
+def _prepare_seed_arrays(node_ids, seed_xy):
+    node_ids = np.asarray(node_ids, dtype=np.int32).ravel()
+    seed_xy = np.asarray(seed_xy, dtype=np.double)
+
+    if node_ids.size == 0:
+        return node_ids, np.zeros((0, 2), dtype=np.double)
+
+    if seed_xy.ndim == 1:
+        if seed_xy.size != 2 * node_ids.size:
+            raise ValueError(
+                f"seed_xy size mismatch: expected {2*node_ids.size} entries, got {seed_xy.size}"
+            )
+        seed_xy = seed_xy.reshape((node_ids.size, 2))
+    elif seed_xy.ndim == 2:
+        if seed_xy.shape != (node_ids.size, 2):
+            raise ValueError(
+                f"seed_xy shape mismatch: expected ({node_ids.size}, 2), got {seed_xy.shape}"
+            )
+    else:
+        raise ValueError(f"seed_xy must be 1D or 2D, got ndim={seed_xy.ndim}")
+
+    node_ids = np.ascontiguousarray(node_ids, dtype=np.int32)
+    seed_xy = np.ascontiguousarray(seed_xy, dtype=np.double)
+    return node_ids, seed_xy
+
+# ---------------------------------------------------------------------------- #
+
+def add_nodal_velocity_adjoint_seed(node_ids, seed_xy):
+    node_ids, seed_xy = _prepare_seed_arrays(node_ids, seed_xy)
+    API.add_nodal_velocity_adjoint_seed(node_ids, seed_xy, node_ids.size)
+
+# ---------------------------------------------------------------------------- #
+
+def add_nodal_displacement_adjoint_seed(node_ids, seed_xy):
+    node_ids, seed_xy = _prepare_seed_arrays(node_ids, seed_xy)
+    API.add_nodal_displacement_adjoint_seed(node_ids, seed_xy, node_ids.size)
 
 # ---------------------------------------------------------------------------- #

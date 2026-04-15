@@ -242,3 +242,49 @@ TEST(test_UniaxialViscoelasticity, gradient_dparams_match_finite_difference) {
   Real tol_E = 1.0e-2 * std::max(Real(1.0),std::fabs(fd_dE));
   ASSERT_NEAR(adj.dparam_youngs_modulus,fd_dE,tol_E);
 }
+
+TEST(test_UniaxialViscoelasticity, second_kick_history_seed_enables_tau_gradient_match) {
+  const Real tau = 0.32;
+  const Real E = 2.3;
+  const Real dt = 2.0e-3;
+  const Real h_tau = 1.0e-4;
+  const Real strain = 0.035;
+  const Real seed_sigma = 0.9;
+
+  auto objective_one_step = [&](Real tau_value) {
+    Parameters params = make_params<FloatViscoModel>(tau_value,E,1000000);
+    params["adjoint_material_objective_weight"] = 0.0;
+    FloatViscoModel model(params);
+    std::vector<Real> state(model.num_state_vars(),0.0);
+    model.initialize(state.data());
+    Real psi = 0.0;
+    model.update(1.0 + strain,psi,state.data(),dt,PassPhase::Forward);
+    return seed_sigma*state[0];
+  };
+
+  auto run_adjoint_tau = [&](bool with_history_seed) {
+    Parameters params = make_params<FloatViscoModel>(tau,E,1000000);
+    params["adjoint_material_objective_weight"] = 0.0;
+    FloatViscoModel model(params);
+    std::vector<Real> state(model.num_state_vars(),0.0);
+    model.initialize(state.data());
+    Real psi = 0.0;
+    model.update(1.0 + strain,psi,state.data(),dt,PassPhase::Forward);
+    if (with_history_seed) {
+      model.adjoint_add_history_seed_from_stress(state.data(),seed_sigma);
+    }
+    model.update(1.0 + strain,psi,state.data(),dt,PassPhase::BackwardAdjoint);
+    return state[5];
+  };
+
+  const Real fd_tau = (objective_one_step(tau + h_tau) - objective_one_step(tau - h_tau))/(2.0*h_tau);
+  const Real grad_without_history = run_adjoint_tau(false);
+  const Real grad_with_history = run_adjoint_tau(true);
+  const Real rel_without = std::fabs(grad_without_history - fd_tau) /
+    std::max({std::fabs(grad_without_history),std::fabs(fd_tau),Real(1.0e-14)});
+  const Real rel_with = std::fabs(grad_with_history - fd_tau) /
+    std::max({std::fabs(grad_with_history),std::fabs(fd_tau),Real(1.0e-14)});
+
+  ASSERT_GT(rel_without,0.5);
+  ASSERT_LT(rel_with,5.0e-2);
+}

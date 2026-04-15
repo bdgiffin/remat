@@ -273,7 +273,7 @@ public:
     const int n = const_cast<Material_T&>(m_model).num_state_vars();
     Real accum = 0.0;
     for (int q=0; q<4; q++) {
-      accum += 0.25*material_adjoint_get_param_gradient(m_model,&state[(q+1)*n],i);
+      accum += material_adjoint_get_param_gradient(m_model,&state[(q+1)*n],i);
     }
     return accum;
   }

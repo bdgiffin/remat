@@ -12,6 +12,7 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+#include <array>
 
 namespace {
 
@@ -176,7 +177,8 @@ struct PointMassKickRun {
 };
 
 PointMassKickRun run_point_mass_case(Real alpha_coeff, Real wall_k, Real y0, Real vy0,
-                                     int steps, Real dt, Real seed, bool run_adjoint) {
+                                     int steps, Real dt, Real seed, bool run_adjoint,
+                                     bool use_seed_api = false) {
   PointMassSystem sys;
 
   const int Nnodes = 1;
@@ -215,9 +217,18 @@ PointMassKickRun run_point_mass_case(Real alpha_coeff, Real wall_k, Real y0, Rea
   Real grad_alpha = 0.0;
   Real grad_k = 0.0;
   if (run_adjoint) {
-    std::fill(sys.u_adjoint.begin(),sys.u_adjoint.end(),0.0);
-    std::fill(sys.v_adjoint.begin(),sys.v_adjoint.end(),0.0);
-    sys.v_adjoint[seed_dof] = seed;
+    if (use_seed_api) {
+      sys.clear_adjoint_state();
+      const int sensor_nodes[1] = { 0 };
+      const double seed_xy[2] = { 0.0, seed };
+      sys.add_nodal_velocity_adjoint_seed(sensor_nodes,seed_xy,1);
+      const double zero_disp_seed[2] = { 0.0, 0.0 };
+      sys.add_nodal_displacement_adjoint_seed(sensor_nodes,zero_disp_seed,1);
+    } else {
+      std::fill(sys.u_adjoint.begin(),sys.u_adjoint.end(),0.0);
+      std::fill(sys.v_adjoint.begin(),sys.v_adjoint.end(),0.0);
+      sys.v_adjoint[seed_dof] = seed;
+    }
     for (int i=0; i<steps; i++) {
       sys.update_state(dt,PassPhase::BackwardAdjoint);
     }
@@ -226,6 +237,121 @@ PointMassKickRun run_point_mass_case(Real alpha_coeff, Real wall_k, Real y0, Rea
   }
 
   return { grad_alpha, grad_k, phi };
+}
+
+Real two_layer_scale_coeffs[2] = { 1.0, 1.0 };
+
+double two_layer_stiffness_scaling(double, double y) {
+  return (y < 1.0) ? two_layer_scale_coeffs[0] : two_layer_scale_coeffs[1];
+}
+
+struct TwoLayerInverseRun {
+  Real loss;
+  Real grad_tau;
+  std::array<Real,2> grad_layers;
+  std::vector<Real> sensor_history; // [vy_sensor0, vy_sensor1] per time step
+};
+
+TwoLayerInverseRun run_two_layer_inverse_case(Real scale0, Real scale1, Real tau,
+                                              int steps, Real dt,
+                                              const std::vector<Real>* observed_history,
+                                              bool compute_gradients) {
+  ElementSystem sys;
+
+  const int Nnodes = 6;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 2;
+  const int Nnodes_per_elem = 4;
+
+  double coordinates[12] = {
+    0.0,0.0, 1.0,0.0,
+    0.0,1.0, 1.0,1.0,
+    0.0,2.0, 1.0,2.0
+  };
+  double velocities[12] = {
+    0.0,0.0, 0.0,0.0,
+    0.0,0.0, 0.0,0.0,
+    0.0,-0.18, 0.0,-0.18
+  };
+  bool fixity[12] = {
+    true,true,  true,true,   // bottom row fixed
+    true,false, true,false,  // middle row: x fixed, y free
+    true,false, true,false   // top row: x fixed, y free
+  };
+  int connectivity[8] = {
+    0,1,3,2,
+    2,3,5,4
+  };
+
+  Parameters params;
+  params["density"] = 1.0;
+  params["youngs_modulus"] = 2.0;
+  params["poissons_ratio"] = 0.25;
+  params["relaxation_time"] = tau;
+  params["shear_modulus_Maxwell_element"] = 0.8;
+  params["mass_damping_factor"] = 0.0;
+  params["contact_stiffness"] = 0.0;
+  params["adjoint_material_objective_weight"] = 0.0; // sensor-misfit-only objective
+
+  sys.initialize(coordinates,velocities,fixity,Nnodes,Ndofs_per_node,
+                 connectivity,Nelems,Nnodes_per_elem,params);
+  two_layer_scale_coeffs[0] = scale0;
+  two_layer_scale_coeffs[1] = scale1;
+  sys.initialize_variable_properties(two_layer_stiffness_scaling);
+  sys.initialize_state();
+
+  std::vector<Real> sensor_history(2*steps,0.0);
+  Real loss = 0.0;
+  for (int k=0; k<steps; k++) {
+    sys.update_state(dt,PassPhase::Forward);
+    const Real vy0 = Real(sys.v[2*4 + 1].first);
+    const Real vy1 = Real(sys.v[2*5 + 1].first);
+    sensor_history[2*k + 0] = vy0;
+    sensor_history[2*k + 1] = vy1;
+    if (observed_history != nullptr) {
+      const Real r0 = vy0 - (*observed_history)[2*k + 0];
+      const Real r1 = vy1 - (*observed_history)[2*k + 1];
+      loss += 0.5*(r0*r0 + r1*r1);
+    }
+  }
+
+  Real grad_tau = 0.0;
+  std::array<Real,2> grad_layers = { 0.0, 0.0 };
+  if (compute_gradients && (observed_history != nullptr)) {
+    sys.clear_adjoint_state();
+    const int sensor_nodes[2] = { 4, 5 };
+    for (int rev=0; rev<steps; rev++) {
+      const int k = steps - 1 - rev;
+      const double seeds_xy[4] = {
+        0.0, sensor_history[2*k + 0] - (*observed_history)[2*k + 0],
+        0.0, sensor_history[2*k + 1] - (*observed_history)[2*k + 1]
+      };
+      sys.add_nodal_velocity_adjoint_seed(sensor_nodes,seeds_xy,2);
+      sys.update_state(dt,PassPhase::BackwardAdjoint);
+    }
+
+    grad_tau = global_field_by_name(sys,"dL_dparam_relaxation_time");
+
+    int stiffness_grad_field = -1;
+    const int num_elem_fields = sys.get_num_fields("element");
+    for (int i=0; i<num_elem_fields; i++) {
+      const std::string field_name = sys.get_field_name("element",i);
+      if (field_name == "dparam_stiffness_scaling_factor") {
+        stiffness_grad_field = i;
+        break;
+      }
+    }
+    if (stiffness_grad_field < 0) {
+      std::cout << "Missing element field: dparam_stiffness_scaling_factor" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    std::vector<double> element_fields(Nelems*num_elem_fields,0.0);
+    sys.get_fields("element",element_fields.data());
+    grad_layers[0] = element_fields[num_elem_fields*0 + stiffness_grad_field];
+    grad_layers[1] = element_fields[num_elem_fields*1 + stiffness_grad_field];
+  }
+
+  return { loss, grad_tau, grad_layers, sensor_history };
 }
 
 } // anonymous namespace
@@ -370,4 +496,106 @@ TEST(test_SystemAdjointKick, damping_and_wall_delta_match_terminal_velocity_fd) 
   Real tol_k = 1.5e-1 * std::max(Real(1.0),std::fabs(fd_k));
   ASSERT_NEAR(delta_alpha,fd_alpha,tol_alpha);
   ASSERT_NEAR(delta_k,fd_k,tol_k);
+}
+
+TEST(test_SystemAdjointKick, nodal_velocity_seed_api_matches_direct_seed) {
+  const Real alpha_coeff = 0.17;
+  const Real wall_k = 2.8;
+  const Real y0 = -0.2;
+  const Real vy0 = 0.11;
+  const int steps = 20;
+  const Real dt = 1.25e-3;
+  const Real seed = 0.55;
+
+  PointMassKickRun direct = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,seed,true,false);
+  PointMassKickRun api = run_point_mass_case(alpha_coeff,wall_k,y0,vy0,steps,dt,seed,true,true);
+
+  ASSERT_NEAR(api.phi,direct.phi,1.0e-14);
+  ASSERT_NEAR(api.grad_alpha,direct.grad_alpha,1.0e-12);
+  ASSERT_NEAR(api.grad_k,direct.grad_k,1.0e-12);
+}
+
+TEST(test_SystemAdjointKick, invalid_sensor_node_id_is_rejected) {
+  PointMassSystem sys;
+
+  const int Nnodes = 1;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 0;
+  const int Nnodes_per_elem = 4;
+
+  double coordinates[2] = { 0.0, 0.0 };
+  double velocities[2]  = { 0.0, 0.0 };
+  bool fixity[2]        = { false, false };
+  int connectivity_dummy[4] = { 0,0,0,0 };
+  int point_ids[1] = { 0 };
+  double point_mass[1] = { 1.0 };
+
+  Parameters params;
+  params["density"] = 1.0;
+  params["youngs_modulus"] = 1.0;
+  params["poissons_ratio"] = 0.25;
+
+  sys.initialize(coordinates,velocities,fixity,Nnodes,Ndofs_per_node,
+                 connectivity_dummy,Nelems,Nnodes_per_elem,params);
+  sys.initialize_point_mass(point_ids,point_mass,1,params);
+  sys.initialize_state();
+
+  const int bad_nodes[1] = { 5 };
+  const double seeds[2] = { 0.0, 1.0 };
+  ASSERT_DEATH(sys.add_nodal_velocity_adjoint_seed(bad_nodes,seeds,1), "");
+}
+
+TEST(test_SystemAdjointKick, two_layer_sensor_misfit_gradients_match_finite_difference) {
+  const int steps = 14;
+  const Real dt = 1.0e-3;
+
+  const Real true_scale0 = 0.78;
+  const Real true_scale1 = 1.22;
+  const Real true_tau = 0.14;
+  TwoLayerInverseRun observed = run_two_layer_inverse_case(
+    true_scale0,true_scale1,true_tau,steps,dt,nullptr,false
+  );
+
+  const Real cand_scale0 = 1.05;
+  const Real cand_scale1 = 0.92;
+  const Real cand_tau = 0.22;
+  TwoLayerInverseRun adj = run_two_layer_inverse_case(
+    cand_scale0,cand_scale1,cand_tau,steps,dt,&observed.sensor_history,true
+  );
+
+  const Real h_tau = 1.0e-4;
+  const Real h_scale = 1.0e-4;
+
+  const Real loss_tau_plus = run_two_layer_inverse_case(
+    cand_scale0,cand_scale1,cand_tau + h_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real loss_tau_minus = run_two_layer_inverse_case(
+    cand_scale0,cand_scale1,cand_tau - h_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real fd_tau = (loss_tau_plus - loss_tau_minus)/(2.0*h_tau);
+
+  const Real loss_s0_plus = run_two_layer_inverse_case(
+    cand_scale0 + h_scale,cand_scale1,cand_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real loss_s0_minus = run_two_layer_inverse_case(
+    cand_scale0 - h_scale,cand_scale1,cand_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real fd_s0 = (loss_s0_plus - loss_s0_minus)/(2.0*h_scale);
+
+  const Real loss_s1_plus = run_two_layer_inverse_case(
+    cand_scale0,cand_scale1 + h_scale,cand_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real loss_s1_minus = run_two_layer_inverse_case(
+    cand_scale0,cand_scale1 - h_scale,cand_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real fd_s1 = (loss_s1_plus - loss_s1_minus)/(2.0*h_scale);
+
+  auto rel_err = [](Real adj_grad, Real fd_grad) {
+    return std::fabs(adj_grad - fd_grad) /
+      std::max({std::fabs(adj_grad),std::fabs(fd_grad),Real(1.0e-12)});
+  };
+
+  ASSERT_LT(rel_err(adj.grad_tau,fd_tau),1.0e-1);
+  ASSERT_LT(rel_err(adj.grad_layers[0],fd_s0),1.0e-1);
+  ASSERT_LT(rel_err(adj.grad_layers[1],fd_s1),1.0e-1);
 }
