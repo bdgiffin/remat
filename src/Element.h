@@ -2,6 +2,7 @@
 #define ELEMENT_H
 
 #include "PassPhase.h"
+#include "MaterialAdjoint.h"
 #include "Parameters.h"
 #include <vector>
 #include <math.h>
@@ -245,6 +246,42 @@ public:
     // loop over integration points (in forward order)
     for (int q=0; q<4; q++) {
       m_model.store_state(&state[num_state_vars*(q+1)],overflow_state);
+    }
+  }
+
+  int adjoint_num_params(void) const { return material_adjoint_num_params(m_model); }
+
+  const char* adjoint_param_name(int i) const { return material_adjoint_param_name(m_model,i); }
+
+  // Element state stores one averaged material point (index 0) and four quadrature points (1..4).
+  // For external seeding, distribute uniformly to quadrature points.
+  void adjoint_add_stress_seed(Real* state, Real seed_xx, Real seed_yy, Real seed_xy) {
+    const int n = m_model.num_state_vars();
+    for (int q=0; q<4; q++) {
+      material_adjoint_add_stress_seed(m_model,&state[(q+1)*n],0.25*seed_xx,0.25*seed_yy,0.25*seed_xy);
+    }
+  }
+
+  void adjoint_objective_seed(Real* state) {
+    const int n = m_model.num_state_vars();
+    for (int q=0; q<4; q++) {
+      material_adjoint_objective_seed(m_model,&state[(q+1)*n]);
+    }
+  }
+
+  Real adjoint_get_param_gradient(const Real* state, int i) const {
+    const int n = const_cast<Material_T&>(m_model).num_state_vars();
+    Real accum = 0.0;
+    for (int q=0; q<4; q++) {
+      accum += 0.25*material_adjoint_get_param_gradient(m_model,&state[(q+1)*n],i);
+    }
+    return accum;
+  }
+
+  void adjoint_clear_step_seed(Real* state) {
+    const int n = m_model.num_state_vars();
+    for (int q=0; q<4; q++) {
+      material_adjoint_clear_step_seed(m_model,&state[(q+1)*n]);
     }
   }
     

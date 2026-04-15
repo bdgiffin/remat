@@ -2,6 +2,7 @@
 #define TRUSS_H
 
 #include "PassPhase.h"
+#include "MaterialAdjoint.h"
 #include "Parameters.h"
 #include <vector>
 #include <string>
@@ -128,6 +129,20 @@ public:
 
   // Conditionally store material history parameters in memory
   void store_state(Real* state, std::vector<Real>& overflow_state) { m_model.store_state(state,overflow_state); }
+
+  int adjoint_num_params(void) const { return material_adjoint_num_params(m_model); }
+
+  const char* adjoint_param_name(int i) const { return material_adjoint_param_name(m_model,i); }
+
+  void adjoint_add_stress_seed(Real* state, Real seed) { material_adjoint_add_stress_seed(m_model,state,seed); }
+
+  void adjoint_objective_seed(Real* state) { material_adjoint_objective_seed(m_model,state); }
+
+  Real adjoint_get_param_gradient(const Real* state, int i) const {
+    return material_adjoint_get_param_gradient(m_model,state,i);
+  }
+
+  void adjoint_clear_step_seed(Real* state) { material_adjoint_clear_step_seed(m_model,state); }
 
   Real get_state_variable(Real* state, std::string state_variable_name) { return m_model.get_state_variable(state,state_variable_name); }
   

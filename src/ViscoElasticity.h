@@ -7,8 +7,10 @@
 #include "Parameters.h"
 #include "Dual.h"
 #include "Fixed.h"
+#include "PassPhase.h"
 #include "Rational.h"
 #include <limits>
+#include <array>
 #include "types.h"
 
 
@@ -31,6 +33,34 @@ class ViscoElasticity {
   Real tau;    // relaxation time
   Real eta;    // viscosity (if provided then tau = eta/mu would be computed)
  private:
+  enum StateIndex {
+    STRESS_XX = 0,
+    STRESS_YY = 1,
+    STRESS_ZZ = 2,
+    STRESS_YZ = 3,
+    STRESS_ZX = 4,
+    STRESS_XY = 5,
+    STRAIN_XX = 6,
+    STRAIN_YY = 7,
+    STRAIN_XY = 8,
+    VISCOUS_XX = 9,
+    VISCOUS_YY = 10,
+    VISCOUS_XY = 11,
+    DUAL_VISCOUS_XX = 12,
+    DUAL_VISCOUS_YY = 13,
+    DUAL_VISCOUS_XY = 14,
+    STIFFNESS_SCALING = 15,
+    OVERFLOW_COUNTER = 16,
+    DPARAM_RELAXATION_TIME = 17,
+    DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT = 18,
+    LAMBDA_Q_XX = 19,
+    LAMBDA_Q_YY = 20,
+    LAMBDA_Q_XY = 21,
+    STRESS_SEED_XX = 22,
+    STRESS_SEED_YY = 23,
+    STRESS_SEED_XY = 24
+  };
+
 
   // Deviatoric projector in 2D
   inline void dev2(Real e[3], Real out[3]) {
@@ -121,7 +151,7 @@ class ViscoElasticity {
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 17; }
+ int num_state_vars(void) { return 25; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -132,6 +162,14 @@ class ViscoElasticity {
       "viscous_strain_xx_dual","viscous_strain_yy_dual","viscous_strain_xy_dual",
       "stiffness_scaling_factor",
       "overflow_counter",
+      "dparam_relaxation_time",
+      "dparam_shear_modulus_maxwell_element",
+      "lambda_q_xx",
+      "lambda_q_yy",
+      "lambda_q_xy",
+      "adjoint_stress_seed_xx",
+      "adjoint_stress_seed_yy",
+      "adjoint_stress_seed_xy",
     });
   }
 
@@ -140,39 +178,55 @@ class ViscoElasticity {
     
   // Initialize the material state
   void initialize(Real* state) {
-    state[0] = 0.0;   // stress_xx
-    state[1] = 0.0;   // stress_yy
-    state[2] = 0.0;   // stress_zz
-    state[3] = 0.0;   // stress_yz
-    state[4] = 0.0;   // stress_zx
-    state[5] = 0.0;   // stress_xy
-    state[6] = 0.0;   // strain_xx
-    state[7] = 0.0;   // strain_yy
-    state[8] = 0.0;   // strain_xy
+    state[STRESS_XX] = 0.0;
+    state[STRESS_YY] = 0.0;
+    state[STRESS_ZZ] = 0.0;
+    state[STRESS_YZ] = 0.0;
+    state[STRESS_ZX] = 0.0;
+    state[STRESS_XY] = 0.0;
+    state[STRAIN_XX] = 0.0;
+    state[STRAIN_YY] = 0.0;
+    state[STRAIN_XY] = 0.0;
     // store primal viscous strains as Fixed_E
-    save_as_Real(FixedE(0.0), state[9]);   // viscous_strain_xx (primal)
-    save_as_Real(FixedE(0.0), state[10]);  // viscous_strain_yy (primal)
-    save_as_Real(FixedE(0.0), state[11]);  // viscous_strain_xy (primal)
+    save_as_Real(FixedE(0.0), state[VISCOUS_XX]);
+    save_as_Real(FixedE(0.0), state[VISCOUS_YY]);
+    save_as_Real(FixedE(0.0), state[VISCOUS_XY]);
     // store dual viscous strains as Fixed_E
-    save_as_Real(FixedE(0.0), state[12]);  // viscous_strain_xx (dual)
-    save_as_Real(FixedE(0.0), state[13]);  // viscous_strain_yy (dual)
-    save_as_Real(FixedE(0.0), state[14]);  // viscous_strain_xy (dual)
-    state[15] = 1.0; // stiffness_scaling_factor
-    state[16] = Real(0); // overflow_counter
+    save_as_Real(FixedE(0.0), state[DUAL_VISCOUS_XX]);
+    save_as_Real(FixedE(0.0), state[DUAL_VISCOUS_YY]);
+    save_as_Real(FixedE(0.0), state[DUAL_VISCOUS_XY]);
+    state[STIFFNESS_SCALING] = 1.0;
+    state[OVERFLOW_COUNTER] = Real(0);
+    state[DPARAM_RELAXATION_TIME] = 0.0;
+    state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT] = 0.0;
+    state[LAMBDA_Q_XX] = 0.0;
+    state[LAMBDA_Q_YY] = 0.0;
+    state[LAMBDA_Q_XY] = 0.0;
+    state[STRESS_SEED_XX] = 0.0;
+    state[STRESS_SEED_YY] = 0.0;
+    state[STRESS_SEED_XY] = 0.0;
   } // initialize()
 
   // Do we have to keep this?
   // Initialize variable material properties
   void initialize_variable_properties(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
-    state[15] = function_xy(x[0],x[1]);
+    state[STIFFNESS_SCALING] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
 
-  // Update the material state using the current deformation gradient F
+  // Backward compatibility path for older materials that used signed dt.
   void update(Real (&F)[2][2],Real &psi, Real* state, Real dt) {
-    // Update at a material point.
-    // Input: F (2x2), dt. Small strain: eps = sym(F - I).
-    // Output: Updated states means updated viscous strain and stress values
+    PassPhase phase = (dt >= 0.0) ? PassPhase::Forward : PassPhase::Backward;
+    update(F,psi,state,std::fabs(dt),phase);
+  }
+
+  // Update the material state using the current deformation gradient F
+  void update(Real (&F)[2][2], Real &psi, Real* state, Real dt, PassPhase phase) {
+    if (dt <= 0.0) {
+      std::cout << "ViscoElasticity::update requires dt > 0.0 for explicit phases" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
     Real J = F[0][0]*F[1][1] - F[0][1]*F[1][0];
     if (J <= 0.0) {
       std::cout << "F = [[" << F[0][0] << ", " << F[0][1] << "], "<< "[" << F[1][0] << ", " << F[1][1] << "]]\n";
@@ -180,199 +234,282 @@ class ViscoElasticity {
       exit(EXIT_FAILURE);
     }
 
-    // 1) 2D small strain (engineering shear)
+    const bool reverse_phase = is_reverse_phase(phase);
+    const bool run_adjoint = (phase == PassPhase::BackwardAdjoint);
+    const Real dt_abs = std::fabs(dt);
+
+    // 2D small strain (engineering shear)
     Real strain_xx = F[0][0] - 1.0;
     Real strain_yy = F[1][1] - 1.0;
-    Real strain_xy = 2.0*0.5*(F[0][1] + F[1][0]); // engineering gamma_xy                 
- 
+    Real strain_xy = F[0][1] + F[1][0];
 
-
-    // 3) Viscous strain main update -- load dual/fixed stored values
+    // Viscous strain state
     FixedE vs_xx_p, vs_xx_d;
     FixedE vs_yy_p, vs_yy_d;
     FixedE vs_xy_p, vs_xy_d;
-    load_from_Real(state[9],  vs_xx_p); load_from_Real(state[12], vs_xx_d);
-    load_from_Real(state[10], vs_yy_p); load_from_Real(state[13], vs_yy_d);
-    load_from_Real(state[11], vs_xy_p); load_from_Real(state[14], vs_xy_d);
+    load_from_Real(state[VISCOUS_XX],      vs_xx_p);
+    load_from_Real(state[DUAL_VISCOUS_XX], vs_xx_d);
+    load_from_Real(state[VISCOUS_YY],      vs_yy_p);
+    load_from_Real(state[DUAL_VISCOUS_YY], vs_yy_d);
+    load_from_Real(state[VISCOUS_XY],      vs_xy_p);
+    load_from_Real(state[DUAL_VISCOUS_XY], vs_xy_d);
 
     Dual<FixedE> viscous_strain_xx(vs_xx_p, vs_xx_d);
     Dual<FixedE> viscous_strain_yy(vs_yy_p, vs_yy_d);
     Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
-    Real previous_strain_xx  =  state[6];
-    Real previous_strain_yy  =  state[7];
-    Real previous_strain_xy  =  state[8];
+    int overflow_counter = int(state[OVERFLOW_COUNTER]);
+    Real previous_strain[3] = { state[STRAIN_XX], state[STRAIN_YY], state[STRAIN_XY] };
+    Real dev_previous_strain[3] = { 0.0, 0.0, 0.0 };
+    Real dev_strain_np1[3] = { 0.0, 0.0, 0.0 };
+    Real lambda_q_np1[3] = { state[LAMBDA_Q_XX], state[LAMBDA_Q_YY], state[LAMBDA_Q_XY] };
+    Real dparam_tau = state[DPARAM_RELAXATION_TIME];
+    Real dparam_mu_e = state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT];
+    const Real stress_seed_xx = state[STRESS_SEED_XX];
+    const Real stress_seed_yy = state[STRESS_SEED_YY];
+    const Real stress_seed_xy = state[STRESS_SEED_XY];
 
-    int overflow_counter = int(state[16]);
-    // Define a vector version of previous strain for taking the dev part easier
-    Real previous_strain[3] = { previous_strain_xx, previous_strain_yy,  previous_strain_xy }; // Previous step, strain
-    Real dev_previous_strain[3];
-
-    Real A = std::exp(-std::fabs(dt)/tau);
-    // Use Rational for reversible operations
+    const Real A = std::exp(-dt_abs/tau);
     Ratio A_rat(A);
 
-    if (dt >= 0.0) {
-      // First step of algorigthm
+    if (phase == PassPhase::Forward) {
       viscous_strain_xx = viscous_strain_xx * A_rat;
       viscous_strain_yy = viscous_strain_yy * A_rat;
       viscous_strain_xy = viscous_strain_xy * A_rat;
 
-      // Second step eps_prev = eps
       previous_strain[0] = strain_xx;
       previous_strain[1] = strain_yy;
       previous_strain[2] = strain_xy;
 
-      // Third step final calculation
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
+      Dual<FixedE> dxx(dev_previous_strain[0]*(1-A_rat),0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1]*(1-A_rat),0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2]*(1-A_rat),0.0);
       viscous_strain_xx = viscous_strain_xx + dxx;
       viscous_strain_yy = viscous_strain_yy + dyy;
       viscous_strain_xy = viscous_strain_xy + dxy;
 
+      // Forward sweep terminal state for reverse adjoint.
+      state[LAMBDA_Q_XX] = 0.0;
+      state[LAMBDA_Q_YY] = 0.0;
+      state[LAMBDA_Q_XY] = 0.0;
+
       overflow_counter++;
-    } else {
-      // First step of algorigthm
+    } else if (reverse_phase) {
+      if (run_adjoint) {
+        dev2(previous_strain,dev_strain_np1); // epsilon_{n+1} deviatoric part
+      }
+
+      // Inverse rematerialization of viscous history.
       dev2(previous_strain,dev_previous_strain);
-      Dual<FixedE> dxx(dev_previous_strain[0] * (1-A_rat), 0.0);
-      Dual<FixedE> dyy(dev_previous_strain[1] * (1-A_rat), 0.0);
-      Dual<FixedE> dxy(dev_previous_strain[2] * (1-A_rat), 0.0);
-           
+      Dual<FixedE> dxx(dev_previous_strain[0]*(1-A_rat),0.0);
+      Dual<FixedE> dyy(dev_previous_strain[1]*(1-A_rat),0.0);
+      Dual<FixedE> dxy(dev_previous_strain[2]*(1-A_rat),0.0);
       viscous_strain_xx = viscous_strain_xx - dxx;
       viscous_strain_yy = viscous_strain_yy - dyy;
       viscous_strain_xy = viscous_strain_xy - dxy;
-     
-      // Second step eps_prev = eps
+
       previous_strain[0] = strain_xx;
       previous_strain[1] = strain_yy;
       previous_strain[2] = strain_xy;
 
-      // Third step
       viscous_strain_xx = viscous_strain_xx / A_rat;
       viscous_strain_yy = viscous_strain_yy / A_rat;
       viscous_strain_xy = viscous_strain_xy / A_rat;
 
+      if (run_adjoint) {
+        const Real q_n[3] = { Real(viscous_strain_xx.first), Real(viscous_strain_yy.first), Real(viscous_strain_xy.first) };
+        Real dev_strain_n[3] = { 0.0, 0.0, 0.0 };
+        dev2(previous_strain,dev_strain_n);
+        const Real dev_elastic_n[3] = {
+          dev_strain_n[0] - q_n[0],
+          dev_strain_n[1] - q_n[1],
+          dev_strain_n[2] - q_n[2]
+        };
+
+        const Real stiffness_scaling_factor = state[STIFFNESS_SCALING];
+        const Real mu2_scaled = stiffness_scaling_factor * mu2;
+        const Real mu_scaled  = stiffness_scaling_factor * mu;
+        const Real lam_scaled = stiffness_scaling_factor * lam;
+        const Real mu2_e_scaled = stiffness_scaling_factor * mu2_e;
+        const Real mu_e_scaled  = stiffness_scaling_factor * mu_e;
+
+        const Real stress_xx_eq_n = (lam_scaled + mu2_scaled)*previous_strain[0] + lam_scaled*previous_strain[1];
+        const Real stress_yy_eq_n = lam_scaled*previous_strain[0] + (lam_scaled + mu2_scaled)*previous_strain[1];
+        const Real stress_xy_eq_n = mu_scaled*previous_strain[2];
+        const Real stress_xx_n = stress_xx_eq_n + mu2_e_scaled*dev_elastic_n[0];
+        const Real stress_yy_n = stress_yy_eq_n + mu2_e_scaled*dev_elastic_n[1];
+        const Real stress_xy_n = stress_xy_eq_n + mu_e_scaled*dev_elastic_n[2];
+
+        // Built-in objective seed: 0.5*(sxx^2 + syy^2 + 2*sxy^2), plus external/global stress seeds.
+        const Real bar_sigma_xx = stress_xx_n + stress_seed_xx;
+        const Real bar_sigma_yy = stress_yy_n + stress_seed_yy;
+        const Real bar_sigma_xy = 2.0*stress_xy_n + stress_seed_xy;
+
+        dparam_tau += lambda_q_np1[0]*(q_n[0] - dev_strain_np1[0])*A*(dt_abs/(tau*tau));
+        dparam_tau += lambda_q_np1[1]*(q_n[1] - dev_strain_np1[1])*A*(dt_abs/(tau*tau));
+        dparam_tau += lambda_q_np1[2]*(q_n[2] - dev_strain_np1[2])*A*(dt_abs/(tau*tau));
+
+        dparam_mu_e += bar_sigma_xx*(2.0*stiffness_scaling_factor*dev_elastic_n[0]);
+        dparam_mu_e += bar_sigma_yy*(2.0*stiffness_scaling_factor*dev_elastic_n[1]);
+        dparam_mu_e += bar_sigma_xy*(stiffness_scaling_factor*dev_elastic_n[2]);
+
+        state[LAMBDA_Q_XX] = A*lambda_q_np1[0] - mu2_e_scaled*bar_sigma_xx;
+        state[LAMBDA_Q_YY] = A*lambda_q_np1[1] - mu2_e_scaled*bar_sigma_yy;
+        state[LAMBDA_Q_XY] = A*lambda_q_np1[2] - mu_e_scaled*bar_sigma_xy;
+      }
+
       overflow_counter--;
-    } // end if dt
+    } else {
+      std::cout << "ViscoElasticity::update received unsupported phase: "
+                << pass_phase_name(phase) << std::endl;
+      exit(EXIT_FAILURE);
+    }
 
-    // 4) Solve for stress with elastic part of strain
-    Real stiffness_scaling_factor = state[15];
+    // Stress update from rematerialized state.
+    const Real stiffness_scaling_factor = state[STIFFNESS_SCALING];
+    const Real mu2_scaled = stiffness_scaling_factor * mu2;
+    const Real mu_scaled  = stiffness_scaling_factor * mu;
+    const Real lam_scaled = stiffness_scaling_factor * lam;
+    const Real mu2_e_scaled = stiffness_scaling_factor * mu2_e;
+    const Real mu_e_scaled  = stiffness_scaling_factor * mu_e;
 
-    // Scaled equilibrium stiffnesses
-    Real mu2_scaled = stiffness_scaling_factor * mu2;
-    Real mu_scaled  = stiffness_scaling_factor * mu;
-    // Scaled first Lame parameter (Watch out this is only exact for 2D)
-    Real lam_scaled = stiffness_scaling_factor * lam;
-    // Apply scaling to the Maxwell shear stiffness as well
-    Real mu2_e_scaled = stiffness_scaling_factor * mu2_e;
-    Real mu_e_scaled  = stiffness_scaling_factor * mu_e;
+    const Real strain_now_xx = previous_strain[0];
+    const Real strain_now_yy = previous_strain[1];
+    const Real strain_now_xy = previous_strain[2];
 
-    // Equilibrium (long-time) stress: full isotropic Hooke in 2D
-    Real stress_xx_eq = (lam_scaled + mu2_scaled)*strain_xx + lam_scaled*strain_yy;
-    Real stress_yy_eq = lam_scaled* strain_xx + (lam_scaled + mu2_scaled)*strain_yy;
-    Real stress_xy_eq = mu_scaled * strain_xy;
+    const Real stress_xx_eq = (lam_scaled + mu2_scaled)*strain_now_xx + lam_scaled*strain_now_yy;
+    const Real stress_yy_eq = lam_scaled*strain_now_xx + (lam_scaled + mu2_scaled)*strain_now_yy;
+    const Real stress_xy_eq = mu_scaled * strain_now_xy;
 
-    // Maxwell branch (deviatoric only): sigma_M = 2*mu_e (deviatoric part of current strain - viscous part)
-    // The reason why the previous_strain is used is that the current strain is poured into the previous_strain at this point. (after the update function)
     dev2(previous_strain,dev_previous_strain);
-    Real dev_elastic_strain_xx = dev_previous_strain[0] - Real(viscous_strain_xx.first);
-    Real dev_elastic_strain_yy = dev_previous_strain[1] - Real(viscous_strain_yy.first);
-    Real dev_elastic_strain_xy = dev_previous_strain[2] - Real(viscous_strain_xy.first);
+    const Real dev_elastic_strain_xx = dev_previous_strain[0] - Real(viscous_strain_xx.first);
+    const Real dev_elastic_strain_yy = dev_previous_strain[1] - Real(viscous_strain_yy.first);
+    const Real dev_elastic_strain_xy = dev_previous_strain[2] - Real(viscous_strain_xy.first);
 
-    Real stress_xx_Maxwell = mu2_e_scaled*(dev_elastic_strain_xx);
-    Real stress_yy_Maxwell = mu2_e_scaled*(dev_elastic_strain_yy);
-    Real stress_xy_Maxwell = mu_e_scaled*(dev_elastic_strain_xy);
+    const Real stress_xx_Maxwell = mu2_e_scaled*dev_elastic_strain_xx;
+    const Real stress_yy_Maxwell = mu2_e_scaled*dev_elastic_strain_yy;
+    const Real stress_xy_Maxwell = mu_e_scaled*dev_elastic_strain_xy;
 
-    // total stress = equilibrium + Maxwell deviatoric
-    Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
-    Real stress_yy = stress_yy_eq + stress_yy_Maxwell;
-    Real stress_xy = stress_xy_eq + stress_xy_Maxwell;
+    const Real stress_xx = stress_xx_eq + stress_xx_Maxwell;
+    const Real stress_yy = stress_yy_eq + stress_yy_Maxwell;
+    const Real stress_xy = stress_xy_eq + stress_xy_Maxwell;
 
-    // Becasue of being in 2D, explicitly set them to zero
-    state[2]=0.0; state[3]=0.0; state[4]=0.0;
+    state[STRESS_ZZ] = 0.0;
+    state[STRESS_YZ] = 0.0;
+    state[STRESS_ZX] = 0.0;
+    state[STRESS_XX] = stress_xx;
+    state[STRESS_YY] = stress_yy;
+    state[STRESS_XY] = stress_xy;
+    state[STRAIN_XX] = previous_strain[0];
+    state[STRAIN_YY] = previous_strain[1];
+    state[STRAIN_XY] = previous_strain[2];
 
-    // Update the states with final results
-    state[0] = stress_xx;
-    state[1] = stress_yy;
-    state[5] = stress_xy;
+    save_as_Real(viscous_strain_xx.first,  state[VISCOUS_XX]);
+    save_as_Real(viscous_strain_yy.first,  state[VISCOUS_YY]);
+    save_as_Real(viscous_strain_xy.first,  state[VISCOUS_XY]);
+    save_as_Real(viscous_strain_xx.second, state[DUAL_VISCOUS_XX]);
+    save_as_Real(viscous_strain_yy.second, state[DUAL_VISCOUS_YY]);
+    save_as_Real(viscous_strain_xy.second, state[DUAL_VISCOUS_XY]);
 
-    state[6] = previous_strain[0];
-    state[7] = previous_strain[1];
-    state[8] = previous_strain[2];
+    state[OVERFLOW_COUNTER] = Real(overflow_counter);
+    state[DPARAM_RELAXATION_TIME] = dparam_tau;
+    state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT] = dparam_mu_e;
+    state[STRESS_SEED_XX] = 0.0;
+    state[STRESS_SEED_YY] = 0.0;
+    state[STRESS_SEED_XY] = 0.0;
 
-    save_as_Real(viscous_strain_xx.first,  state[9]);
-    save_as_Real(viscous_strain_yy.first,  state[10]);
-    save_as_Real(viscous_strain_xy.first,  state[11]);
-    save_as_Real(viscous_strain_xx.second, state[12]);
-    save_as_Real(viscous_strain_yy.second, state[13]);
-    save_as_Real(viscous_strain_xy.second, state[14]);
-
-    state[16] = Real(overflow_counter);
-
-    // elastic strain energy density
-    // Because at this point we have the stress and total strain, we can compute the energy as 0.5*sigma:eps
-    // Note that the shear strain is engineering shear strain
-    // Elastic strain-energy density (springs only; dashpot excluded)
-    Real psi_eq       = 0.5*(stress_xx_eq*strain_xx
-			     + stress_yy_eq*strain_yy 
-			     + stress_xy_eq*strain_xy);
-    // elastic strain-energy density in Maxwell element
-    Real psi_Maxwell  = 0.5*(stress_xx_Maxwell*dev_elastic_strain_xx
-			     + stress_yy_Maxwell*dev_elastic_strain_yy
-			     + stress_xy_Maxwell*dev_elastic_strain_xy);
-
-    // Total elastic strain-energy density
+    const Real psi_eq = 0.5*(stress_xx_eq*strain_now_xx + stress_yy_eq*strain_now_yy + stress_xy_eq*strain_now_xy);
+    const Real psi_Maxwell = 0.5*(stress_xx_Maxwell*dev_elastic_strain_xx +
+                                  stress_yy_Maxwell*dev_elastic_strain_yy +
+                                  stress_xy_Maxwell*dev_elastic_strain_xy);
     psi = psi_eq + psi_Maxwell;
   } // update()
 
   // Conditionally load material history parameters from memory
   void load_state(Real* state, std::vector<Real>& overflow_state)  {
-    if ((int(state[16]) == 0) && (overflow_state.size() > 0)) {
-      state[16] = Real(mat_overflow_limit);
+    if ((int(state[OVERFLOW_COUNTER]) == 0) && (overflow_state.size() > 0)) {
+      state[OVERFLOW_COUNTER] = Real(mat_overflow_limit);
       // load in reverse order
-      state[14] = overflow_state.back(); overflow_state.pop_back();
-      state[13] = overflow_state.back(); overflow_state.pop_back();
-      state[12] = overflow_state.back(); overflow_state.pop_back();
+      state[DUAL_VISCOUS_XY] = overflow_state.back(); overflow_state.pop_back();
+      state[DUAL_VISCOUS_YY] = overflow_state.back(); overflow_state.pop_back();
+      state[DUAL_VISCOUS_XX] = overflow_state.back(); overflow_state.pop_back();
     }
   }
 
   // Conditionally store material history parameters in memory
   void store_state(Real* state, std::vector<Real>& overflow_state) {
-    if (int(state[16]) == mat_overflow_limit) {
-      state[16] = Real(0);
+    if (int(state[OVERFLOW_COUNTER]) == mat_overflow_limit) {
+      state[OVERFLOW_COUNTER] = Real(0);
       // store in forward order
-      overflow_state.push_back(state[12]);
-      overflow_state.push_back(state[13]);
-      overflow_state.push_back(state[14]);
-      state[12] = Real(0.0);
-      state[13] = Real(0.0);
-      state[14] = Real(0.0);
+      overflow_state.push_back(state[DUAL_VISCOUS_XX]);
+      overflow_state.push_back(state[DUAL_VISCOUS_YY]);
+      overflow_state.push_back(state[DUAL_VISCOUS_XY]);
+      state[DUAL_VISCOUS_XX] = Real(0.0);
+      state[DUAL_VISCOUS_YY] = Real(0.0);
+      state[DUAL_VISCOUS_XY] = Real(0.0);
     }
+  }
+
+  int adjoint_num_params(void) const { return 2; }
+
+  const char* adjoint_param_name(int i) const {
+    switch (i) {
+      case 0: return "relaxation_time";
+      case 1: return "shear_modulus_Maxwell_element";
+      default: return "";
+    }
+  }
+
+  void adjoint_add_stress_seed(Real* state, Real seed_xx, Real seed_yy, Real seed_xy) {
+    state[STRESS_SEED_XX] += seed_xx;
+    state[STRESS_SEED_YY] += seed_yy;
+    state[STRESS_SEED_XY] += seed_xy;
+  }
+
+  void adjoint_objective_seed(Real*) { }
+
+  Real adjoint_get_param_gradient(const Real* state, int i) const {
+    if (i == 0) { return state[DPARAM_RELAXATION_TIME]; }
+    if (i == 1) { return state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT]; }
+    return Real(0.0);
+  }
+
+  void adjoint_clear_step_seed(Real* state) {
+    state[STRESS_SEED_XX] = 0.0;
+    state[STRESS_SEED_YY] = 0.0;
+    state[STRESS_SEED_XY] = 0.0;
   }
 
 
   // Copy state variable data to field data
   void get_fields(Real* state, double* field_data) {
-    field_data[0]  = state[0];  // stress_xx
-    field_data[1]  = state[1];  // stress_yy
-    field_data[2]  = state[2];  // stress_zz
-    field_data[3]  = state[3];  // stress_yz
-    field_data[4]  = state[4];  // stress_zx
-    field_data[5]  = state[5];  // stress_xy
-    field_data[6]  = state[6];  // strain_xx
-    field_data[7]  = state[7];  // strain_yy
-    field_data[8]  = state[8];  // strain_xy
+    field_data[0]  = state[STRESS_XX];
+    field_data[1]  = state[STRESS_YY];
+    field_data[2]  = state[STRESS_ZZ];
+    field_data[3]  = state[STRESS_YZ];
+    field_data[4]  = state[STRESS_ZX];
+    field_data[5]  = state[STRESS_XY];
+    field_data[6]  = state[STRAIN_XX];
+    field_data[7]  = state[STRAIN_YY];
+    field_data[8]  = state[STRAIN_XY];
     FixedE temp;
-    load_from_Real(state[9] ,temp); field_data[9]  = Real(temp); // viscous_strain_xx
-    load_from_Real(state[10],temp); field_data[10] = Real(temp); // viscous_strain_yy
-    load_from_Real(state[11],temp); field_data[11] = Real(temp); // viscous_strain_xy
-    load_from_Real(state[12],temp); field_data[12] = Real(temp); // viscous_strain_xx dual
-    load_from_Real(state[13],temp); field_data[13] = Real(temp); // viscous_strain_yy dual
-    load_from_Real(state[14],temp); field_data[14] = Real(temp); // viscous_strain_xy dual
-    field_data[15] = state[15]; // stiffness_scaling_factor
-    field_data[16] = state[16]; // overflow_counter
+    load_from_Real(state[VISCOUS_XX]     ,temp); field_data[9]  = Real(temp);
+    load_from_Real(state[VISCOUS_YY]     ,temp); field_data[10] = Real(temp);
+    load_from_Real(state[VISCOUS_XY]     ,temp); field_data[11] = Real(temp);
+    load_from_Real(state[DUAL_VISCOUS_XX],temp); field_data[12] = Real(temp);
+    load_from_Real(state[DUAL_VISCOUS_YY],temp); field_data[13] = Real(temp);
+    load_from_Real(state[DUAL_VISCOUS_XY],temp); field_data[14] = Real(temp);
+    field_data[15] = state[STIFFNESS_SCALING];
+    field_data[16] = state[OVERFLOW_COUNTER];
+    field_data[17] = state[DPARAM_RELAXATION_TIME];
+    field_data[18] = state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT];
+    field_data[19] = state[LAMBDA_Q_XX];
+    field_data[20] = state[LAMBDA_Q_YY];
+    field_data[21] = state[LAMBDA_Q_XY];
+    field_data[22] = state[STRESS_SEED_XX];
+    field_data[23] = state[STRESS_SEED_YY];
+    field_data[24] = state[STRESS_SEED_XY];
   }
 
   // Return the initial sound speed

@@ -37,6 +37,7 @@ set(REMAT_headers
     ${CMAKE_CURRENT_LIST_DIR}/Fixed.h
     ${CMAKE_CURRENT_LIST_DIR}/Integrator.h
     ${CMAKE_CURRENT_LIST_DIR}/Material.h
+    ${CMAKE_CURRENT_LIST_DIR}/MaterialAdjoint.h
     ${CMAKE_CURRENT_LIST_DIR}/PassPhase.h
     ${CMAKE_CURRENT_LIST_DIR}/ViscoElasticity.h
     ${CMAKE_CURRENT_LIST_DIR}/Matrix.h

@@ -31,10 +31,11 @@ class UniaxialViscoelasticity {
     VISCOUS_STRAIN = 2,
     DUAL_VISCOUS_STRAIN = 3,
     OVERFLOW_COUNTER = 4,
-    DF_DTAU = 5,
-    DF_DE = 6,
+    DPARAM_RELAXATION_TIME = 5,
+    DPARAM_YOUNGS_MODULUS = 6,
     LAMBDA_ADJOINT = 7,
-    DUAL_LAMBDA_ADJOINT = 8
+    DUAL_LAMBDA_ADJOINT = 8,
+    STRESS_SEED = 9
   };
 
  public:
@@ -142,7 +143,7 @@ class UniaxialViscoelasticity {
     if (params.count("mat_overflow_limit") > 0) { mat_overflow_limit = int(params["mat_overflow_limit"]); }
   }
 
-  int num_state_vars(void) { return 9; }
+  int num_state_vars(void) { return 10; }
 
   std::vector<std::string> get_field_names(void) {
     return std::vector<std::string>({ "axial_stress",
@@ -150,10 +151,11 @@ class UniaxialViscoelasticity {
                                       "viscous_strain",
                                       "dual_viscous_strain",
                                       "overflow_counter",
-                                      "df_dtau",
-                                      "df_dE",
+                                      "dparam_relaxation_time",
+                                      "dparam_youngs_modulus",
                                       "lambda_adjoint",
-                                      "dual_lambda_adjoint" });
+                                      "dual_lambda_adjoint",
+                                      "adjoint_stress_seed" });
   }
 
   // Return the (mass per unit length) = (cross-sectional area) * (density)
@@ -166,10 +168,11 @@ class UniaxialViscoelasticity {
     save_as_Real(FixedE(0.0), state[VISCOUS_STRAIN]);
     save_as_Real(FixedE(0.0), state[DUAL_VISCOUS_STRAIN]);
     state[OVERFLOW_COUNTER] = Real(0);
-    state[DF_DTAU] = 0.0;
-    state[DF_DE] = 0.0;
+    state[DPARAM_RELAXATION_TIME] = 0.0;
+    state[DPARAM_YOUNGS_MODULUS] = 0.0;
     save_as_Real(LambdaAdj(0.0), state[LAMBDA_ADJOINT]);
     save_as_Real(LambdaAdj(0.0), state[DUAL_LAMBDA_ADJOINT]);
+    state[STRESS_SEED] = 0.0;
   } // initialize()
 
   LocalForwardOutput forward_local(const LocalForwardInput& in) const {
@@ -209,8 +212,9 @@ class UniaxialViscoelasticity {
     Dual<FixedE> viscous_strain(vs_p, vs_d);
 
     // Accumulated gradient and adjoint lambda
-    Real df_dtau_accum = state[DF_DTAU];
-    Real df_dE_accum = state[DF_DE];
+    Real dparam_relaxation_time_accum = state[DPARAM_RELAXATION_TIME];
+    Real dparam_youngs_modulus_accum = state[DPARAM_YOUNGS_MODULUS];
+    Real incoming_stress_seed = state[STRESS_SEED];
     LambdaAdj lambda_p, lambda_d;
     load_from_Real(state[LAMBDA_ADJOINT], lambda_p);
     load_from_Real(state[DUAL_LAMBDA_ADJOINT], lambda_d);
@@ -268,17 +272,19 @@ class UniaxialViscoelasticity {
         local_grad.dTau() = lambda_n_plus_one * (q_n - strain_n_plus_one) * A_real * (dt_abs/(tau*tau));
         // d/dE of psi_n = 0.5*E*(eps_n-q_n)^2 with q treated as fixed local state input
         local_grad.dE() = 0.5*elastic_strain_n*elastic_strain_n;
-        df_dtau_accum += local_grad.dTau();
-        df_dE_accum += local_grad.dE();
+        // external/global stress seeds contribute directly to dE via sigma_n = E*(eps_n-q_n)
+        local_grad.dE() += incoming_stress_seed*elastic_strain_n;
+        dparam_relaxation_time_accum += local_grad.dTau();
+        dparam_youngs_modulus_accum += local_grad.dE();
 
         // Same style as viscous_strain reverse update: lambda_n from lambda_{n+1}
-        // lambda_n = -sigma_n + A*lambda_{n+1}
+        // lambda_n = -(sigma_n + E*stress_seed_n) + A*lambda_{n+1}
         if constexpr (std::is_same<LambdaAdj, Real>::value) {
           lambda_adjoint = lambda_adjoint * A_real;
         } else {
           lambda_adjoint = lambda_adjoint * A_rat;
         }
-        Dual<LambdaAdj> dlambda(LambdaAdj(-sigma_n), LambdaAdj(0.0));
+        Dual<LambdaAdj> dlambda(LambdaAdj(-sigma_n - E*incoming_stress_seed), LambdaAdj(0.0));
         lambda_adjoint = lambda_adjoint + dlambda;
       }
 
@@ -299,10 +305,11 @@ class UniaxialViscoelasticity {
     save_as_Real(viscous_strain.first,  state[VISCOUS_STRAIN]);
     save_as_Real(viscous_strain.second, state[DUAL_VISCOUS_STRAIN]);
     state[OVERFLOW_COUNTER] = Real(overflow_counter);
-    state[DF_DTAU] = df_dtau_accum;
-    state[DF_DE] = df_dE_accum;
+    state[DPARAM_RELAXATION_TIME] = dparam_relaxation_time_accum;
+    state[DPARAM_YOUNGS_MODULUS] = dparam_youngs_modulus_accum;
     save_as_Real(lambda_adjoint.first,  state[LAMBDA_ADJOINT]);
     save_as_Real(lambda_adjoint.second, state[DUAL_LAMBDA_ADJOINT]);
+    state[STRESS_SEED] = 0.0;
 
     psi = 0.5 * stress * elastic_strain;
   }
@@ -329,6 +336,28 @@ class UniaxialViscoelasticity {
     }
   }
 
+  int adjoint_num_params(void) const { return 2; }
+
+  const char* adjoint_param_name(int i) const {
+    switch (i) {
+      case 0: return "relaxation_time";
+      case 1: return "youngs_modulus";
+      default: return "";
+    }
+  }
+
+  void adjoint_add_stress_seed(Real* state, Real seed) { state[STRESS_SEED] += seed; }
+
+  void adjoint_objective_seed(Real*) { }
+
+  Real adjoint_get_param_gradient(const Real* state, int i) const {
+    if (i == 0) { return state[DPARAM_RELAXATION_TIME]; }
+    if (i == 1) { return state[DPARAM_YOUNGS_MODULUS]; }
+    return Real(0.0);
+  }
+
+  void adjoint_clear_step_seed(Real* state) { state[STRESS_SEED] = 0.0; }
+
   // Return the value of viscous_strain (Just for quick check, can be deleted later)
   // One could use the get_fields function
   Real get_state_variable(Real* state, std::string state_variable_name) {
@@ -336,10 +365,10 @@ class UniaxialViscoelasticity {
       FixedE temp;
       load_from_Real(state[VISCOUS_STRAIN], temp);
       return Real(temp);
-    } else if (state_variable_name == "df_dtau") {
-      return state[DF_DTAU];
-    } else if (state_variable_name == "df_dE") {
-      return state[DF_DE];
+    } else if (state_variable_name == "dparam_relaxation_time") {
+      return state[DPARAM_RELAXATION_TIME];
+    } else if (state_variable_name == "dparam_youngs_modulus") {
+      return state[DPARAM_YOUNGS_MODULUS];
     } else {
       return Real(0.0);
     }
@@ -354,10 +383,11 @@ class UniaxialViscoelasticity {
     load_from_Real(state[VISCOUS_STRAIN], temp); field_data[2] = Real(temp);
     load_from_Real(state[DUAL_VISCOUS_STRAIN], temp); field_data[3] = Real(temp);
     field_data[4] = state[OVERFLOW_COUNTER];
-    field_data[5] = state[DF_DTAU];
-    field_data[6] = state[DF_DE];
+    field_data[5] = state[DPARAM_RELAXATION_TIME];
+    field_data[6] = state[DPARAM_YOUNGS_MODULUS];
     load_from_Real(state[LAMBDA_ADJOINT], lambda_temp); field_data[7] = Real(lambda_temp);
     load_from_Real(state[DUAL_LAMBDA_ADJOINT], lambda_temp); field_data[8] = Real(lambda_temp);
+    field_data[9] = state[STRESS_SEED];
   }
 
   bool is_dead(Real*) { return false; }

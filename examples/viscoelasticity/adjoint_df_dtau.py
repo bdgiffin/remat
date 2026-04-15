@@ -87,8 +87,8 @@ def run_forward(
         for _ in range(Nsteps):
             REMAT.API.update_state(dt,1,REMAT.PASS_BACKWARD_ADJOINT)
 
-    df_dtau_val = REMAT.get_field(b"truss", "df_dtau")[0]
-    return df_dtau_val
+    dparam_tau_val = REMAT.get_field(b"truss", "dparam_relaxation_time")[0]
+    return dparam_tau_val
 
 
 def main():

@@ -150,7 +150,7 @@ def run_forward_backward(
     for _ in range(nsteps):
         REMAT.API.update_state(dt,nsub_steps,REMAT.PASS_BACKWARD_ADJOINT)
 
-    grad_tau = float(np.sum(REMAT.get_field(b"truss", "df_dtau")))
+    grad_tau = float(np.sum(REMAT.get_field(b"truss", "dparam_relaxation_time")))
 
     result = {
         "loss": float(loss),

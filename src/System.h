@@ -12,6 +12,7 @@
 #include <vector>
 #include <algorithm> // For std::fill
 #include <iostream>
+#include <string>
 #include <math.h>
 #include <stdlib.h> // exit
 
@@ -210,6 +211,10 @@ struct System : public SystemBase {
   Real potential_energy;
   Real total_energy;
   std::vector<std::string> global_field_names;
+  std::vector<Real> u_adjoint;
+  std::vector<Real> v_adjoint;
+  std::vector<std::string> adjoint_param_names;
+  std::vector<Real> adjoint_param_gradients;
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
@@ -235,6 +240,13 @@ struct System : public SystemBase {
     m_time = 0.0;
     m_dt_history.clear();
     m_time_history.clear();
+    node_field_names.clear();
+    element_field_names.clear();
+    truss_field_names.clear();
+    point_field_names.clear();
+    global_field_names.clear();
+    adjoint_param_names.clear();
+    adjoint_param_gradients.clear();
     if (params.count("body_force_x") > 0) m_bx = params["body_force_x"];
     if (params.count("body_force_y") > 0) m_by = params["body_force_y"];
     if (params.count("initial_velocity_x") > 0) m_vx0 = params["initial_velocity_x"];
@@ -270,6 +282,8 @@ struct System : public SystemBase {
     xt.resize(Ndofs);
     u.resize(Ndofs,Dual<FixedU>(0.0,0.0));
     v.resize(Ndofs,Dual<FixedV>(0.0,0.0));
+    u_adjoint.resize(Ndofs,0.0);
+    v_adjoint.resize(Ndofs,0.0);
     m.resize(Ndofs);
     f.resize(Ndofs);
     a.resize(Ndofs,Dual<Real>(0.0,0.0));
@@ -336,6 +350,7 @@ struct System : public SystemBase {
     kinetic_energy        = 0.0; global_field_names.push_back("kinetic_energy");
     potential_energy      = 0.0; global_field_names.push_back("potential_energy");
     total_energy          = 0.0; global_field_names.push_back("total_energy");
+    register_adjoint_params_from_materials();
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -386,6 +401,8 @@ struct System : public SystemBase {
     for (int e=0; e<Ntruss; e++) {
       m_truss.initialize(&truss_state[Nstate_vars_per_truss*e]);
     }
+
+    register_adjoint_params_from_materials();
     
     std::cout << "| ========================================================== |" << std::endl;
     
@@ -524,6 +541,8 @@ struct System : public SystemBase {
     m_overflow_counter = 0;
     m_dt_history.clear();
     m_time_history.clear();
+    std::fill(u_adjoint.begin(),u_adjoint.end(),0.0);
+    std::fill(v_adjoint.begin(),v_adjoint.end(),0.0);
 
     // Apply any prescribed displacement boundary conditions at the initial time
     apply_displacement_bcs(m_time,0.0);
@@ -534,6 +553,7 @@ struct System : public SystemBase {
 
     // Update kinetic energy
     update_kinetic_energy();
+    update_global_param_gradients();
     
   } // initialize_state()
   
@@ -621,6 +641,14 @@ struct System : public SystemBase {
     // enforce_prescribed_velocities();
     // Update velocities to the whole-step
     m_integrator.second_half_step_velocity_update(signed_dt,v.data(),a.data(),alpha.data(),Ndofs);
+
+    if (phase == PassPhase::BackwardAdjoint) {
+      // Drift transpose contribution (u* -> v*) for kick-drift-kick adjoint wiring.
+      for (int i=0; i<Ndofs; i++) {
+        v_adjoint[i] += u_adjoint[i]*dt_step;
+      }
+    }
+
     enforce_prescribed_velocities();
 
     // Update kinetic energy
@@ -665,6 +693,8 @@ struct System : public SystemBase {
     }
     
     std::cout << "Time step: " << m_time_step << " at time: " << m_time << std::endl;
+
+    update_global_param_gradients();
 
     // Return the updated analysis time
     return m_time;
@@ -809,6 +839,9 @@ struct System : public SystemBase {
       field_data[1] = kinetic_energy;
       field_data[2] = potential_energy;
       field_data[3] = total_energy;
+      for (int i=0; i<int(adjoint_param_gradients.size()); i++) {
+        field_data[4+i] = adjoint_param_gradients[i];
+      }
     } else if (entity_type == "node")    {
       const int Nstate = get_num_fields(entity_type);
       for (int i=0; i<Nnodes; i++) {
@@ -856,6 +889,59 @@ struct System : public SystemBase {
   // ===================================================================== //
 private:
   // ===================================================================== //
+
+  void register_adjoint_param_name(const std::string& name) {
+    if (name.empty()) { return; }
+    if (std::find(adjoint_param_names.begin(),adjoint_param_names.end(),name) == adjoint_param_names.end()) {
+      adjoint_param_names.push_back(name);
+      adjoint_param_gradients.push_back(0.0);
+      global_field_names.push_back("dL_dparam_" + name);
+    }
+  }
+
+  int adjoint_param_index(const std::string& name) const {
+    for (int i=0; i<int(adjoint_param_names.size()); i++) {
+      if (adjoint_param_names[i] == name) { return i; }
+    }
+    return -1;
+  }
+
+  void register_adjoint_params_from_materials() {
+    for (int i=0; i<m_element.adjoint_num_params(); i++) {
+      register_adjoint_param_name(m_element.adjoint_param_name(i));
+    }
+    for (int i=0; i<m_truss.adjoint_num_params(); i++) {
+      register_adjoint_param_name(m_truss.adjoint_param_name(i));
+    }
+  }
+
+  void update_global_param_gradients() {
+    std::fill(adjoint_param_gradients.begin(),adjoint_param_gradients.end(),0.0);
+
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
+    for (int e=0; e<Nelems; e++) {
+      Real* elem_state = &state[Nstate_vars_per_elem*e];
+      for (int p=0; p<m_element.adjoint_num_params(); p++) {
+        const std::string pname = m_element.adjoint_param_name(p);
+        int idx = adjoint_param_index(pname);
+        if (idx >= 0) {
+          adjoint_param_gradients[idx] += m_element.adjoint_get_param_gradient(elem_state,p);
+        }
+      }
+    }
+
+    const int Nstate_vars_per_truss = m_truss.num_state_vars();
+    for (int e=0; e<Ntruss; e++) {
+      Real* truss_state_e = &truss_state[Nstate_vars_per_truss*e];
+      for (int p=0; p<m_truss.adjoint_num_params(); p++) {
+        const std::string pname = m_truss.adjoint_param_name(p);
+        int idx = adjoint_param_index(pname);
+        if (idx >= 0) {
+          adjoint_param_gradients[idx] += m_truss.adjoint_get_param_gradient(truss_state_e,p);
+        }
+      }
+    }
+  }
 
   // Check if a specified DoF is controlled by a time-varying boundary condition
   bool has_time_varying_bc(int dof) const { return (dof >= 0 && dof < int(m_has_time_bc.size())) ? m_has_time_bc[dof] : false; }
@@ -967,6 +1053,10 @@ private:
       Real me[8] = { 0.0 };
       Real fe[8] = { 0.0 };
       Real Ee = 0.0;
+      m_element.adjoint_clear_step_seed(&state[Nstate_vars_per_elem*e]);
+      if (phase == PassPhase::BackwardAdjoint) {
+        m_element.adjoint_objective_seed(&state[Nstate_vars_per_elem*e]);
+      }
       m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt,phase);
 
       // Scatter mass and forces to the nodes
@@ -1007,6 +1097,10 @@ private:
       Real me[4] = { 0.0 };
       Real fe[4] = { 0.0 };
       Real Ee = 0.0;
+      m_truss.adjoint_clear_step_seed(&truss_state[Nstate_vars_per_truss*e]);
+      if (phase == PassPhase::BackwardAdjoint) {
+        m_truss.adjoint_objective_seed(&truss_state[Nstate_vars_per_truss*e]);
+      }
       m_truss.update(xe,ue,me,fe,Ee,&truss_state[Nstate_vars_per_truss*e],dt,phase);
 
       // Scatter mass and forces to the nodes
