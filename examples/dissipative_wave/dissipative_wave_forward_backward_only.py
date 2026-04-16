@@ -41,7 +41,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Viscous parameters (case-3 true tau)
-REMAT.API.define_parameter(b"relaxation_time", 0.11)
+REMAT.API.define_parameter(b"relaxation_time", 0.35)
 REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", 2.0)
 
 # Integrator and material overflow settings requested
@@ -55,8 +55,8 @@ REMAT.API.define_parameter(b"mat_overflow_limit", 10.0)
 width = 10.0
 height = 3.0
 
-Nx = 220
-Ny = 80
+Nx = 88
+Ny = 32
 if (sys.platform == "emscripten"):
     Nx = int(Nx/2)
     Ny = int(Ny/2)
@@ -124,7 +124,7 @@ REMAT.define_variable_properties(layered_stiffness_scaling)
 # --------------------------------------------------------------------------
 
 dt = 9e-3
-Nsteps = 100
+Nsteps = 50
 Nsub_steps = 10
 step_id = 0
 
