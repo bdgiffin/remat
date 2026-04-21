@@ -47,14 +47,14 @@ CASES = {
     "case3_high_contrast": {
         "description": "Higher-contrast layered profile for stronger reflections (with L-BFGS-B boundary restarts).",
         "args": [
-            "--nx", "100", "--ny", "30",
-            "--nsteps", "500", "--nsub-steps", "1", "--dt", "4e-3",
+            "--nx", "150", "--ny", "30",
+            "--nsteps", "15000", "--nsub-steps", "1", "--dt", "4e-3",
             "--n-layers", "2", "--n-sensors", "5",
             "--impact-velocity", "1.0", "--source-window-fraction", "0.09",
             "--true-layers", "15,7.7",
             "--init-layers", "10.0,4.0",
             "--true-tau", "0.08", "--init-tau", "0.1",
-            "--max-iters", "25",
+            "--max-iters", "8",
             "--min-layer", "1.0", "--max-layer", "20.0",
             "--min-tau", "0.03", "--max-tau", "0.18",
             "--lbfgsb-restarts", "4",

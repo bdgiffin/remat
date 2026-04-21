@@ -54,13 +54,10 @@ def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_
     node_x = coordinates[:, 0]
     node_y = coordinates[:, 1]
     bottom_nodes = np.where(np.abs(node_y - 0.0) < eps)[0]
-    left_nodes = np.where(np.abs(node_x - 0.0) < eps)[0]
-    right_nodes = np.where(np.abs(node_x - width) < eps)[0]
     top_nodes = np.where(np.abs(node_y - height) < eps)[0]
 
     fixity[bottom_nodes, :] = True
-    fixity[left_nodes, :] = True
-    fixity[right_nodes, :] = True
+    # Free side boundaries: do not constrain left/right edges.
 
     source_half_width = 0.5 * source_window_fraction * width
     xmid = 0.5 * width
@@ -72,7 +69,7 @@ def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_
         raise ValueError("No interior top-surface nodes found for sensors.")
 
     # centered top band and avoid near-edge picks.
-    sensor_margin_fraction = 0.15
+    sensor_margin_fraction = 0.05
     x_lo = sensor_margin_fraction * width
     x_hi = (1.0 - sensor_margin_fraction) * width
     top_center_band = top_interior[
@@ -897,7 +894,7 @@ def main():
     )
     parser.add_argument("--nx", type=int, default=48)
     parser.add_argument("--ny", type=int, default=18)
-    parser.add_argument("--width", type=float, default=10.0)
+    parser.add_argument("--width", type=float, default=15.0)
     parser.add_argument("--height", type=float, default=3.0)
     parser.add_argument("--nsteps", type=int, default=80)
     parser.add_argument("--nsub-steps", type=int, default=6)

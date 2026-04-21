@@ -52,14 +52,20 @@ REMAT.API.define_parameter(b"mat_overflow_limit", 10.0)
 # Geometry / mesh (case-3 settings)
 # --------------------------------------------------------------------------
 
-width = 10.0
+# Increased width to reduce side-boundary reflections. Change manually as desired.
+width = 15.0
 height = 3.0
 
-Nx = 200
+Nx = 300
 Ny = 60
 if (sys.platform == "emscripten"):
     Nx = int(Nx/2)
     Ny = int(Ny/2)
+
+# Side-boundary mode:
+#   "free_sides"    -> no left/right Dirichlet constraints
+#   "clamped_sides" -> old behavior
+boundary_mode = "free_sides"
 
 # Case-3 source setup
 source_window_fraction = 0.09
@@ -90,8 +96,9 @@ model = Model()
 model.add_part(Part(grid,Material(None,None)))
 model.add_initial_condition(source_nodes,[0.0,-impact_velocity])
 model.add_boundary_condition(bottom_nodes,[True,True])
-model.add_boundary_condition(left_nodes,[True,True])
-model.add_boundary_condition(right_nodes,[True,True])
+if boundary_mode == "clamped_sides":
+    model.add_boundary_condition(left_nodes,[True,True])
+    model.add_boundary_condition(right_nodes,[True,True])
 
 coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = model.generate_problem()
 
@@ -111,11 +118,7 @@ layer_values = np.array([15,7.7],dtype=np.double)
 def layered_stiffness_scaling(_, y):
     if y < layer_bounds[1]:
         return float(layer_values[0])
-    elif y < layer_bounds[2]:
-        return float(layer_values[1])
-    elif y < layer_bounds[3]:
-        return float(layer_values[2])
-    return float(layer_values[3])
+    return float(layer_values[1])
 
 REMAT.define_variable_properties(layered_stiffness_scaling)
 
@@ -129,6 +132,8 @@ Nsub_steps = 10
 step_id = 0
 
 if (not sys.platform == "emscripten"):
+    print(f"Boundary mode: {boundary_mode}")
+    print(f"Domain size: width={width}, height={height}")
     print(f"Selected source nodes: {source_node_ids.size}")
     print(f"Source speed max: {float(np.max(source_speed)):.6e}")
     print(f"Mesh resolution: Nx={Nx}, Ny={Ny}, dt={dt}, Nsteps={Nsteps}, Nsub_steps={Nsub_steps}")
