@@ -167,7 +167,7 @@ extern "C" {
   // Update the System state
   double update_state(double dt, int Nsub_steps, int phase) {
     // Record the starting wall time
-    auto start_time = std::chrono::high_resolution_clock::now();
+    // auto start_time = std::chrono::high_resolution_clock::now();
     
     if (phase < int(PassPhase::Forward) || phase > int(PassPhase::BackwardAdjoint)) {
       std::cerr << "Invalid pass phase value: " << phase << std::endl;
@@ -181,15 +181,15 @@ extern "C" {
     }
     
     // Record the ending wall time
-    auto end_time = std::chrono::high_resolution_clock::now();
+    // auto end_time = std::chrono::high_resolution_clock::now();
 
     // Calculate the elapsed wall time duration
-    auto elapsed_duration = end_time - start_time;
+    // auto elapsed_duration = end_time - start_time;
 
     // Convert to milliseconds and get the count
-    auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
+    // auto ms_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count();
 
-    std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
+    // std::cout << "Elapsed time: " << ms_elapsed << " milliseconds" << std::endl;
     
     return time;
     

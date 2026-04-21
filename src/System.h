@@ -562,6 +562,13 @@ struct System : public SystemBase {
 
     // Set the overflow counter
     m_overflow_counter = 0;
+    v_overflow.clear();
+    for (auto& overflow_e : truss_state_overflow) {
+      overflow_e.clear();
+    }
+    for (auto& overflow_e : element_state_overflow) {
+      overflow_e.clear();
+    }
     m_dt_history.clear();
     m_time_history.clear();
     std::fill(u_adjoint.begin(),u_adjoint.end(),0.0);

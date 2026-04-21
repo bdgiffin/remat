@@ -41,7 +41,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Viscous parameters (case-3 true tau)
-REMAT.API.define_parameter(b"relaxation_time", 0.35)
+REMAT.API.define_parameter(b"relaxation_time", 0.05)
 REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", 2.0)
 
 # Integrator and material overflow settings requested
@@ -55,15 +55,15 @@ REMAT.API.define_parameter(b"mat_overflow_limit", 10.0)
 width = 10.0
 height = 3.0
 
-Nx = 88
-Ny = 32
+Nx = 200
+Ny = 60
 if (sys.platform == "emscripten"):
     Nx = int(Nx/2)
     Ny = int(Ny/2)
 
 # Case-3 source setup
 source_window_fraction = 0.09
-impact_velocity = 1.05
+impact_velocity = 1.0
 source_half_width = 0.5*source_window_fraction*width
 source_window_y = 0.1
 xmid = 0.5*width
@@ -105,8 +105,8 @@ if np.all(fixity[source_node_ids,1]):
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
 # Case-3 layered stiffness profile (bottom -> top)
-layer_bounds = np.linspace(0.0,height,5)  # 4 layers
-layer_values = np.array([0.52,1.82,0.60,1.70],dtype=np.double)
+layer_bounds = np.linspace(0.0,height,3)  # 2 layers
+layer_values = np.array([15,7.7],dtype=np.double)
 
 def layered_stiffness_scaling(_, y):
     if y < layer_bounds[1]:
@@ -123,8 +123,8 @@ REMAT.define_variable_properties(layered_stiffness_scaling)
 # Time integration (forward + backward only)
 # --------------------------------------------------------------------------
 
-dt = 9e-3
-Nsteps = 50
+dt = 1e-3
+Nsteps = 90
 Nsub_steps = 10
 step_id = 0
 

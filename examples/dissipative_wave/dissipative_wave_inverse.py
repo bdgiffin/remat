@@ -69,10 +69,20 @@ def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_
     top_interior = top_nodes[(node_x[top_nodes] > eps) & (node_x[top_nodes] < width - eps)]
     if top_interior.size == 0:
         raise ValueError("No interior top-surface nodes found for sensors.")
-    if nsensors > top_interior.size:
-        nsensors = top_interior.size
-    sensor_pick = np.unique(np.round(np.linspace(0, top_interior.size - 1, nsensors)).astype(int))
-    sensor_nodes = top_interior[sensor_pick]
+
+    # centered top band and avoid near-edge picks.
+    sensor_margin_fraction = 0.15
+    x_lo = sensor_margin_fraction * width
+    x_hi = (1.0 - sensor_margin_fraction) * width
+    top_center_band = top_interior[
+        (node_x[top_interior] >= x_lo) & (node_x[top_interior] <= x_hi)
+    ]
+    sensor_candidates = top_center_band if top_center_band.size >= nsensors else top_interior
+
+    if nsensors > sensor_candidates.size:
+        nsensors = sensor_candidates.size
+    sensor_pick = np.unique(np.round(np.linspace(0, sensor_candidates.size - 1, nsensors)).astype(int))
+    sensor_nodes = sensor_candidates[sensor_pick]
 
     layer_bounds = np.linspace(0.0, height, n_layers + 1)
     elem_center_y = np.mean(coordinates[connectivity, 1], axis=1)
@@ -349,6 +359,162 @@ def parse_layer_values(text, n_layers, default_value):
     return values
 
 
+def pack_params(layers, tau):
+    return np.concatenate([np.asarray(layers, dtype=np.double), np.array([float(tau)], dtype=np.double)])
+
+
+def unpack_params(params, n_layers):
+    params = np.asarray(params, dtype=np.double)
+    return params[:n_layers].copy(), float(params[n_layers])
+
+
+def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args):
+    try:
+        from scipy.optimize import minimize
+    except ImportError as exc:
+        raise ImportError(
+            "L-BFGS-B optimizer requires SciPy. Install it with: pip install scipy"
+        ) from exc
+
+    x0 = pack_params(init_layers, init_tau)
+    bounds = [(args.min_layer, args.max_layer)] * args.n_layers + [(args.min_tau, args.max_tau)]
+
+    loss_history = []
+    tau_history = []
+    layer_history = []
+    iteration_counter = {"value": 0}
+    cache = {"x": None, "loss": None, "grad": None}
+
+    def objective_with_grad(x):
+        layers, tau = unpack_params(x, args.n_layers)
+        run = run_forward_or_adjoint(
+            problem,
+            layers,
+            tau,
+            args,
+            observed_history=observed_history,
+            compute_gradients=True,
+        )
+        grad = np.concatenate(
+            [run["grad_layers"], np.array([run["grad_tau"]], dtype=np.double)]
+        )
+        cache["x"] = np.asarray(x, dtype=np.double).copy()
+        cache["loss"] = float(run["loss"])
+        cache["grad"] = grad.copy()
+        return cache["loss"], grad
+
+    def log_iteration(x):
+        x = np.asarray(x, dtype=np.double)
+        if cache["x"] is None or not np.array_equal(x, cache["x"]):
+            loss, grad = objective_with_grad(x)
+        else:
+            loss = float(cache["loss"])
+            grad = cache["grad"]
+
+        layers, tau = unpack_params(x, args.n_layers)
+        grad_layers = grad[:args.n_layers]
+        grad_tau = float(grad[args.n_layers])
+
+        it = iteration_counter["value"]
+        print(
+            f"iter={it:03d}  loss={loss: .8e}  tau={tau: .8e}  "
+            f"|grad_layers|_inf={np.max(np.abs(grad_layers)): .8e}  grad_tau={grad_tau: .8e}"
+        )
+
+        loss_history.append(loss)
+        tau_history.append(tau)
+        layer_history.append(layers.copy())
+        iteration_counter["value"] += 1
+
+    # Log the starting point and optionally run FD check at the same point.
+    _, grad0 = objective_with_grad(x0)
+    log_iteration(x0)
+
+    if args.fd_check:
+        layers0, tau0 = unpack_params(x0, args.n_layers)
+        fd_layers, fd_tau = finite_difference_gradients(
+            problem, layers0, tau0, args, observed_history, args.fd_step
+        )
+        eps = 1.0e-14
+        rel_layer = np.abs(grad0[:args.n_layers] - fd_layers) / np.maximum.reduce(
+            [np.abs(grad0[:args.n_layers]), np.abs(fd_layers), np.full_like(fd_layers, eps)]
+        )
+        rel_tau = abs(grad0[args.n_layers] - fd_tau) / max(abs(grad0[args.n_layers]), abs(fd_tau), eps)
+        print("FD check (layer gradients):")
+        for i in range(args.n_layers):
+            print(
+                f"  layer {i}: adj={grad0[i]: .8e}  fd={fd_layers[i]: .8e}  rel_err={rel_layer[i]: .3e}"
+            )
+        print(
+            f"FD check (tau): adj={grad0[args.n_layers]: .8e}  fd={fd_tau: .8e}  rel_err={rel_tau: .3e}"
+        )
+
+    total_nit = 0
+    total_nfev = 0
+    current_x = x0.copy()
+    result = None
+    best_result = None
+    max_runs = max(1, int(args.lbfgsb_restarts) + 1)
+
+    for run_id in range(max_runs):
+        remaining_iters = max(1, int(args.max_iters) - total_nit)
+        result = minimize(
+            objective_with_grad,
+            x0=current_x,
+            method="L-BFGS-B",
+            jac=True,
+            bounds=bounds,
+            callback=log_iteration,
+            options={
+                "maxiter": remaining_iters,
+                "gtol": float(args.lbfgsb_gtol),
+                "maxls": int(args.lbfgsb_maxls),
+            },
+        )
+        total_nit += int(result.nit)
+        total_nfev += int(result.nfev)
+
+        if best_result is None or float(result.fun) < float(best_result.fun):
+            best_result = result
+
+        if total_nit >= int(args.max_iters):
+            break
+        if run_id + 1 >= max_runs:
+            break
+
+        message = str(result.message)
+        if "PROJECTED GRADIENT" not in message.upper():
+            break
+
+        x = np.asarray(result.x, dtype=np.double).copy()
+        x_pert = x.copy()
+        had_active_bound = False
+        for i, (lo, hi) in enumerate(bounds):
+            span = max(float(hi) - float(lo), 1.0e-12)
+            eps = float(args.lbfgsb_boundary_perturb) * span
+            tol = 1.0e-12 * max(1.0, abs(float(lo)), abs(float(hi)))
+            if x[i] <= float(lo) + tol:
+                x_pert[i] = min(float(hi), float(lo) + eps)
+                had_active_bound = True
+            elif x[i] >= float(hi) - tol:
+                x_pert[i] = max(float(lo), float(hi) - eps)
+                had_active_bound = True
+
+        if not had_active_bound:
+            break
+
+        print(
+            f"lbfgsb-restart run={run_id + 1} "
+            f"total_nit={total_nit}  fun={float(result.fun): .8e}"
+        )
+        current_x = x_pert
+
+    if result is not None and best_result is not None:
+        best_result.nit = total_nit
+        best_result.nfev = total_nfev
+    return best_result, loss_history, tau_history, layer_history
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Inverse dissipative-wave example: recover layered stiffness and relaxation_time from top-surface velocity sensors."
@@ -394,6 +560,20 @@ def main():
         help="Enable one-time finite-difference gradient check at iteration 0 (default: off).",
     )
     parser.add_argument("--fd-step", type=float, default=1.0e-4)
+    parser.add_argument(
+        "--lbfgsb-restarts",
+        type=int,
+        default=2,
+        help="Number of additional L-BFGS-B restarts when convergence occurs at active bounds.",
+    )
+    parser.add_argument(
+        "--lbfgsb-boundary-perturb",
+        type=float,
+        default=1.0e-3,
+        help="Relative inward perturbation size (fraction of bound span) used for restart points.",
+    )
+    parser.add_argument("--lbfgsb-gtol", type=float, default=1.0e-8)
+    parser.add_argument("--lbfgsb-maxls", type=int, default=40)
     parser.add_argument("--plot-file", type=str, default="dissipative_wave_inverse_summary.png")
     parser.add_argument("--setup-plot-file", type=str, default="dissipative_wave_inverse_setup.svg")
     parser.add_argument("--show", action="store_true")
@@ -428,45 +608,17 @@ def main():
     tau = float(args.init_tau)
     initial_run = run_forward_or_adjoint(problem, layers, tau, args, observed_history=observed_history, compute_gradients=False)
 
-    loss_history = []
-    tau_history = []
-    layer_history = []
-
-    for it in range(args.max_iters):
-        run = run_forward_or_adjoint(problem, layers, tau, args, observed_history=observed_history, compute_gradients=True)
-        loss = run["loss"]
-        grad_layers = run["grad_layers"]
-        grad_tau = run["grad_tau"]
-
-        loss_history.append(loss)
-        tau_history.append(tau)
-        layer_history.append(layers.copy())
-
-        print(
-            f"iter={it:03d}  loss={loss: .8e}  tau={tau: .8e}  "
-            f"|grad_layers|_inf={np.max(np.abs(grad_layers)): .8e}  grad_tau={grad_tau: .8e}"
-        )
-
-        if args.fd_check and it == 0:
-            fd_layers, fd_tau = finite_difference_gradients(problem, layers, tau, args, observed_history, args.fd_step)
-            eps = 1.0e-14
-            rel_layer = np.abs(grad_layers - fd_layers) / np.maximum.reduce(
-                [np.abs(grad_layers), np.abs(fd_layers), np.full_like(fd_layers, eps)]
-            )
-            rel_tau = abs(grad_tau - fd_tau) / max(abs(grad_tau), abs(fd_tau), eps)
-            print("FD check (layer gradients):")
-            for i in range(args.n_layers):
-                print(
-                    f"  layer {i}: adj={grad_layers[i]: .8e}  fd={fd_layers[i]: .8e}  rel_err={rel_layer[i]: .3e}"
-                )
-            print(f"FD check (tau): adj={grad_tau: .8e}  fd={fd_tau: .8e}  rel_err={rel_tau: .3e}")
-
-        layers = np.clip(layers - args.lr_layers * grad_layers, args.min_layer, args.max_layer)
-        tau = float(np.clip(tau - args.lr_tau * grad_tau, args.min_tau, args.max_tau))
+    print("Optimizer: L-BFGS-B")
+    opt_result, loss_history, tau_history, layer_history = optimize_with_lbfgsb(
+        problem, observed_history, layers, tau, args
+    )
+    layers, tau = unpack_params(opt_result.x, args.n_layers)
 
     final_run = run_forward_or_adjoint(problem, layers, tau, args, observed_history=observed_history, compute_gradients=False)
 
     print("\nOptimization summary:")
+    print(f"  status        = {opt_result.status}")
+    print(f"  message       = {opt_result.message}")
     print(f"  true tau      = {args.true_tau:.6f}")
     print(f"  recovered tau = {tau:.6f}")
     print(f"  true layers   = {true_layers}")
