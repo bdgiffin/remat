@@ -13,8 +13,11 @@
 #include <vector>
 #include <algorithm> // For std::fill
 #include <cctype>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <math.h>
 #include <stdlib.h> // exit
 
@@ -235,6 +238,22 @@ struct System : public SystemBase {
   Real adjoint_contact_stiffness_gradient = 0.0;
   std::vector<std::string> adjoint_param_names;
   std::vector<Real> adjoint_param_gradients;
+
+  // Optional adjoint diagnostics for stiffness-scaling gradient tracing.
+  bool m_adjoint_debug_dump_enable = false;
+  Real m_adjoint_debug_dump_threshold = 0.0;
+  int m_adjoint_debug_dump_max_rows = 200000;
+  int m_adjoint_debug_dump_stride = 1;
+  int m_adjoint_debug_dump_rows = 0;
+  LongInteger m_adjoint_debug_dump_run_id = 0;
+  std::ofstream m_adjoint_debug_dump_stream;
+  int m_element_stiffness_param_id = -1;
+
+  // Optional overflow-risk warnings for dual/ancillary variables.
+  bool m_dual_overflow_warn_enable = false;
+  Real m_dual_overflow_warn_fraction = 0.95;
+  int m_dual_overflow_warn_limit = 20;
+  int m_dual_overflow_warn_count = 0;
   
   Integrator<Ratio>               m_integrator;           // (Bit-reversible) leapfrog time integrator
   std::vector<ContactInteraction> m_contact_interactions; // List of penalty-based contact interactions
@@ -277,9 +296,29 @@ struct System : public SystemBase {
     if (params.count("mass_damping_factor") > 0) m_alpha = params["mass_damping_factor"];
     if (params.count("contact_stiffness") > 0) m_contact_stiffness = params["contact_stiffness"];
     if (params.count("overflow_limit") > 0) m_overflow_limit = int(params["overflow_limit"]);
+    if (params.count("adjoint_debug_dump_enable") > 0) m_adjoint_debug_dump_enable = (params["adjoint_debug_dump_enable"] != 0.0);
+    if (params.count("adjoint_debug_dump_threshold") > 0) m_adjoint_debug_dump_threshold = params["adjoint_debug_dump_threshold"];
+    if (params.count("adjoint_debug_dump_max_rows") > 0) m_adjoint_debug_dump_max_rows = std::max(0,int(params["adjoint_debug_dump_max_rows"]));
+    if (params.count("adjoint_debug_dump_stride") > 0) m_adjoint_debug_dump_stride = std::max(1,int(params["adjoint_debug_dump_stride"]));
+    if (params.count("dual_overflow_warn_enable") > 0) m_dual_overflow_warn_enable = (params["dual_overflow_warn_enable"] != 0.0);
+    if (params.count("dual_overflow_warn_fraction") > 0) {
+      m_dual_overflow_warn_fraction = std::max(0.0,std::min(1.0,params["dual_overflow_warn_fraction"]));
+    }
+    if (params.count("dual_overflow_warn_limit") > 0) m_dual_overflow_warn_limit = std::max(0,int(params["dual_overflow_warn_limit"]));
+    m_dual_overflow_warn_count = 0;
+    m_adjoint_debug_dump_rows = 0;
+    m_adjoint_debug_dump_run_id += 1;
 
     // Initialize the element/material object
     m_element = Element_T(params);
+    m_element_stiffness_param_id = -1;
+    for (int p=0; p<m_element.adjoint_num_params(); p++) {
+      if (std::string(m_element.adjoint_param_name(p)) == "stiffness_scaling_factor") {
+        m_element_stiffness_param_id = p;
+        break;
+      }
+    }
+    initialize_adjoint_debug_dump_stream();
 
     // Initialize all mesh totals
     Nnodes          = new_Nnodes;
@@ -329,6 +368,12 @@ struct System : public SystemBase {
     node_field_names.push_back("dual_velocity_X");
     node_field_names.push_back("dual_velocity_Y");
     node_field_names.push_back("dual_velocity_Z");
+    node_field_names.push_back("adjoint_displacement_X");
+    node_field_names.push_back("adjoint_displacement_Y");
+    node_field_names.push_back("adjoint_displacement_Z");
+    node_field_names.push_back("adjoint_velocity_X");
+    node_field_names.push_back("adjoint_velocity_Y");
+    node_field_names.push_back("adjoint_velocity_Z");
 
     // Initialize data for all DoFs
     for (int i=0; i<Ndofs; i++) {
@@ -693,6 +738,7 @@ struct System : public SystemBase {
       apply_first_kick_damping_pullback(dt_step);
     }
 
+    maybe_warn_dual_velocity_overflow("post_second_half_step");
     enforce_prescribed_velocities();
 
     // Update kinetic energy
@@ -898,13 +944,19 @@ struct System : public SystemBase {
 	field_data[Nstate*i+ 6] = f[2*i+0];
 	field_data[Nstate*i+ 7] = f[2*i+1];
 	field_data[Nstate*i+ 8] = 0.0;
-	field_data[Nstate*i+ 9] = u[2*i+0].second;
-	field_data[Nstate*i+10] = u[2*i+1].second;
-	field_data[Nstate*i+11] = 0.0;
-	field_data[Nstate*i+12] = v[2*i+0].second;
-	field_data[Nstate*i+13] = v[2*i+1].second;
-	field_data[Nstate*i+14] = 0.0;
-      }
+		field_data[Nstate*i+ 9] = u[2*i+0].second;
+		field_data[Nstate*i+10] = u[2*i+1].second;
+		field_data[Nstate*i+11] = 0.0;
+		field_data[Nstate*i+12] = v[2*i+0].second;
+		field_data[Nstate*i+13] = v[2*i+1].second;
+		field_data[Nstate*i+14] = 0.0;
+		field_data[Nstate*i+15] = u_adjoint[2*i+0];
+		field_data[Nstate*i+16] = u_adjoint[2*i+1];
+		field_data[Nstate*i+17] = 0.0;
+		field_data[Nstate*i+18] = v_adjoint[2*i+0];
+		field_data[Nstate*i+19] = v_adjoint[2*i+1];
+		field_data[Nstate*i+20] = 0.0;
+	      }
     } else if (entity_type == "element") {
       const int Nstate = m_element.num_state_vars();
       const int Nmat_state = get_num_fields(entity_type);
@@ -1035,6 +1087,112 @@ struct System : public SystemBase {
   // ===================================================================== //
 private:
   // ===================================================================== //
+
+  void initialize_adjoint_debug_dump_stream() {
+    if (m_adjoint_debug_dump_stream.is_open()) {
+      m_adjoint_debug_dump_stream.close();
+    }
+    if (!m_adjoint_debug_dump_enable) { return; }
+    if (m_element_stiffness_param_id < 0) {
+      std::cout << "adjoint_debug_dump_enable requested, but material does not expose parameter "
+                << "'stiffness_scaling_factor'." << std::endl;
+      return;
+    }
+
+    const std::string filename = "adjoint_stiffness_qp_debug.csv";
+    bool has_existing_data = false;
+    {
+      std::ifstream in(filename);
+      has_existing_data = in.good() && (in.peek() != std::ifstream::traits_type::eof());
+    }
+
+    m_adjoint_debug_dump_stream.open(filename,std::ios::out | std::ios::app);
+    if (!m_adjoint_debug_dump_stream.is_open()) {
+      std::cout << "Failed to open adjoint debug dump file: " << filename << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (!has_existing_data) {
+      m_adjoint_debug_dump_stream
+        << "run_id,time_step,time,phase,stage,element_id,qp_id,"
+        << "grad_before,grad_after,grad_delta,abs_grad_delta\n";
+    }
+    m_adjoint_debug_dump_stream.flush();
+  }
+
+  void log_adjoint_stiffness_qp_delta(PassPhase phase, const char* stage,
+                                      int element_id, int qp_id,
+                                      Real grad_before, Real grad_after) {
+    if (!m_adjoint_debug_dump_enable) { return; }
+    if (m_element_stiffness_param_id < 0) { return; }
+    if (!m_adjoint_debug_dump_stream.is_open()) { return; }
+    if (m_adjoint_debug_dump_rows >= m_adjoint_debug_dump_max_rows) { return; }
+    if ((m_adjoint_debug_dump_stride > 1) && (element_id % m_adjoint_debug_dump_stride != 0)) { return; }
+
+    const Real grad_delta = grad_after - grad_before;
+    const Real abs_grad_delta = std::fabs(grad_delta);
+    if (abs_grad_delta < m_adjoint_debug_dump_threshold) { return; }
+
+    m_adjoint_debug_dump_stream
+      << m_adjoint_debug_dump_run_id << ","
+      << m_time_step << ","
+      << std::setprecision(17) << m_time << ","
+      << pass_phase_name(phase) << ","
+      << stage << ","
+      << element_id << ","
+      << qp_id << ","
+      << std::setprecision(17) << grad_before << ","
+      << std::setprecision(17) << grad_after << ","
+      << std::setprecision(17) << grad_delta << ","
+      << std::setprecision(17) << abs_grad_delta << "\n";
+    m_adjoint_debug_dump_rows++;
+
+    if (m_adjoint_debug_dump_rows == m_adjoint_debug_dump_max_rows) {
+      std::cout << "adjoint debug dump reached max rows (" << m_adjoint_debug_dump_max_rows
+                << ") for run_id=" << m_adjoint_debug_dump_run_id << std::endl;
+    }
+  }
+
+  LongInteger dual_mantissa_abs(const Real&) const { return 0; }
+
+  template<typename T>
+  LongInteger dual_mantissa_abs(const T& value) const {
+    return std::llabs(LongInteger(value.mantissa));
+  }
+
+  void maybe_warn_dual_velocity_overflow(const char* context) {
+    if (!m_dual_overflow_warn_enable) { return; }
+    if (m_dual_overflow_warn_limit == 0) { return; }
+    if (m_dual_overflow_warn_count >= m_dual_overflow_warn_limit) { return; }
+
+    const LongInteger max_integer = LongInteger(std::numeric_limits<Integer>::max());
+    const LongInteger threshold = LongInteger(m_dual_overflow_warn_fraction*Real(max_integer));
+
+    LongInteger max_abs_mantissa = 0;
+    int max_abs_dof = -1;
+    for (int i=0; i<Ndofs; i++) {
+      LongInteger abs_value = dual_mantissa_abs(v[i].second);
+      if (abs_value > max_abs_mantissa) {
+        max_abs_mantissa = abs_value;
+        max_abs_dof = i;
+      }
+    }
+
+    if (max_abs_mantissa >= threshold) {
+      m_dual_overflow_warn_count++;
+      std::cout
+        << "WARNING: dual velocity mantissa near overflow in context=" << context
+        << " at time_step=" << m_time_step
+        << ", time=" << m_time
+        << ", dof=" << max_abs_dof
+        << ", |mantissa|max=" << max_abs_mantissa
+        << ", threshold=" << threshold
+        << ", int32_max=" << max_integer
+        << std::endl;
+      if (m_dual_overflow_warn_count == m_dual_overflow_warn_limit) {
+        std::cout << "Further dual-overflow warnings suppressed for this run." << std::endl;
+      }
+    }
+  }
 
   void register_adjoint_param_name(const std::string& name) {
     if (name.empty()) { return; }
@@ -1286,8 +1444,25 @@ private:
         Real bar_sxy = bar_P00*cof10 + bar_P01*cof11 + bar_P10*cof00 + bar_P11*cof01;
 
         if (!first_kick) {
+          Real grad_before_direct = 0.0;
+          if (m_adjoint_debug_dump_enable && (m_element_stiffness_param_id >= 0)) {
+            grad_before_direct =
+              material_adjoint_get_param_gradient(m_element.m_model,model_state,m_element_stiffness_param_id);
+          }
           material_adjoint_add_history_seed_from_stress(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
           material_adjoint_add_direct_param_seed_from_stress(m_element.m_model,model_state,bar_sxx,bar_syy,bar_sxy);
+          if (m_adjoint_debug_dump_enable && (m_element_stiffness_param_id >= 0)) {
+            Real grad_after_direct =
+              material_adjoint_get_param_gradient(m_element.m_model,model_state,m_element_stiffness_param_id);
+            log_adjoint_stiffness_qp_delta(
+              PassPhase::BackwardAdjoint,
+              "second_kick_direct",
+              e,
+              q,
+              grad_before_direct,
+              grad_after_direct
+            );
+          }
         }
 
         Real bar_cof00 = bar_P00*sxx + bar_P10*sxy;
@@ -1492,6 +1667,7 @@ private:
     }
     
     const int Nstate_vars_per_elem = m_element.num_state_vars();
+    const int Nmat_state_elem = m_element.m_model.num_state_vars();
 
     // Loop over all solid elements
     for (int e=0; e<Nelems; e++) {
@@ -1567,7 +1743,32 @@ private:
           }
         }
       }
+      Real stiffness_grad_before_update[4] = { 0.0, 0.0, 0.0, 0.0 };
+      if ((phase == PassPhase::BackwardAdjoint) && m_adjoint_debug_dump_enable && (m_element_stiffness_param_id >= 0)) {
+        for (int q=0; q<4; q++) {
+          Real* model_state = &state[Nstate_vars_per_elem*e + (q+1)*Nmat_state_elem];
+          stiffness_grad_before_update[q] =
+            material_adjoint_get_param_gradient(m_element.m_model,model_state,m_element_stiffness_param_id);
+        }
+      }
+
       m_element.update(xe,ue,me,fe,Ee,&state[Nstate_vars_per_elem*e],dt_step,phase);
+
+      if ((phase == PassPhase::BackwardAdjoint) && m_adjoint_debug_dump_enable && (m_element_stiffness_param_id >= 0)) {
+        for (int q=0; q<4; q++) {
+          Real* model_state = &state[Nstate_vars_per_elem*e + (q+1)*Nmat_state_elem];
+          Real stiffness_grad_after_update =
+            material_adjoint_get_param_gradient(m_element.m_model,model_state,m_element_stiffness_param_id);
+          log_adjoint_stiffness_qp_delta(
+            phase,
+            "material_update",
+            e,
+            q,
+            stiffness_grad_before_update[q],
+            stiffness_grad_after_update
+          );
+        }
+      }
 
       // Scatter mass and forces to the nodes
       // WARNING: the following scatter operation will not yield parallel consistency with multi-threading!!!
@@ -1722,12 +1923,7 @@ private:
 
     } // End loop over all DoFs
 
-    // Report the largest dual variable value (indicates an integer overflow ...)
-    //Integer max_val;
-    //for (int i = 0; i < Ndofs; i++) {
-    //  max_val = std::max(max_val,std::abs(v[i].second.mantissa));
-    //}
-    //if (Real(max_val) > 0.99*std::numeric_limits<Integer>::max()) std::cout << "max val = " << max_val << " > " << 0.99*std::numeric_limits<Integer>::max() << std::endl;
+    maybe_warn_dual_velocity_overflow("update_accelerations");
     
   } // update_accelerations()
   

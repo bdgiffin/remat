@@ -41,6 +41,21 @@ Real global_field_by_name(SystemBase& sys, const std::string& name) {
   return 0.0;
 }
 
+Real node_field_by_name(SystemBase& sys, int node_id, const std::string& name) {
+  const int n_nodes = sys.get_num_entities("node");
+  const int n_fields = sys.get_num_fields("node");
+  if ((node_id < 0) || (node_id >= n_nodes)) { return 0.0; }
+
+  std::vector<double> values(n_nodes*n_fields,0.0);
+  sys.get_fields("node",values.data());
+  for (int i=0; i<n_fields; i++) {
+    if (name == sys.get_field_name("node",i)) {
+      return values[n_fields*node_id + i];
+    }
+  }
+  return 0.0;
+}
+
 struct TrussKickRun {
   Real grad_tau;
   Real grad_E;
@@ -513,6 +528,44 @@ TEST(test_SystemAdjointKick, nodal_velocity_seed_api_matches_direct_seed) {
   ASSERT_NEAR(api.phi,direct.phi,1.0e-14);
   ASSERT_NEAR(api.grad_alpha,direct.grad_alpha,1.0e-12);
   ASSERT_NEAR(api.grad_k,direct.grad_k,1.0e-12);
+}
+
+TEST(test_SystemAdjointKick, node_fields_expose_global_adjoint_arrays) {
+  PointMassSystem sys;
+
+  const int Nnodes = 1;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 0;
+  const int Nnodes_per_elem = 4;
+
+  double coordinates[2] = { 0.0, 0.0 };
+  double velocities[2]  = { 0.0, 0.0 };
+  bool fixity[2]        = { false, false };
+  int connectivity_dummy[4] = { 0,0,0,0 };
+  int point_ids[1] = { 0 };
+  double point_mass[1] = { 1.0 };
+
+  Parameters params;
+  params["density"] = 1.0;
+  params["youngs_modulus"] = 1.0;
+  params["poissons_ratio"] = 0.25;
+
+  sys.initialize(coordinates,velocities,fixity,Nnodes,Ndofs_per_node,
+                 connectivity_dummy,Nelems,Nnodes_per_elem,params);
+  sys.initialize_point_mass(point_ids,point_mass,1,params);
+  sys.initialize_state();
+
+  sys.clear_adjoint_state();
+  const int sensor_nodes[1] = { 0 };
+  const double velocity_seed_xy[2] = { 0.3, -0.7 };
+  const double displacement_seed_xy[2] = { -0.2, 0.5 };
+  sys.add_nodal_velocity_adjoint_seed(sensor_nodes,velocity_seed_xy,1);
+  sys.add_nodal_displacement_adjoint_seed(sensor_nodes,displacement_seed_xy,1);
+
+  ASSERT_NEAR(node_field_by_name(sys,0,"adjoint_velocity_X"),0.3,1.0e-14);
+  ASSERT_NEAR(node_field_by_name(sys,0,"adjoint_velocity_Y"),-0.7,1.0e-14);
+  ASSERT_NEAR(node_field_by_name(sys,0,"adjoint_displacement_X"),-0.2,1.0e-14);
+  ASSERT_NEAR(node_field_by_name(sys,0,"adjoint_displacement_Y"),0.5,1.0e-14);
 }
 
 TEST(test_SystemAdjointKick, invalid_sensor_node_id_is_rejected) {

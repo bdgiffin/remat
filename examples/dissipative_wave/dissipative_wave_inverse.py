@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -109,6 +110,13 @@ def configure_run(problem, layer_coeffs, tau, args):
     global _ACTIVE_LAYER_COEFFS, _LAYER_BOUNDS
     _ACTIVE_LAYER_COEFFS = np.asarray(layer_coeffs, dtype=np.double).copy()
     _LAYER_BOUNDS = np.asarray(problem["layer_bounds"], dtype=np.double).copy()
+    adjoint_debug_dump = bool(getattr(args, "adjoint_debug_dump", False))
+    adjoint_debug_threshold = float(getattr(args, "adjoint_debug_threshold", 0.0))
+    adjoint_debug_max_rows = int(getattr(args, "adjoint_debug_max_rows", 200000))
+    adjoint_debug_stride = int(getattr(args, "adjoint_debug_stride", 1))
+    dual_overflow_warn = bool(getattr(args, "dual_overflow_warn", False))
+    dual_overflow_warn_fraction = float(getattr(args, "dual_overflow_warn_fraction", 0.95))
+    dual_overflow_warn_limit = int(getattr(args, "dual_overflow_warn_limit", 20))
 
     REMAT.API.set_integrator_type(args.integrator_type.encode("utf-8"))
     REMAT.API.define_parameter(b"body_force_x", 0.0)
@@ -118,6 +126,13 @@ def configure_run(problem, layer_coeffs, tau, args):
     REMAT.API.define_parameter(b"overflow_limit", float(args.overflow_limit))
     REMAT.API.define_parameter(b"mat_overflow_limit", float(args.mat_overflow_limit))
     REMAT.API.define_parameter(b"adjoint_material_objective_weight", 0.0)
+    REMAT.API.define_parameter(b"adjoint_debug_dump_enable", 1.0 if adjoint_debug_dump else 0.0)
+    REMAT.API.define_parameter(b"adjoint_debug_dump_threshold", float(adjoint_debug_threshold))
+    REMAT.API.define_parameter(b"adjoint_debug_dump_max_rows", float(adjoint_debug_max_rows))
+    REMAT.API.define_parameter(b"adjoint_debug_dump_stride", float(adjoint_debug_stride))
+    REMAT.API.define_parameter(b"dual_overflow_warn_enable", 1.0 if dual_overflow_warn else 0.0)
+    REMAT.API.define_parameter(b"dual_overflow_warn_fraction", float(dual_overflow_warn_fraction))
+    REMAT.API.define_parameter(b"dual_overflow_warn_limit", float(dual_overflow_warn_limit))
 
     REMAT.API.define_parameter(b"density", args.density)
     REMAT.API.define_parameter(b"youngs_modulus", args.youngs_modulus)
@@ -138,7 +153,277 @@ def configure_run(problem, layer_coeffs, tau, args):
     REMAT.API.initialize()
 
 
-def run_forward_or_adjoint(problem, layer_coeffs, tau, args, observed_history=None, compute_gradients=False):
+def _sum_by_layer(values, elem_layer_ids, n_layers):
+    out = np.zeros(n_layers, dtype=np.double)
+    for lid in range(n_layers):
+        out[lid] = float(np.sum(values[elem_layer_ids == lid]))
+    return out
+
+
+def _l2_by_layer(values, elem_layer_ids, n_layers):
+    out = np.zeros(n_layers, dtype=np.double)
+    for lid in range(n_layers):
+        val = values[elem_layer_ids == lid]
+        out[lid] = float(np.linalg.norm(val))
+    return out
+
+
+def _maxabs_by_layer(values, elem_layer_ids, n_layers):
+    out = np.zeros(n_layers, dtype=np.double)
+    for lid in range(n_layers):
+        val = values[elem_layer_ids == lid]
+        out[lid] = float(np.max(np.abs(val))) if val.size else 0.0
+    return out
+
+
+def _node_field_or_zeros(problem, field_name):
+    values = REMAT.get_field(b"node", field_name)
+    if values is None:
+        return np.zeros(problem["coordinates"].shape[0], dtype=np.double)
+    return np.asarray(values, dtype=np.double).reshape(-1)
+
+
+def _adjoint_node_field(problem, primary_name, dual_fallback_name):
+    values = REMAT.get_field(b"node", primary_name)
+    if values is not None:
+        return np.asarray(values, dtype=np.double).reshape(-1)
+    return _node_field_or_zeros(problem, dual_fallback_name)
+
+
+def _capture_adjoint_snapshot(problem, n_layers):
+    sensor_nodes = problem["sensor_nodes"]
+    elem_layer_ids = problem["elem_layer_ids"]
+
+    dual_vy = _node_field_or_zeros(problem, "dual_velocity_Y")
+    dual_uy = _node_field_or_zeros(problem, "dual_displacement_Y")
+    adjoint_vy = _adjoint_node_field(problem, "adjoint_velocity_Y", "dual_velocity_Y")
+    adjoint_uy = _adjoint_node_field(problem, "adjoint_displacement_Y", "dual_displacement_Y")
+
+    lambda_xx = REMAT.get_field(b"element", "lambda_q_xx")
+    lambda_yy = REMAT.get_field(b"element", "lambda_q_yy")
+    lambda_xy = REMAT.get_field(b"element", "lambda_q_xy")
+    lambda_mag = np.sqrt(lambda_xx * lambda_xx + lambda_yy * lambda_yy + lambda_xy * lambda_xy)
+
+    elem_grad_scaling = REMAT.get_field(b"element", "dparam_stiffness_scaling_factor")
+    layer_grad = _sum_by_layer(elem_grad_scaling, elem_layer_ids, n_layers)
+    layer_lambda_l2 = _l2_by_layer(lambda_mag, elem_layer_ids, n_layers)
+    layer_lambda_maxabs = _maxabs_by_layer(lambda_mag, elem_layer_ids, n_layers)
+
+    return {
+        "grad_tau": float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0]),
+        "grad_layers": layer_grad,
+        "adjoint_velocity_y_maxabs_all_nodes": float(np.max(np.abs(adjoint_vy))) if adjoint_vy.size else 0.0,
+        "adjoint_velocity_y_maxabs_sensors": float(np.max(np.abs(adjoint_vy[sensor_nodes]))) if sensor_nodes.size else 0.0,
+        "adjoint_displacement_y_maxabs_all_nodes": float(np.max(np.abs(adjoint_uy))) if adjoint_uy.size else 0.0,
+        "dual_velocity_y_maxabs_all_nodes": float(np.max(np.abs(dual_vy))) if dual_vy.size else 0.0,
+        "dual_velocity_y_maxabs_sensors": float(np.max(np.abs(dual_vy[sensor_nodes]))) if sensor_nodes.size else 0.0,
+        "dual_displacement_y_maxabs_all_nodes": float(np.max(np.abs(dual_uy))) if dual_uy.size else 0.0,
+        "lambda_q_l2_by_layer": layer_lambda_l2,
+        "lambda_q_maxabs_by_layer": layer_lambda_maxabs,
+    }
+
+
+def _write_trace_csv(trace, path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    nsteps = int(trace["obs_step"].size)
+    n_layers = int(trace["grad_layers_cum"].shape[1])
+    order = np.argsort(trace["obs_step"])
+    header = [
+        "obs_step",
+        "obs_time",
+        "residual_l2",
+        "residual_rms",
+        "dual_vy_sensor_max_pre",
+        "dual_vy_sensor_max_post",
+        "dual_vy_all_max_post",
+        "dual_uy_all_max_post",
+        "adjoint_vy_sensor_max_pre",
+        "adjoint_vy_sensor_max_post",
+        "adjoint_vy_all_max_post",
+        "adjoint_uy_all_max_post",
+        "grad_tau_cum",
+        "grad_tau_delta",
+    ]
+    for lid in range(n_layers):
+        header.append(f"grad_layer{lid}_cum")
+    for lid in range(n_layers):
+        header.append(f"grad_layer{lid}_delta")
+    for lid in range(n_layers):
+        header.append(f"lambda_layer{lid}_l2")
+    for lid in range(n_layers):
+        header.append(f"lambda_layer{lid}_maxabs")
+
+    with path.open("w", encoding="utf-8") as f:
+        f.write(",".join(header) + "\n")
+        for idx in order:
+            row = [
+                str(int(trace["obs_step"][idx])),
+                f"{float(trace['obs_time'][idx]):.12e}",
+                f"{float(trace['residual_l2'][idx]):.12e}",
+                f"{float(trace['residual_rms'][idx]):.12e}",
+                f"{float(trace['dual_vy_sensor_max_pre'][idx]):.12e}",
+                f"{float(trace['dual_vy_sensor_max_post'][idx]):.12e}",
+                f"{float(trace['dual_vy_all_max_post'][idx]):.12e}",
+                f"{float(trace['dual_uy_all_max_post'][idx]):.12e}",
+                f"{float(trace['adjoint_vy_sensor_max_pre'][idx]):.12e}",
+                f"{float(trace['adjoint_vy_sensor_max_post'][idx]):.12e}",
+                f"{float(trace['adjoint_vy_all_max_post'][idx]):.12e}",
+                f"{float(trace['adjoint_uy_all_max_post'][idx]):.12e}",
+                f"{float(trace['grad_tau_cum'][idx]):.12e}",
+                f"{float(trace['grad_tau_delta'][idx]):.12e}",
+            ]
+            for lid in range(n_layers):
+                row.append(f"{float(trace['grad_layers_cum'][idx, lid]):.12e}")
+            for lid in range(n_layers):
+                row.append(f"{float(trace['grad_layers_delta'][idx, lid]):.12e}")
+            for lid in range(n_layers):
+                row.append(f"{float(trace['lambda_layers_l2'][idx, lid]):.12e}")
+            for lid in range(n_layers):
+                row.append(f"{float(trace['lambda_layers_maxabs'][idx, lid]):.12e}")
+            f.write(",".join(row) + "\n")
+    return path
+
+
+def _plot_trace(trace, n_layers, label, output_file):
+    obs_step = trace["obs_step"]
+    order_t = np.argsort(obs_step)
+    t = trace["obs_time"][order_t]
+
+    rev = np.arange(obs_step.size)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.8, 8.4))
+    ax_res, ax_grad_inc, ax_grad_cum, ax_adj = axes.ravel()
+
+    ax_res.plot(t, trace["residual_rms"][order_t], color="#b03a2e", linewidth=1.8)
+    ax_res.set_title(f"Residual RMS vs Time ({label})")
+    ax_res.set_xlabel("time")
+    ax_res.set_ylabel("RMS residual at sensors")
+    ax_res.grid(True, alpha=0.25)
+
+    for lid in range(n_layers):
+        ax_grad_inc.semilogy(
+            t,
+            np.abs(trace["grad_layers_delta"][order_t, lid]) + 1.0e-30,
+            linewidth=1.7,
+            label=f"|dL/dlayer{lid}| step contrib",
+        )
+    ax_grad_inc.semilogy(
+        t,
+        np.abs(trace["grad_tau_delta"][order_t]) + 1.0e-30,
+        color="#111111",
+        linewidth=1.3,
+        linestyle="--",
+        label="|dL/dtau| step contrib",
+    )
+    ax_grad_inc.set_title("Per-Time-Step Gradient Contribution Magnitude")
+    ax_grad_inc.set_xlabel("time")
+    ax_grad_inc.set_ylabel("absolute contribution")
+    ax_grad_inc.grid(True, alpha=0.25)
+    ax_grad_inc.legend(fontsize=8)
+
+    for lid in range(n_layers):
+        ax_grad_cum.plot(rev, trace["grad_layers_cum"][:, lid], linewidth=1.8, label=f"layer {lid}")
+    ax_grad_cum.plot(rev, trace["grad_tau_cum"], color="#111111", linewidth=1.3, linestyle="--", label="tau")
+    ax_grad_cum.set_title("Cumulative Gradient During Reverse Sweep")
+    ax_grad_cum.set_xlabel("reverse-sweep index (0 = last observation)")
+    ax_grad_cum.set_ylabel("cumulative gradient")
+    ax_grad_cum.grid(True, alpha=0.25)
+    ax_grad_cum.legend(fontsize=8)
+
+    for lid in range(n_layers):
+        ax_adj.semilogy(
+            t,
+            trace["lambda_layers_l2"][order_t, lid] + 1.0e-30,
+            linewidth=1.8,
+            label=f"layer {lid} ||lambda_q||_2",
+        )
+    sensor_global_adjoint = (
+        trace["adjoint_vy_sensor_max_post"][order_t]
+        if "adjoint_vy_sensor_max_post" in trace
+        else trace["dual_vy_sensor_max_post"][order_t]
+    )
+    ax_adj.semilogy(t, sensor_global_adjoint + 1.0e-30, color="#111111", linewidth=1.2, linestyle="--",
+                    label="max|v*| sensors")
+    ax_adj.set_title("Adjoint State Magnitude vs Time")
+    ax_adj.set_xlabel("time")
+    ax_adj.set_ylabel("magnitude")
+    ax_adj.grid(True, alpha=0.25)
+    ax_adj.legend(fontsize=8)
+
+    fig.tight_layout()
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_file, dpi=180)
+    plt.close(fig)
+    return output_file
+
+
+def _save_diagnostics_bundle(run, problem, args, label, output_dir):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    trace = run["adjoint_trace"]
+    csv_path = _write_trace_csv(trace, output_dir / f"{label}_adjoint_trace.csv")
+    fig_path = _plot_trace(trace, args.n_layers, label, output_dir / f"{label}_adjoint_trace.png")
+
+    endpoint = {
+        "label": label,
+        "loss": float(run["loss"]),
+        "grad_tau": float(run["grad_tau"]),
+        "grad_layers": run["grad_layers"].tolist(),
+        "terminal_before_seeding": {
+            k: (v.tolist() if isinstance(v, np.ndarray) else float(v))
+            for k, v in trace["endpoint_terminal"].items()
+        },
+        "initial_time_after_full_reverse": {
+            k: (v.tolist() if isinstance(v, np.ndarray) else float(v))
+            for k, v in trace["endpoint_initial"].items()
+        },
+    }
+
+    endpoint_path = output_dir / f"{label}_adjoint_endpoints.json"
+    with endpoint_path.open("w", encoding="utf-8") as f:
+        json.dump(endpoint, f, indent=2)
+
+    return csv_path, fig_path, endpoint_path
+
+
+def _fd_report(problem, layer_coeffs, tau, args, observed_history):
+    adj = run_forward_or_adjoint(
+        problem,
+        layer_coeffs,
+        tau,
+        args,
+        observed_history=observed_history,
+        compute_gradients=True,
+    )
+    fd_layers, fd_tau = finite_difference_gradients(problem, layer_coeffs, tau, args, observed_history, args.fd_step)
+    eps = 1.0e-14
+    rel_layer = np.abs(adj["grad_layers"] - fd_layers) / np.maximum.reduce(
+        [np.abs(adj["grad_layers"]), np.abs(fd_layers), np.full_like(fd_layers, eps)]
+    )
+    rel_tau = abs(adj["grad_tau"] - fd_tau) / max(abs(adj["grad_tau"]), abs(fd_tau), eps)
+    return {
+        "adjoint_layers": adj["grad_layers"],
+        "adjoint_tau": float(adj["grad_tau"]),
+        "fd_layers": fd_layers,
+        "fd_tau": float(fd_tau),
+        "rel_error_layers": rel_layer,
+        "rel_error_tau": float(rel_tau),
+    }
+
+
+def run_forward_or_adjoint(
+    problem,
+    layer_coeffs,
+    tau,
+    args,
+    observed_history=None,
+    compute_gradients=False,
+    collect_adjoint_trace=False,
+):
     configure_run(problem, layer_coeffs, tau, args)
 
     sensor_nodes = problem["sensor_nodes"]
@@ -156,30 +441,121 @@ def run_forward_or_adjoint(problem, layer_coeffs, tau, args, observed_history=No
 
     grad_tau = 0.0
     grad_layers = np.zeros_like(layer_coeffs)
+    adjoint_trace = None
     if compute_gradients:
         if observed_history is None:
             raise ValueError("compute_gradients=True requires observed_history.")
 
+        n_layers = int(layer_coeffs.size)
+        elem_layer_ids = problem["elem_layer_ids"]
         REMAT.clear_adjoint_state()
+        grad_tau_prev = 0.0
+        grad_layers_prev = np.zeros(n_layers, dtype=np.double)
+
+        if collect_adjoint_trace:
+            adjoint_trace = {
+                "obs_step": np.zeros(args.nsteps, dtype=np.int32),
+                "obs_time": np.zeros(args.nsteps, dtype=np.double),
+                "residual_l2": np.zeros(args.nsteps, dtype=np.double),
+                "residual_rms": np.zeros(args.nsteps, dtype=np.double),
+                "dual_vy_sensor_max_pre": np.zeros(args.nsteps, dtype=np.double),
+                "dual_vy_sensor_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "dual_vy_all_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "dual_uy_all_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "adjoint_vy_sensor_max_pre": np.zeros(args.nsteps, dtype=np.double),
+                "adjoint_vy_sensor_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "adjoint_vy_all_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "adjoint_uy_all_max_post": np.zeros(args.nsteps, dtype=np.double),
+                "grad_tau_cum": np.zeros(args.nsteps, dtype=np.double),
+                "grad_tau_delta": np.zeros(args.nsteps, dtype=np.double),
+                "grad_layers_cum": np.zeros((args.nsteps, n_layers), dtype=np.double),
+                "grad_layers_delta": np.zeros((args.nsteps, n_layers), dtype=np.double),
+                "lambda_layers_l2": np.zeros((args.nsteps, n_layers), dtype=np.double),
+                "lambda_layers_maxabs": np.zeros((args.nsteps, n_layers), dtype=np.double),
+                "endpoint_terminal": _capture_adjoint_snapshot(problem, n_layers),
+                "endpoint_initial": None,
+            }
+
         for rev in range(args.nsteps):
             k = args.nsteps - 1 - rev
             residual = sensor_history[k, :] - observed_history[k, :]
             seed_xy = np.zeros((nsensors, 2), dtype=np.double)
             seed_xy[:, 1] = residual
             REMAT.add_nodal_velocity_adjoint_seed(sensor_nodes, seed_xy)
+
+            if collect_adjoint_trace:
+                dual_vy_pre = _node_field_or_zeros(problem, "dual_velocity_Y")
+                adjoint_vy_pre = _adjoint_node_field(problem, "adjoint_velocity_Y", "dual_velocity_Y")
+                adjoint_trace["obs_step"][rev] = int(k)
+                adjoint_trace["obs_time"][rev] = float(k * args.dt)
+                adjoint_trace["residual_l2"][rev] = float(np.linalg.norm(residual))
+                adjoint_trace["residual_rms"][rev] = float(np.sqrt(np.mean(residual * residual)))
+                adjoint_trace["dual_vy_sensor_max_pre"][rev] = (
+                    float(np.max(np.abs(dual_vy_pre[sensor_nodes]))) if sensor_nodes.size else 0.0
+                )
+                adjoint_trace["adjoint_vy_sensor_max_pre"][rev] = (
+                    float(np.max(np.abs(adjoint_vy_pre[sensor_nodes]))) if sensor_nodes.size else 0.0
+                )
+
             REMAT.API.update_state(args.dt, args.nsub_steps, REMAT.PASS_BACKWARD_ADJOINT)
 
-        grad_tau = float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0])
-        elem_grad_scaling = REMAT.get_field(b"element", "dparam_stiffness_scaling_factor")
-        for lid in range(layer_coeffs.size):
-            grad_layers[lid] = float(np.sum(elem_grad_scaling[problem["elem_layer_ids"] == lid]))
+            if collect_adjoint_trace:
+                dual_vy = _node_field_or_zeros(problem, "dual_velocity_Y")
+                dual_uy = _node_field_or_zeros(problem, "dual_displacement_Y")
+                adjoint_vy = _adjoint_node_field(problem, "adjoint_velocity_Y", "dual_velocity_Y")
+                adjoint_uy = _adjoint_node_field(problem, "adjoint_displacement_Y", "dual_displacement_Y")
+                elem_grad_scaling = REMAT.get_field(b"element", "dparam_stiffness_scaling_factor")
+                grad_tau_now = float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0])
+                grad_layers_now = _sum_by_layer(elem_grad_scaling, elem_layer_ids, n_layers)
 
-    return {
+                lambda_xx = REMAT.get_field(b"element", "lambda_q_xx")
+                lambda_yy = REMAT.get_field(b"element", "lambda_q_yy")
+                lambda_xy = REMAT.get_field(b"element", "lambda_q_xy")
+                lambda_mag = np.sqrt(lambda_xx * lambda_xx + lambda_yy * lambda_yy + lambda_xy * lambda_xy)
+
+                adjoint_trace["dual_vy_sensor_max_post"][rev] = (
+                    float(np.max(np.abs(dual_vy[sensor_nodes]))) if sensor_nodes.size else 0.0
+                )
+                adjoint_trace["dual_vy_all_max_post"][rev] = float(np.max(np.abs(dual_vy))) if dual_vy.size else 0.0
+                adjoint_trace["dual_uy_all_max_post"][rev] = float(np.max(np.abs(dual_uy))) if dual_uy.size else 0.0
+                adjoint_trace["adjoint_vy_sensor_max_post"][rev] = (
+                    float(np.max(np.abs(adjoint_vy[sensor_nodes]))) if sensor_nodes.size else 0.0
+                )
+                adjoint_trace["adjoint_vy_all_max_post"][rev] = (
+                    float(np.max(np.abs(adjoint_vy))) if adjoint_vy.size else 0.0
+                )
+                adjoint_trace["adjoint_uy_all_max_post"][rev] = (
+                    float(np.max(np.abs(adjoint_uy))) if adjoint_uy.size else 0.0
+                )
+
+                adjoint_trace["grad_tau_cum"][rev] = grad_tau_now
+                adjoint_trace["grad_tau_delta"][rev] = grad_tau_now - grad_tau_prev
+                adjoint_trace["grad_layers_cum"][rev, :] = grad_layers_now
+                adjoint_trace["grad_layers_delta"][rev, :] = grad_layers_now - grad_layers_prev
+                adjoint_trace["lambda_layers_l2"][rev, :] = _l2_by_layer(lambda_mag, elem_layer_ids, n_layers)
+                adjoint_trace["lambda_layers_maxabs"][rev, :] = _maxabs_by_layer(lambda_mag, elem_layer_ids, n_layers)
+
+                grad_tau_prev = grad_tau_now
+                grad_layers_prev = grad_layers_now
+
+        if collect_adjoint_trace:
+            adjoint_trace["endpoint_initial"] = _capture_adjoint_snapshot(problem, n_layers)
+            grad_tau = float(grad_tau_prev)
+            grad_layers = grad_layers_prev.copy()
+        else:
+            grad_tau = float(REMAT.get_field(b"global", "dL_dparam_relaxation_time")[0])
+            elem_grad_scaling = REMAT.get_field(b"element", "dparam_stiffness_scaling_factor")
+            grad_layers = _sum_by_layer(elem_grad_scaling, elem_layer_ids, n_layers)
+
+    result = {
         "loss": float(loss),
         "sensor_history": sensor_history,
         "grad_tau": float(grad_tau),
         "grad_layers": grad_layers,
     }
+    if adjoint_trace is not None:
+        result["adjoint_trace"] = adjoint_trace
+    return result
 
 
 def finite_difference_gradients(problem, layer_coeffs, tau, args, observed_history, h):
@@ -539,6 +915,54 @@ def main():
     parser.add_argument("--mass-damping-factor", type=float, default=0.0)
     parser.add_argument("--overflow-limit", type=int, default=50)
     parser.add_argument("--mat-overflow-limit", type=int, default=50)
+    parser.add_argument(
+        "--adjoint-debug-dump",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable C++ per-quadrature debug dump for stiffness-scaling adjoint contributions "
+            "(writes adjoint_stiffness_qp_debug.csv in the working directory)."
+        ),
+    )
+    parser.add_argument(
+        "--adjoint-debug-threshold",
+        type=float,
+        default=0.0,
+        help="Absolute delta threshold for writing rows to adjoint_stiffness_qp_debug.csv.",
+    )
+    parser.add_argument(
+        "--adjoint-debug-max-rows",
+        type=int,
+        default=200000,
+        help="Maximum number of debug rows written per run for adjoint_stiffness_qp_debug.csv.",
+    )
+    parser.add_argument(
+        "--adjoint-debug-stride",
+        type=int,
+        default=1,
+        help="Element stride for adjoint stiffness debug dump (1 = every element).",
+    )
+    parser.add_argument(
+        "--dual-overflow-warn",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable warnings when dual/ancillary fixed-point states approach int32 range "
+            "before overflow checkpoint storage."
+        ),
+    )
+    parser.add_argument(
+        "--dual-overflow-warn-fraction",
+        type=float,
+        default=0.95,
+        help="Warning threshold as a fraction of int32 max mantissa.",
+    )
+    parser.add_argument(
+        "--dual-overflow-warn-limit",
+        type=int,
+        default=20,
+        help="Maximum number of dual-overflow warnings per run.",
+    )
 
     parser.add_argument("--true-tau", type=float, default=0.12)
     parser.add_argument("--init-tau", type=float, default=0.22)
@@ -574,6 +998,24 @@ def main():
     )
     parser.add_argument("--lbfgsb-gtol", type=float, default=1.0e-8)
     parser.add_argument("--lbfgsb-maxls", type=int, default=40)
+    parser.add_argument(
+        "--adjoint-diagnostics",
+        action="store_true",
+        default=False,
+        help="Run extra adjoint-state diagnostics (endpoint snapshots, per-step traces, and plots).",
+    )
+    parser.add_argument(
+        "--adjoint-diagnostics-dir",
+        type=str,
+        default="adjoint_diagnostics",
+        help="Output directory for adjoint diagnostics files.",
+    )
+    parser.add_argument(
+        "--adjoint-diagnostics-fd-check",
+        action="store_true",
+        default=False,
+        help="Run finite-difference checks for initial and recovered states during diagnostics.",
+    )
     parser.add_argument("--plot-file", type=str, default="dissipative_wave_inverse_summary.png")
     parser.add_argument("--setup-plot-file", type=str, default="dissipative_wave_inverse_setup.svg")
     parser.add_argument("--show", action="store_true")
@@ -623,6 +1065,52 @@ def main():
     print(f"  recovered tau = {tau:.6f}")
     print(f"  true layers   = {true_layers}")
     print(f"  recovered     = {layers}")
+
+    if args.adjoint_diagnostics:
+        diag_dir = Path(args.adjoint_diagnostics_dir)
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        diagnostic_cases = [
+            ("initial", init_layers.copy(), float(args.init_tau)),
+            ("recovered", layers.copy(), float(tau)),
+            ("truth", true_layers.copy(), float(args.true_tau)),
+        ]
+
+        print("\nAdjoint diagnostics:")
+        for label, diag_layers, diag_tau in diagnostic_cases:
+            diag_run = run_forward_or_adjoint(
+                problem,
+                diag_layers,
+                diag_tau,
+                args,
+                observed_history=observed_history,
+                compute_gradients=True,
+                collect_adjoint_trace=True,
+            )
+            csv_path, fig_path, endpoint_path = _save_diagnostics_bundle(diag_run, problem, args, label, diag_dir)
+            print(f"  [{label}] loss={diag_run['loss']:.6e}  grad_tau={diag_run['grad_tau']:.6e}")
+            print(f"    Saved: {csv_path}")
+            print(f"    Saved: {fig_path}")
+            print(f"    Saved: {endpoint_path}")
+
+            if args.adjoint_diagnostics_fd_check and label in ("initial", "recovered"):
+                fd = _fd_report(problem, diag_layers, diag_tau, args, observed_history)
+                fd_payload = {
+                    "label": label,
+                    "adjoint_layers": fd["adjoint_layers"].tolist(),
+                    "adjoint_tau": float(fd["adjoint_tau"]),
+                    "fd_layers": fd["fd_layers"].tolist(),
+                    "fd_tau": float(fd["fd_tau"]),
+                    "rel_error_layers": fd["rel_error_layers"].tolist(),
+                    "rel_error_tau": float(fd["rel_error_tau"]),
+                }
+                fd_path = diag_dir / f"{label}_fd_check.json"
+                with fd_path.open("w", encoding="utf-8") as f:
+                    json.dump(fd_payload, f, indent=2)
+                print(
+                    f"    FD rel_err: layers={np.max(fd['rel_error_layers']):.3e}, "
+                    f"tau={fd['rel_error_tau']:.3e}"
+                )
+                print(f"    Saved: {fd_path}")
 
     fig, axes = plt.subplots(2, 2, figsize=(12.0, 8.0))
     ax_loss, ax_layers, ax_trace, ax_profile = axes.ravel()

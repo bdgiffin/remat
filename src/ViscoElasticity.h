@@ -11,6 +11,8 @@
 #include "Rational.h"
 #include <limits>
 #include <array>
+#include <algorithm>
+#include <type_traits>
 #include "types.h"
 
 
@@ -60,7 +62,9 @@ class ViscoElasticity {
     STRESS_SEED_XX = 22,
     STRESS_SEED_YY = 23,
     STRESS_SEED_XY = 24,
-    DPARAM_STIFFNESS_SCALING_FACTOR = 25
+    DPARAM_STIFFNESS_SCALING_FACTOR = 25,
+    DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG = 26,
+    DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG = 27
   };
 
 
@@ -72,7 +76,46 @@ class ViscoElasticity {
     out[2] = e[2];             // gxy unchanged
   }
 
+  LongInteger dual_mantissa_abs(const Real&) const { return 0; }
+
+  template<typename T>
+  LongInteger dual_mantissa_abs(const T& value) const {
+    return std::llabs(LongInteger(value.mantissa));
+  }
+
+  void maybe_warn_dual_overflow(FixedE dual_xx, FixedE dual_yy, FixedE dual_xy, PassPhase phase, int overflow_counter) {
+    if (!dual_overflow_warn_enable) { return; }
+    if (dual_overflow_warn_limit == 0) { return; }
+    if (dual_overflow_warn_count >= dual_overflow_warn_limit) { return; }
+
+    const LongInteger max_integer = LongInteger(std::numeric_limits<Integer>::max());
+    const LongInteger threshold = LongInteger(dual_overflow_warn_fraction*Real(max_integer));
+    const LongInteger abs_xx = dual_mantissa_abs(dual_xx);
+    const LongInteger abs_yy = dual_mantissa_abs(dual_yy);
+    const LongInteger abs_xy = dual_mantissa_abs(dual_xy);
+    const LongInteger max_abs = std::max({abs_xx, abs_yy, abs_xy});
+
+    if (max_abs >= threshold) {
+      dual_overflow_warn_count++;
+      std::cout
+        << "WARNING: ViscoElasticity dual viscous state near overflow"
+        << " in phase=" << pass_phase_name(phase)
+        << ", overflow_counter=" << overflow_counter
+        << ", |mantissa|max=" << max_abs
+        << ", threshold=" << threshold
+        << ", int32_max=" << max_integer
+        << std::endl;
+      if (dual_overflow_warn_count == dual_overflow_warn_limit) {
+        std::cout << "Further ViscoElasticity dual-overflow warnings suppressed for this run." << std::endl;
+      }
+    }
+  }
+
   int  mat_overflow_limit = std::numeric_limits<int>::max();
+  bool dual_overflow_warn_enable = false;
+  Real dual_overflow_warn_fraction = 0.95;
+  int dual_overflow_warn_limit = 20;
+  int dual_overflow_warn_count = 0;
 
  public:
 
@@ -153,10 +196,20 @@ class ViscoElasticity {
     if (params.count("adjoint_material_objective_weight") > 0) {
       adjoint_material_objective_weight = params["adjoint_material_objective_weight"];
     }
+    if (params.count("dual_overflow_warn_enable") > 0) {
+      dual_overflow_warn_enable = (params["dual_overflow_warn_enable"] != 0.0);
+    }
+    if (params.count("dual_overflow_warn_fraction") > 0) {
+      dual_overflow_warn_fraction = std::max(0.0,std::min(1.0,params["dual_overflow_warn_fraction"]));
+    }
+    if (params.count("dual_overflow_warn_limit") > 0) {
+      dual_overflow_warn_limit = std::max(0,int(params["dual_overflow_warn_limit"]));
+    }
+    dual_overflow_warn_count = 0;
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 26; }
+ int num_state_vars(void) { return 28; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -176,6 +229,8 @@ class ViscoElasticity {
       "adjoint_stress_seed_yy",
       "adjoint_stress_seed_xy",
       "dparam_stiffness_scaling_factor",
+      "dparam_stiffness_scaling_factor_from_update",
+      "dparam_stiffness_scaling_factor_from_direct_seed",
     });
   }
 
@@ -212,6 +267,8 @@ class ViscoElasticity {
     state[STRESS_SEED_YY] = 0.0;
     state[STRESS_SEED_XY] = 0.0;
     state[DPARAM_STIFFNESS_SCALING_FACTOR] = 0.0;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG] = 0.0;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG] = 0.0;
   } // initialize()
 
   // Do we have to keep this?
@@ -266,6 +323,7 @@ class ViscoElasticity {
     Dual<FixedE> viscous_strain_xy(vs_xy_p, vs_xy_d);
 
     int overflow_counter = int(state[OVERFLOW_COUNTER]);
+    maybe_warn_dual_overflow(vs_xx_d,vs_yy_d,vs_xy_d,phase,overflow_counter);
     Real previous_strain[3] = { state[STRAIN_XX], state[STRAIN_YY], state[STRAIN_XY] };
     Real dev_previous_strain[3] = { 0.0, 0.0, 0.0 };
     Real dev_strain_np1[3] = { 0.0, 0.0, 0.0 };
@@ -273,6 +331,8 @@ class ViscoElasticity {
     Real dparam_tau = state[DPARAM_RELAXATION_TIME];
     Real dparam_mu_e = state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT];
     Real dparam_stiffness_scaling = state[DPARAM_STIFFNESS_SCALING_FACTOR];
+    Real dparam_stiffness_scaling_local_debug = state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG];
+    Real dparam_stiffness_scaling_direct_debug = state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG];
     const Real stress_seed_xx = state[STRESS_SEED_XX];
     const Real stress_seed_yy = state[STRESS_SEED_YY];
     const Real stress_seed_xy = state[STRESS_SEED_XY];
@@ -364,9 +424,12 @@ class ViscoElasticity {
           lam*previous_strain[0] + (lam + mu2)*previous_strain[1] + mu2_e*dev_elastic_n[1];
         const Real dsigma_xy_dscale =
           mu*previous_strain[2] + mu_e*dev_elastic_n[2];
-        dparam_stiffness_scaling += bar_sigma_xx*dsigma_xx_dscale;
-        dparam_stiffness_scaling += bar_sigma_yy*dsigma_yy_dscale;
-        dparam_stiffness_scaling += bar_sigma_xy*dsigma_xy_dscale;
+        const Real dparam_stiffness_scaling_local_increment =
+          bar_sigma_xx*dsigma_xx_dscale +
+          bar_sigma_yy*dsigma_yy_dscale +
+          bar_sigma_xy*dsigma_xy_dscale;
+        dparam_stiffness_scaling += dparam_stiffness_scaling_local_increment;
+        dparam_stiffness_scaling_local_debug += dparam_stiffness_scaling_local_increment;
 
         dparam_mu_e += bar_sigma_xx*(2.0*stiffness_scaling_factor*dev_elastic_n[0]);
         dparam_mu_e += bar_sigma_yy*(2.0*stiffness_scaling_factor*dev_elastic_n[1]);
@@ -413,6 +476,16 @@ class ViscoElasticity {
     const Real stress_yy = stress_yy_eq + stress_yy_Maxwell;
     const Real stress_xy = stress_xy_eq + stress_xy_Maxwell;
 
+    // Check the updated dual viscous history as well, so we can warn if a
+    // value grows dangerously between overflow checkpoint stores.
+    maybe_warn_dual_overflow(
+      viscous_strain_xx.second,
+      viscous_strain_yy.second,
+      viscous_strain_xy.second,
+      phase,
+      overflow_counter
+    );
+
     state[STRESS_ZZ] = 0.0;
     state[STRESS_YZ] = 0.0;
     state[STRESS_ZX] = 0.0;
@@ -434,6 +507,8 @@ class ViscoElasticity {
     state[DPARAM_RELAXATION_TIME] = dparam_tau;
     state[DPARAM_SHEAR_MODULUS_MAXWELL_ELEMENT] = dparam_mu_e;
     state[DPARAM_STIFFNESS_SCALING_FACTOR] = dparam_stiffness_scaling;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG] = dparam_stiffness_scaling_local_debug;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG] = dparam_stiffness_scaling_direct_debug;
     state[STRESS_SEED_XX] = 0.0;
     state[STRESS_SEED_YY] = 0.0;
     state[STRESS_SEED_XY] = 0.0;
@@ -562,10 +637,12 @@ class ViscoElasticity {
     const Real dsigma_xx_dscale = (lam + mu2)*exx + lam*eyy + mu2_e*dev_elastic_xx;
     const Real dsigma_yy_dscale = lam*exx + (lam + mu2)*eyy + mu2_e*dev_elastic_yy;
     const Real dsigma_xy_dscale = mu*gxy + mu_e*dev_elastic_xy;
-    state[DPARAM_STIFFNESS_SCALING_FACTOR] +=
+    const Real dparam_stiffness_scaling_direct_increment =
       stress_seed_xx*dsigma_xx_dscale +
       stress_seed_yy*dsigma_yy_dscale +
       stress_seed_xy*dsigma_xy_dscale;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR] += dparam_stiffness_scaling_direct_increment;
+    state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG] += dparam_stiffness_scaling_direct_increment;
   }
 
 
@@ -598,6 +675,8 @@ class ViscoElasticity {
     field_data[23] = state[STRESS_SEED_YY];
     field_data[24] = state[STRESS_SEED_XY];
     field_data[25] = state[DPARAM_STIFFNESS_SCALING_FACTOR];
+    field_data[26] = state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG];
+    field_data[27] = state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG];
   }
 
   // Return the initial sound speed
