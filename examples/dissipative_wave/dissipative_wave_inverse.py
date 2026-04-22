@@ -756,9 +756,9 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
     tau_history = []
     layer_history = []
     iteration_counter = {"value": 0}
-    cache = {"x": None, "loss": None, "grad": None}
+    cache = {"z": None, "x": None, "loss": None, "grad_z": None, "grad_x": None}
 
-    def objective_with_grad(x):
+    def objective_with_grad_x(x):
         layers, tau = unpack_params(x, args.n_layers)
         run = run_forward_or_adjoint(
             problem,
@@ -771,18 +771,44 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
         grad = np.concatenate(
             [run["grad_layers"], np.array([run["grad_tau"]], dtype=np.double)]
         )
-        cache["x"] = np.asarray(x, dtype=np.double).copy()
-        cache["loss"] = float(run["loss"])
-        cache["grad"] = grad.copy()
-        return cache["loss"], grad
+        return float(run["loss"]), grad
 
-    def log_iteration(x):
-        x = np.asarray(x, dtype=np.double)
-        if cache["x"] is None or not np.array_equal(x, cache["x"]):
-            loss, grad = objective_with_grad(x)
+    # Build a static diagonal scaling from the initial gradient (layers only).
+    # This is a simple, defensible preconditioning via variable reparameterization.
+    loss0, grad0 = objective_with_grad_x(x0)
+    grad_layers0 = np.abs(grad0[:args.n_layers])
+    eps = 1.0e-14
+    target = float(np.median(np.maximum(grad_layers0, eps))) if args.n_layers > 0 else 1.0
+    layer_scale = target / np.maximum(grad_layers0, eps)
+    layer_scale = np.clip(layer_scale, 0.3, 3.0)
+    param_scale = np.ones_like(x0)
+    param_scale[:args.n_layers] = layer_scale
+
+    z0 = x0 / param_scale
+    bounds_z = [(lo / param_scale[i], hi / param_scale[i]) for i, (lo, hi) in enumerate(bounds)]
+
+    print("Gradient balancing (static layer scales):", np.array2string(layer_scale, precision=3))
+
+    def objective_with_grad(z):
+        z = np.asarray(z, dtype=np.double)
+        x = z * param_scale
+        loss, grad_x = objective_with_grad_x(x)
+        grad_z = grad_x * param_scale
+        cache["z"] = z.copy()
+        cache["x"] = x.copy()
+        cache["loss"] = float(loss)
+        cache["grad_z"] = grad_z.copy()
+        cache["grad_x"] = grad_x.copy()
+        return cache["loss"], grad_z
+
+    def log_iteration(z):
+        z = np.asarray(z, dtype=np.double)
+        if cache["z"] is None or not np.array_equal(z, cache["z"]):
+            loss, _ = objective_with_grad(z)
         else:
             loss = float(cache["loss"])
-            grad = cache["grad"]
+        x = cache["x"]
+        grad = cache["grad_x"]
 
         layers, tau = unpack_params(x, args.n_layers)
         grad_layers = grad[:args.n_layers]
@@ -800,8 +826,12 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
         iteration_counter["value"] += 1
 
     # Log the starting point and optionally run FD check at the same point.
-    _, grad0 = objective_with_grad(x0)
-    log_iteration(x0)
+    cache["z"] = z0.copy()
+    cache["x"] = x0.copy()
+    cache["loss"] = float(loss0)
+    cache["grad_x"] = grad0.copy()
+    cache["grad_z"] = grad0 * param_scale
+    log_iteration(z0)
 
     if args.fd_check:
         layers0, tau0 = unpack_params(x0, args.n_layers)
@@ -824,7 +854,7 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
 
     total_nit = 0
     total_nfev = 0
-    current_x = x0.copy()
+    current_z = z0.copy()
     result = None
     best_result = None
     max_runs = max(1, int(args.lbfgsb_restarts) + 1)
@@ -833,10 +863,10 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
         remaining_iters = max(1, int(args.max_iters) - total_nit)
         result = minimize(
             objective_with_grad,
-            x0=current_x,
+            x0=current_z,
             method="L-BFGS-B",
             jac=True,
-            bounds=bounds,
+            bounds=bounds_z,
             callback=log_iteration,
             options={
                 "maxiter": remaining_iters,
@@ -859,18 +889,18 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
         if "PROJECTED GRADIENT" not in message.upper():
             break
 
-        x = np.asarray(result.x, dtype=np.double).copy()
-        x_pert = x.copy()
+        z = np.asarray(result.x, dtype=np.double).copy()
+        z_pert = z.copy()
         had_active_bound = False
-        for i, (lo, hi) in enumerate(bounds):
+        for i, (lo, hi) in enumerate(bounds_z):
             span = max(float(hi) - float(lo), 1.0e-12)
             eps = float(args.lbfgsb_boundary_perturb) * span
             tol = 1.0e-12 * max(1.0, abs(float(lo)), abs(float(hi)))
-            if x[i] <= float(lo) + tol:
-                x_pert[i] = min(float(hi), float(lo) + eps)
+            if z[i] <= float(lo) + tol:
+                z_pert[i] = min(float(hi), float(lo) + eps)
                 had_active_bound = True
-            elif x[i] >= float(hi) - tol:
-                x_pert[i] = max(float(lo), float(hi) - eps)
+            elif z[i] >= float(hi) - tol:
+                z_pert[i] = max(float(lo), float(hi) - eps)
                 had_active_bound = True
 
         if not had_active_bound:
@@ -880,11 +910,12 @@ def optimize_with_lbfgsb(problem, observed_history, init_layers, init_tau, args)
             f"lbfgsb-restart run={run_id + 1} "
             f"total_nit={total_nit}  fun={float(result.fun): .8e}"
         )
-        current_x = x_pert
+        current_z = z_pert
 
     if result is not None and best_result is not None:
         best_result.nit = total_nit
         best_result.nfev = total_nfev
+        best_result.x = np.asarray(best_result.x, dtype=np.double) * param_scale
     return best_result, loss_history, tau_history, layer_history
 
 
