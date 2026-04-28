@@ -47,7 +47,8 @@ CASES = {
     "case3_high_contrast": {
         "description": "Higher-contrast layered profile for stronger reflections (with L-BFGS-B boundary restarts).",
         "args": [
-            "--nx", "150", "--ny", "30",
+            "--width", "30.0",
+            "--nx", "300", "--ny", "30",
             "--nsteps", "1000", "--nsub-steps", "1", "--dt", "4e-3",
             "--n-layers", "2", "--n-sensors", "5",
             "--impact-velocity", "1.0", "--source-window-fraction", "0.09",
@@ -66,12 +67,13 @@ CASES = {
     "case3_new": {
         "description": "Higher-contrast layered profile for stronger reflections (with L-BFGS-B boundary restarts).",
         "args": [
-            "--nx", "150", "--ny", "30",
+            "--width", "30",
+            "--nx", "300", "--ny", "30",
             "--nsteps", "1000", "--nsub-steps", "1", "--dt", "4e-3",
-            "--n-layers", "4", "--n-sensors", "5",
+            "--n-layers", "2", "--n-sensors", "5",
             "--impact-velocity", "1.0", "--source-window-fraction", "0.09",
-            "--true-layers", "15,7.7,4.4,1.8",
-            "--init-layers", "10.0,4.0,5.0,3.0",
+            "--true-layers", "13,7.7",
+            "--init-layers", "10.0,4.5",
             "--true-tau", "0.08", "--init-tau", "0.1",
             "--max-iters", "25",
             "--min-layer", "1.0", "--max-layer", "20.0",
@@ -117,16 +119,21 @@ CASES = {
 }
 
 
-def build_command(case_name, extra_args):
+def build_command(case_name, extra_args, width=None):
     case = CASES[case_name]
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     plot_file = OUTPUT_DIR / f"{case_name}_summary.png"
     setup_plot_file = OUTPUT_DIR / f"{case_name}_setup.svg"
 
+    width_args = []
+    if width is not None:
+        width_args = ["--width", str(width)]
+
     cmd = [
         sys.executable,
         str(INVERSE_SCRIPT),
         *case["args"],
+        *width_args,
         "--plot-file",
         str(plot_file),
         "--setup-plot-file",
@@ -136,18 +143,18 @@ def build_command(case_name, extra_args):
     return cmd
 
 
-def print_case_table():
+def print_case_table(width=None):
     print("Available inverse presets:\n")
     for name, spec in CASES.items():
         print(f"- {name}: {spec['description']}")
-        cmd = build_command(name, [])
+        cmd = build_command(name, [], width=width)
         print("  ", shlex.join(cmd))
     print("\nTip: append overrides after '--', e.g.")
     print("  python dissipative_wave_inverse_cases.py --case case2_balanced -- --max-iters 20")
 
 
-def run_case(case_name, extra_args, dry_run=False):
-    cmd = build_command(case_name, extra_args)
+def run_case(case_name, extra_args, dry_run=False, width=None):
+    cmd = build_command(case_name, extra_args, width=width)
     print(f"\n[{case_name}] {CASES[case_name]['description']}")
     print(shlex.join(cmd))
     if not dry_run:
@@ -166,22 +173,23 @@ def main():
                         help="Run one preset case.")
     parser.add_argument("--run-all", action="store_true", help="Run all 5 preset cases sequentially.")
     parser.add_argument("--dry-run", action="store_true", help="Print command(s) only, do not execute.")
+    parser.add_argument("--width", type=float, default=None, help="Optional width override passed to inverse script.")
 
     args, extra = parser.parse_known_args()
     if extra and extra[0] == "--":
         extra = extra[1:]
 
     if args.list:
-        print_case_table()
+        print_case_table(width=args.width)
         if not args.run_all:
             return
 
     if args.run_all:
         for case_name in CASES.keys():
-            run_case(case_name, extra, dry_run=args.dry_run)
+            run_case(case_name, extra, dry_run=args.dry_run, width=args.width)
         return
 
-    run_case(args.case, extra, dry_run=args.dry_run)
+    run_case(args.case, extra, dry_run=args.dry_run, width=args.width)
 
 
 if __name__ == "__main__":

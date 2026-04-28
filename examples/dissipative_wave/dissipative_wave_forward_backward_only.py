@@ -41,7 +41,7 @@ REMAT.API.define_parameter(b"youngs_modulus", 5.0)
 REMAT.API.define_parameter(b"poissons_ratio", 0.28)
 
 # Viscous parameters (case-3 true tau)
-REMAT.API.define_parameter(b"relaxation_time", 0.05)
+REMAT.API.define_parameter(b"relaxation_time", 0.08)
 REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", 2.0)
 
 # Integrator and material overflow settings requested
@@ -53,10 +53,10 @@ REMAT.API.define_parameter(b"mat_overflow_limit", 10.0)
 # --------------------------------------------------------------------------
 
 # Increased width to reduce side-boundary reflections. Change manually as desired.
-width = 15.0
+width = 30.0
 height = 3.0
 
-Nx = 300
+Nx = 600
 Ny = 60
 if (sys.platform == "emscripten"):
     Nx = int(Nx/2)
@@ -66,6 +66,7 @@ if (sys.platform == "emscripten"):
 #   "free_sides"    -> no left/right Dirichlet constraints
 #   "clamped_sides" -> old behavior
 boundary_mode = "free_sides"
+# boundary_mode = "clamped_sides"
 
 # Case-3 source setup
 source_window_fraction = 0.09
@@ -126,8 +127,8 @@ REMAT.define_variable_properties(layered_stiffness_scaling)
 # Time integration (forward + backward only)
 # --------------------------------------------------------------------------
 
-dt = 1e-3
-Nsteps = 90
+dt = 4e-3
+Nsteps = 100
 Nsub_steps = 10
 step_id = 0
 
