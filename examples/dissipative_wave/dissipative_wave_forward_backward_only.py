@@ -68,26 +68,31 @@ if (sys.platform == "emscripten"):
 boundary_mode = "free_sides"
 # boundary_mode = "clamped_sides"
 
-# Case-3 source setup
-source_window_fraction = 0.09
+# Case-3 Impact setup
+# Absolute impact width (same strategy as inverse examples).
+impact_window_width = 2.7
 impact_velocity = 1.0
-source_half_width = 0.5*source_window_fraction*width
-source_window_y = 0.1
+if impact_window_width <= 0.0:
+    raise RuntimeError(f"impact_window_width must be > 0, got {impact_window_width}")
+
+impact_span = min(impact_window_width, width)
+impact_half_width = 0.5*impact_span
+impact_window_y = 0.1
 xmid = 0.5*width
 
 geom_factory = GeometryFactory()
 grid = geom_factory.cartesian_grid([0.0,0.0],[width,height],[Nx,Ny])
 
-# Source nodes near the top-center window
-source_nodes = grid.select_nodes(
+# Impact nodes near the top-center window
+impact_nodes = grid.select_nodes(
     Select_XY_window(
-        [xmid-source_half_width, height-source_window_y],
-        [xmid+source_half_width, height+source_window_y]
+        [xmid-impact_half_width, height-impact_window_y],
+        [xmid+impact_half_width, height+impact_window_y]
     )
 )
-source_node_ids = np.asarray(source_nodes.global_node_ids(),dtype=np.int32).reshape(-1)
-if source_node_ids.size == 0:
-    raise RuntimeError("No source nodes selected for excitation; broaden source window.")
+impact_node_ids = np.asarray(impact_nodes.global_node_ids(),dtype=np.int32).reshape(-1)
+if impact_node_ids.size == 0:
+    raise RuntimeError("No impact nodes selected for excitation; broaden impact window.")
 
 bottom_nodes = grid.select_nodes(Select_Y_eq(0.0))
 left_nodes   = grid.select_nodes(Select_X_eq(0.0))
@@ -95,7 +100,7 @@ right_nodes  = grid.select_nodes(Select_X_eq(width))
 
 model = Model()
 model.add_part(Part(grid,Material(None,None)))
-model.add_initial_condition(source_nodes,[0.0,-impact_velocity])
+model.add_initial_condition(impact_nodes,[0.0,-impact_velocity])
 model.add_boundary_condition(bottom_nodes,[True,True])
 if boundary_mode == "clamped_sides":
     model.add_boundary_condition(left_nodes,[True,True])
@@ -104,11 +109,11 @@ if boundary_mode == "clamped_sides":
 coordinates, velocities, fixity, connectivity, contacts, truss_connectivity = model.generate_problem()
 
 # Debug sanity checks for excitation plumbing
-source_speed = np.linalg.norm(velocities[source_node_ids,:],axis=1)
-if np.max(source_speed) <= 0.0:
-    raise RuntimeError("Source excitation is zero after model.generate_problem().")
-if np.all(fixity[source_node_ids,1]):
-    raise RuntimeError("All source nodes are fixed in Y; wave cannot be excited.")
+impact_speed = np.linalg.norm(velocities[impact_node_ids,:],axis=1)
+if np.max(impact_speed) <= 0.0:
+    raise RuntimeError("Impact excitation is zero after model.generate_problem().")
+if np.all(fixity[impact_node_ids,1]):
+    raise RuntimeError("All impact nodes are fixed in Y; wave cannot be excited.")
 
 REMAT.create_geometry(coordinates,velocities,fixity,connectivity,contacts,truss_connectivity)
 
@@ -135,8 +140,9 @@ step_id = 0
 if (not sys.platform == "emscripten"):
     print(f"Boundary mode: {boundary_mode}")
     print(f"Domain size: width={width}, height={height}")
-    print(f"Selected source nodes: {source_node_ids.size}")
-    print(f"Source speed max: {float(np.max(source_speed)):.6e}")
+    print(f"Impact window width: {impact_span:.6f}")
+    print(f"Selected impact nodes: {impact_node_ids.size}")
+    print(f"Impact speed max: {float(np.max(impact_speed)):.6e}")
     print(f"Mesh resolution: Nx={Nx}, Ny={Ny}, dt={dt}, Nsteps={Nsteps}, Nsub_steps={Nsub_steps}")
 
     exo = ExodusIO()

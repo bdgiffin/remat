@@ -18,7 +18,7 @@ CASES = {
             "--nx", "22", "--ny", "8",
             "--nsteps", "70", "--nsub-steps", "1", "--dt", "2.2e-3",
             "--n-layers", "4", "--n-sensors", "8",
-            "--impact-velocity", "0.75", "--source-window-fraction", "0.10",
+            "--impact-velocity", "0.75", "--impact-window-width", "1.5",
             "--true-layers", "0.80,1.40,0.72,1.28",
             "--init-layers", "1.22,0.86,1.12,0.88",
             "--true-tau", "0.10", "--init-tau", "0.28",
@@ -34,7 +34,7 @@ CASES = {
             "--nx", "36", "--ny", "12",
             "--nsteps", "130", "--nsub-steps", "1", "--dt", "1.7e-3",
             "--n-layers", "4", "--n-sensors", "12",
-            "--impact-velocity", "0.85", "--source-window-fraction", "0.10",
+            "--impact-velocity", "0.85", "--impact-window-width", "1.5",
             "--true-layers", "0.78,1.48,0.70,1.30",
             "--init-layers", "1.18,0.90,1.08,0.92",
             "--true-tau", "0.09", "--init-tau", "0.26",
@@ -47,11 +47,11 @@ CASES = {
     "case3_high_contrast": {
         "description": "Higher-contrast layered profile for stronger reflections (with L-BFGS-B boundary restarts).",
         "args": [
-            "--width", "30.0",
-            "--nx", "300", "--ny", "30",
+            "--width", "15.0", "--sensor-distribution-width", "13.5",
+            "--nx", "150", "--ny", "30",
             "--nsteps", "1000", "--nsub-steps", "1", "--dt", "4e-3",
             "--n-layers", "2", "--n-sensors", "5",
-            "--impact-velocity", "1.0", "--source-window-fraction", "0.09",
+            "--impact-velocity", "1.0", "--impact-window-width", "1.35",
             "--true-layers", "15,7.7",
             "--init-layers", "10.0,4.0",
             "--true-tau", "0.08", "--init-tau", "0.1",
@@ -71,7 +71,7 @@ CASES = {
             "--nx", "300", "--ny", "30",
             "--nsteps", "1000", "--nsub-steps", "1", "--dt", "4e-3",
             "--n-layers", "2", "--n-sensors", "5",
-            "--impact-velocity", "1.0", "--source-window-fraction", "0.09",
+            "--impact-velocity", "1.0", "--impact-window-width", "2.7",
             "--true-layers", "13,7.7",
             "--init-layers", "10.0,4.5",
             "--true-tau", "0.08", "--init-tau", "0.1",
@@ -90,7 +90,7 @@ CASES = {
             "--nx", "34", "--ny", "12",
             "--nsteps", "140", "--nsub-steps", "1", "--dt", "1.8e-3",
             "--n-layers", "4", "--n-sensors", "10",
-            "--impact-velocity", "0.90", "--source-window-fraction", "0.10",
+            "--impact-velocity", "0.90", "--impact-window-width", "1.5",
             "--true-layers", "1.00,1.08,0.94,1.00",
             "--init-layers", "1.00,1.00,1.00,1.00",
             "--true-tau", "0.07", "--init-tau", "0.34",
@@ -106,7 +106,7 @@ CASES = {
             "--nx", "38", "--ny", "14",
             "--nsteps", "150", "--nsub-steps", "1", "--dt", "1.6e-3",
             "--n-layers", "4", "--n-sensors", "12",
-            "--impact-velocity", "0.95", "--source-window-fraction", "0.10",
+            "--impact-velocity", "0.95", "--impact-window-width", "1.5",
             "--true-layers", "0.66,1.56,0.74,1.38",
             "--init-layers", "1.24,0.86,1.16,0.90",
             "--true-tau", "0.12", "--init-tau", "0.14",
@@ -119,7 +119,13 @@ CASES = {
 }
 
 
-def build_command(case_name, extra_args, width=None):
+def build_command(
+    case_name,
+    extra_args,
+    width=None,
+    sensor_distribution_width=None,
+    impact_window_width=None,
+):
     case = CASES[case_name]
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     plot_file = OUTPUT_DIR / f"{case_name}_summary.png"
@@ -129,11 +135,21 @@ def build_command(case_name, extra_args, width=None):
     if width is not None:
         width_args = ["--width", str(width)]
 
+    sensor_width_args = []
+    if sensor_distribution_width is not None:
+        sensor_width_args = ["--sensor-distribution-width", str(sensor_distribution_width)]
+
+    impact_width_args = []
+    if impact_window_width is not None:
+        impact_width_args = ["--impact-window-width", str(impact_window_width)]
+
     cmd = [
         sys.executable,
         str(INVERSE_SCRIPT),
         *case["args"],
         *width_args,
+        *sensor_width_args,
+        *impact_width_args,
         "--plot-file",
         str(plot_file),
         "--setup-plot-file",
@@ -143,18 +159,37 @@ def build_command(case_name, extra_args, width=None):
     return cmd
 
 
-def print_case_table(width=None):
+def print_case_table(width=None, sensor_distribution_width=None, impact_window_width=None):
     print("Available inverse presets:\n")
     for name, spec in CASES.items():
         print(f"- {name}: {spec['description']}")
-        cmd = build_command(name, [], width=width)
+        cmd = build_command(
+            name,
+            [],
+            width=width,
+            sensor_distribution_width=sensor_distribution_width,
+            impact_window_width=impact_window_width,
+        )
         print("  ", shlex.join(cmd))
     print("\nTip: append overrides after '--', e.g.")
     print("  python dissipative_wave_inverse_cases.py --case case2_balanced -- --max-iters 20")
 
 
-def run_case(case_name, extra_args, dry_run=False, width=None):
-    cmd = build_command(case_name, extra_args, width=width)
+def run_case(
+    case_name,
+    extra_args,
+    dry_run=False,
+    width=None,
+    sensor_distribution_width=None,
+    impact_window_width=None,
+):
+    cmd = build_command(
+        case_name,
+        extra_args,
+        width=width,
+        sensor_distribution_width=sensor_distribution_width,
+        impact_window_width=impact_window_width,
+    )
     print(f"\n[{case_name}] {CASES[case_name]['description']}")
     print(shlex.join(cmd))
     if not dry_run:
@@ -174,22 +209,52 @@ def main():
     parser.add_argument("--run-all", action="store_true", help="Run all 5 preset cases sequentially.")
     parser.add_argument("--dry-run", action="store_true", help="Print command(s) only, do not execute.")
     parser.add_argument("--width", type=float, default=None, help="Optional width override passed to inverse script.")
+    parser.add_argument(
+        "--sensor-distribution-width",
+        type=float,
+        default=None,
+        help="Optional centered sensor-distribution width override passed to inverse script.",
+    )
+    parser.add_argument(
+        "--impact-window-width",
+        type=float,
+        default=None,
+        help="Optional centered impact-window width override passed to inverse script.",
+    )
 
     args, extra = parser.parse_known_args()
     if extra and extra[0] == "--":
         extra = extra[1:]
 
     if args.list:
-        print_case_table(width=args.width)
+        print_case_table(
+            width=args.width,
+            sensor_distribution_width=args.sensor_distribution_width,
+            impact_window_width=args.impact_window_width,
+        )
         if not args.run_all:
             return
 
     if args.run_all:
         for case_name in CASES.keys():
-            run_case(case_name, extra, dry_run=args.dry_run, width=args.width)
+            run_case(
+                case_name,
+                extra,
+                dry_run=args.dry_run,
+                width=args.width,
+                sensor_distribution_width=args.sensor_distribution_width,
+                impact_window_width=args.impact_window_width,
+            )
         return
 
-    run_case(args.case, extra, dry_run=args.dry_run, width=args.width)
+    run_case(
+        args.case,
+        extra,
+        dry_run=args.dry_run,
+        width=args.width,
+        sensor_distribution_width=args.sensor_distribution_width,
+        impact_window_width=args.impact_window_width,
+    )
 
 
 if __name__ == "__main__":

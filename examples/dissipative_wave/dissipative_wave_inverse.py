@@ -23,7 +23,17 @@ def layered_stiffness_scaling(_, y):
     return float(_ACTIVE_LAYER_COEFFS[idx])
 
 
-def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_window_fraction, nsensors, n_layers):
+def make_structured_quad_problem(
+    nx,
+    ny,
+    width,
+    height,
+    impact_velocity,
+    impact_window_width,
+    nsensors,
+    n_layers,
+    sensor_distribution_width=None,
+):
     xs = np.linspace(0.0, width, nx + 1)
     ys = np.linspace(0.0, height, ny + 1)
 
@@ -59,23 +69,41 @@ def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_
     fixity[bottom_nodes, :] = True
     # Free side boundaries: do not constrain left/right edges.
 
-    source_half_width = 0.5 * source_window_fraction * width
     xmid = 0.5 * width
-    source_nodes = top_nodes[np.abs(node_x[top_nodes] - xmid) <= source_half_width]
-    velocities[source_nodes, 1] = -abs(impact_velocity)
+    impact_window_width = float(impact_window_width)
+    if impact_window_width <= 0.0:
+        raise ValueError(f"impact_window_width must be > 0, got {impact_window_width}")
+
+    impact_span = min(impact_window_width, width)
+    impact_half_width = 0.5 * impact_span
+    impact_x_lo = xmid - impact_half_width
+    impact_x_hi = xmid + impact_half_width
+    impact_nodes = top_nodes[
+        (node_x[top_nodes] >= impact_x_lo - eps) & (node_x[top_nodes] <= impact_x_hi + eps)
+    ]
+    if impact_nodes.size == 0:
+        nearest = int(np.argmin(np.abs(node_x[top_nodes] - xmid)))
+        impact_nodes = top_nodes[np.array([nearest], dtype=np.int64)]
+    velocities[impact_nodes, 1] = -abs(impact_velocity)
 
     top_interior = top_nodes[(node_x[top_nodes] > eps) & (node_x[top_nodes] < width - eps)]
     if top_interior.size == 0:
         raise ValueError("No interior top-surface nodes found for sensors.")
 
-    # centered top band and avoid near-edge picks.
-    sensor_margin_fraction = 0.05
-    x_lo = sensor_margin_fraction * width
-    x_hi = (1.0 - sensor_margin_fraction) * width
-    top_center_band = top_interior[
-        (node_x[top_interior] >= x_lo) & (node_x[top_interior] <= x_hi)
+    if sensor_distribution_width is None:
+        sensor_distribution_width = width
+    sensor_distribution_width = float(sensor_distribution_width)
+    if sensor_distribution_width <= 0.0:
+        raise ValueError(f"sensor_distribution_width must be > 0, got {sensor_distribution_width}")
+
+    sensor_span = min(sensor_distribution_width, width)
+    sensor_x_lo = xmid - 0.5 * sensor_span
+    sensor_x_hi = xmid + 0.5 * sensor_span
+    sensor_candidates = top_interior[
+        (node_x[top_interior] >= sensor_x_lo - eps) & (node_x[top_interior] <= sensor_x_hi + eps)
     ]
-    sensor_candidates = top_center_band if top_center_band.size >= nsensors else top_interior
+    if sensor_candidates.size == 0:
+        raise ValueError("No top-surface nodes found inside sensor distribution width.")
 
     if nsensors > sensor_candidates.size:
         nsensors = sensor_candidates.size
@@ -93,9 +121,15 @@ def make_structured_quad_problem(nx, ny, width, height, impact_velocity, source_
         "fixity": fixity,
         "connectivity": connectivity,
         "sensor_nodes": sensor_nodes.astype(np.int32),
-        "source_nodes": source_nodes.astype(np.int32),
-        "source_center_x": float(xmid),
-        "source_half_width": float(source_half_width),
+        "impact_nodes": impact_nodes.astype(np.int32),
+        "impact_center_x": float(xmid),
+        "impact_half_width": float(impact_half_width),
+        "impact_window_width": float(impact_span),
+        "impact_x_min": float(impact_x_lo),
+        "impact_x_max": float(impact_x_hi),
+        "sensor_distribution_width": float(sensor_span),
+        "sensor_distribution_x_min": float(sensor_x_lo),
+        "sensor_distribution_x_max": float(sensor_x_hi),
         "layer_bounds": layer_bounds,
         "elem_layer_ids": elem_layer_ids,
         "width": width,
@@ -583,7 +617,7 @@ def step_profile(ax, coeffs, layer_bounds, label, color):
 def plot_problem_setup(problem, true_layers, true_tau, args, output_file):
     coords = problem["coordinates"]
     sensor_nodes = problem["sensor_nodes"]
-    source_nodes = problem["source_nodes"]
+    impact_nodes = problem["impact_nodes"]
     layer_bounds = problem["layer_bounds"]
     width = float(problem["width"])
     height = float(problem["height"])
@@ -633,20 +667,20 @@ def plot_problem_setup(problem, true_layers, true_tau, args, output_file):
         zorder=6,
     )
 
-    source_xy = coords[source_nodes]
+    impact_xy = coords[impact_nodes]
     ax.scatter(
-        source_xy[:, 0],
-        source_xy[:, 1],
+        impact_xy[:, 0],
+        impact_xy[:, 1],
         s=36,
         marker="s",
         c="#205a8e",
         edgecolors="white",
         linewidths=0.6,
-        label=f"impact patch ({source_nodes.size})",
+        label=f"impact patch ({impact_nodes.size})",
         zorder=7,
     )
 
-    impact_x = float(np.mean(source_xy[:, 0])) if source_xy.size else float(problem["source_center_x"])
+    impact_x = float(np.mean(impact_xy[:, 0])) if impact_xy.size else float(problem["impact_center_x"])
     arrow_length = (0.12 + 0.08 * np.tanh(abs(args.impact_velocity))) * height
     y_start = height + 0.17 * height
     y_end = height + 0.17 * height - arrow_length
@@ -692,11 +726,17 @@ def plot_problem_setup(problem, true_layers, true_tau, args, output_file):
         "",
         "Observation model:",
         f"  {sensor_nodes.size} sensors on top surface",
+        f"  sensor band width = {problem['sensor_distribution_width']:.3f}",
+        (
+            f"  sensor x-range = "
+            f"[{problem['sensor_distribution_x_min']:.3f}, {problem['sensor_distribution_x_max']:.3f}]"
+        ),
         "  measured field: velocity_Y(t)",
         "",
         "Initial condition:",
-        f"  top impact patch width = {2.0 * problem['source_half_width']:.3f}",
-        f"  impact center x = {problem['source_center_x']:.3f}",
+        f"  top impact patch width = {problem['impact_window_width']:.3f}",
+        f"  impact x-range = [{problem['impact_x_min']:.3f}, {problem['impact_x_max']:.3f}]",
+        f"  impact center x = {problem['impact_center_x']:.3f}",
         f"  impact velocity_Y = {-abs(args.impact_velocity):.3f}",
         "",
         "Numerical setup:",
@@ -932,7 +972,18 @@ def main():
     parser.add_argument("--dt", type=float, default=2.5e-3)
     parser.add_argument("--n-layers", type=int, default=4)
     parser.add_argument("--n-sensors", type=int, default=10)
-    parser.add_argument("--source-window-fraction", type=float, default=0.12)
+    parser.add_argument(
+        "--sensor-distribution-width",
+        type=float,
+        default=None,
+        help="Centered top-surface width over which sensors are distributed (default: use full domain width).",
+    )
+    parser.add_argument(
+        "--impact-window-width",
+        type=float,
+        default=1.8,
+        help="Centered top-surface impact width (absolute length units).",
+    )
     parser.add_argument("--impact-velocity", type=float, default=0.35)
     parser.add_argument("--integrator-type", type=str, default="fixed_visco")
 
@@ -1064,9 +1115,10 @@ def main():
         args.width,
         args.height,
         args.impact_velocity,
-        args.source_window_fraction,
+        args.impact_window_width,
         args.n_sensors,
         args.n_layers,
+        args.sensor_distribution_width,
     )
     setup_plot_path = plot_problem_setup(problem, true_layers, args.true_tau, args, args.setup_plot_file)
     print(f"Saved: {setup_plot_path}")
