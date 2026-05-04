@@ -88,6 +88,13 @@ class Material {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
     state[7] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
+
+  // Initialize variable relaxation-time values (not used for elastic material model)
+  void initialize_variable_relaxation_time(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
+    (void)x;
+    (void)state;
+    (void)function_xy;
+  } // initialize_variable_relaxation_time()
     
   // Update the material state using the current deformation gradient F
   void update(Real (&F)[2][2], Real &psi, Real* state, Real dt) {

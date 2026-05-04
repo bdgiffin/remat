@@ -58,6 +58,9 @@ struct SystemBase {
 
   // Procedure to initialize variable material stiffness properties
   virtual void initialize_variable_properties(double (*function_xy)(double,double)) = 0;
+
+  // Procedure to initialize variable material relaxation-time properties
+  virtual void initialize_variable_relaxation_time(double (*function_xy)(double,double)) = 0;
   
   // ===================================================================== //
 
@@ -581,7 +584,6 @@ struct System : public SystemBase {
     for (int e=0; e<Nelems; e++) {
 
       // Copy (primal) local nodal positions for each element
-      const int Ndofs_per_elem = Nnodes_per_elem*Ndofs_per_node;
       Real xe[8];
       for (int j=0; j<Nnodes_per_elem; j++) {
 	const int jnode_id = connect[Nnodes_per_elem*e+j];
@@ -596,6 +598,32 @@ struct System : public SystemBase {
     } // End loop over all solid elements
     
   } // initialize_variable_properties()
+
+  // ===================================================================== //
+
+  // Procedure to initialize variable material relaxation-time properties
+  virtual void initialize_variable_relaxation_time(double (*function_xy)(double,double)) {
+
+    const int Nstate_vars_per_elem = m_element.num_state_vars();
+
+    // Loop over all solid elements
+    for (int e=0; e<Nelems; e++) {
+
+      // Copy (primal) local nodal positions for each element
+      Real xe[8];
+      for (int j=0; j<Nnodes_per_elem; j++) {
+        const int jnode_id = connect[Nnodes_per_elem*e+j];
+        for (int i=0; i<Ndofs_per_node; i++) {
+          xe[Ndofs_per_node*j+i] = x[Ndofs_per_node*jnode_id+i];
+        }
+      }
+
+      // Initialize variable material relaxation-time values for each element
+      m_element.initialize_variable_relaxation_time(xe,&state[Nstate_vars_per_elem*e],function_xy);
+
+    } // End loop over all solid elements
+
+  } // initialize_variable_relaxation_time()
   
   // ===================================================================== //
 

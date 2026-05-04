@@ -64,7 +64,8 @@ class ViscoElasticity {
     STRESS_SEED_XY = 24,
     DPARAM_STIFFNESS_SCALING_FACTOR = 25,
     DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG = 26,
-    DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG = 27
+    DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG = 27,
+    RELAXATION_TIME_LOCAL = 28
   };
 
 
@@ -209,7 +210,7 @@ class ViscoElasticity {
   }
     
   // Return the number of state variables for allocation purposes
- int num_state_vars(void) { return 28; }
+ int num_state_vars(void) { return 29; }
 
   // Return the names of all fields
   std::vector<std::string> get_field_names(void) {
@@ -231,6 +232,7 @@ class ViscoElasticity {
       "dparam_stiffness_scaling_factor",
       "dparam_stiffness_scaling_factor_from_update",
       "dparam_stiffness_scaling_factor_from_direct_seed",
+      "relaxation_time_local",
     });
   }
 
@@ -269,6 +271,7 @@ class ViscoElasticity {
     state[DPARAM_STIFFNESS_SCALING_FACTOR] = 0.0;
     state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG] = 0.0;
     state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG] = 0.0;
+    state[RELAXATION_TIME_LOCAL] = tau;
   } // initialize()
 
   // Do we have to keep this?
@@ -277,6 +280,17 @@ class ViscoElasticity {
     // Assign variable stiffness_scaling_factor as a function of initial spatial (x,y) coordinates
     state[STIFFNESS_SCALING] = function_xy(x[0],x[1]);
   } // initialize_variable_properties()
+
+  // Initialize variable relaxation-time values
+  void initialize_variable_relaxation_time(Real (&x)[2], Real* state, double (*function_xy)(double,double)) {
+    const Real local_tau = function_xy(x[0],x[1]);
+    if (local_tau <= 0.0) {
+      std::cout << "ViscoElasticity: initialize_variable_relaxation_time requires positive tau, got "
+                << local_tau << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    state[RELAXATION_TIME_LOCAL] = local_tau;
+  } // initialize_variable_relaxation_time()
 
   // Backward compatibility path for older materials that used signed dt.
   void update(Real (&F)[2][2],Real &psi, Real* state, Real dt) {
@@ -337,7 +351,13 @@ class ViscoElasticity {
     const Real stress_seed_yy = state[STRESS_SEED_YY];
     const Real stress_seed_xy = state[STRESS_SEED_XY];
 
-    const Real A = std::exp(-dt_abs/tau);
+    const Real tau_local = state[RELAXATION_TIME_LOCAL];
+    if (tau_local <= 0.0) {
+      std::cout << "ViscoElasticity: local relaxation_time must remain positive, got "
+                << tau_local << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    const Real A = std::exp(-dt_abs/tau_local);
     Ratio A_rat(A);
 
     if (phase == PassPhase::Forward) {
@@ -414,9 +434,9 @@ class ViscoElasticity {
         const Real bar_sigma_yy = adjoint_material_objective_weight*stress_yy_n + stress_seed_yy;
         const Real bar_sigma_xy = 2.0*adjoint_material_objective_weight*stress_xy_n + stress_seed_xy;
 
-        dparam_tau += lambda_q_np1[0]*(q_n[0] - dev_strain_np1[0])*A*(dt_abs/(tau*tau));
-        dparam_tau += lambda_q_np1[1]*(q_n[1] - dev_strain_np1[1])*A*(dt_abs/(tau*tau));
-        dparam_tau += lambda_q_np1[2]*(q_n[2] - dev_strain_np1[2])*A*(dt_abs/(tau*tau));
+        dparam_tau += lambda_q_np1[0]*(q_n[0] - dev_strain_np1[0])*A*(dt_abs/(tau_local*tau_local));
+        dparam_tau += lambda_q_np1[1]*(q_n[1] - dev_strain_np1[1])*A*(dt_abs/(tau_local*tau_local));
+        dparam_tau += lambda_q_np1[2]*(q_n[2] - dev_strain_np1[2])*A*(dt_abs/(tau_local*tau_local));
 
         const Real dsigma_xx_dscale =
           (lam + mu2)*previous_strain[0] + lam*previous_strain[1] + mu2_e*dev_elastic_n[0];
@@ -677,6 +697,7 @@ class ViscoElasticity {
     field_data[25] = state[DPARAM_STIFFNESS_SCALING_FACTOR];
     field_data[26] = state[DPARAM_STIFFNESS_SCALING_FACTOR_LOCAL_DEBUG];
     field_data[27] = state[DPARAM_STIFFNESS_SCALING_FACTOR_DIRECT_DEBUG];
+    field_data[28] = state[RELAXATION_TIME_LOCAL];
   }
 
   // Return the initial sound speed

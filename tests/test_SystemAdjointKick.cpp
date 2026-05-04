@@ -56,6 +56,21 @@ Real node_field_by_name(SystemBase& sys, int node_id, const std::string& name) {
   return 0.0;
 }
 
+Real element_field_by_name(SystemBase& sys, int elem_id, const std::string& name) {
+  const int n_elem = sys.get_num_entities("element");
+  const int n_fields = sys.get_num_fields("element");
+  if ((elem_id < 0) || (elem_id >= n_elem)) { return 0.0; }
+
+  std::vector<double> values(n_elem*n_fields,0.0);
+  sys.get_fields("element",values.data());
+  for (int i=0; i<n_fields; i++) {
+    if (name == sys.get_field_name("element",i)) {
+      return values[n_fields*elem_id + i];
+    }
+  }
+  return 0.0;
+}
+
 struct TrussKickRun {
   Real grad_tau;
   Real grad_E;
@@ -255,9 +270,14 @@ PointMassKickRun run_point_mass_case(Real alpha_coeff, Real wall_k, Real y0, Rea
 }
 
 Real two_layer_scale_coeffs[2] = { 1.0, 1.0 };
+Real two_layer_tau_coeffs[2] = { 0.1, 0.1 };
 
 double two_layer_stiffness_scaling(double, double y) {
   return (y < 1.0) ? two_layer_scale_coeffs[0] : two_layer_scale_coeffs[1];
+}
+
+double two_layer_relaxation_time(double, double y) {
+  return (y < 1.0) ? two_layer_tau_coeffs[0] : two_layer_tau_coeffs[1];
 }
 
 struct TwoLayerInverseRun {
@@ -367,6 +387,108 @@ TwoLayerInverseRun run_two_layer_inverse_case(Real scale0, Real scale1, Real tau
   }
 
   return { loss, grad_tau, grad_layers, sensor_history };
+}
+
+struct TwoLayerSpatialTauInverseRun {
+  Real loss;
+  Real grad_tau_sum;
+  std::array<Real,2> grad_tau_by_element;
+  std::array<Real,2> tau_by_element;
+  std::vector<Real> sensor_history; // [vy_sensor0, vy_sensor1] per time step
+};
+
+TwoLayerSpatialTauInverseRun run_two_layer_spatial_tau_inverse_case(
+    Real scale0, Real scale1, Real tau0, Real tau1,
+    int steps, Real dt,
+    const std::vector<Real>* observed_history,
+    bool compute_gradients) {
+  ElementSystem sys;
+
+  const int Nnodes = 6;
+  const int Ndofs_per_node = 2;
+  const int Nelems = 2;
+  const int Nnodes_per_elem = 4;
+
+  double coordinates[12] = {
+    0.0,0.0, 1.0,0.0,
+    0.0,1.0, 1.0,1.0,
+    0.0,2.0, 1.0,2.0
+  };
+  double velocities[12] = {
+    0.0,0.0, 0.0,0.0,
+    0.0,0.0, 0.0,0.0,
+    0.0,-0.18, 0.0,-0.18
+  };
+  bool fixity[12] = {
+    true,true,  true,true,
+    true,false, true,false,
+    true,false, true,false
+  };
+  int connectivity[8] = {
+    0,1,3,2,
+    2,3,5,4
+  };
+
+  Parameters params;
+  params["density"] = 1.0;
+  params["youngs_modulus"] = 2.0;
+  params["poissons_ratio"] = 0.25;
+  params["relaxation_time"] = 0.1; // fallback scalar; overridden by spatial callback
+  params["shear_modulus_Maxwell_element"] = 0.8;
+  params["mass_damping_factor"] = 0.0;
+  params["contact_stiffness"] = 0.0;
+  params["adjoint_material_objective_weight"] = 0.0;
+
+  sys.initialize(coordinates,velocities,fixity,Nnodes,Ndofs_per_node,
+                 connectivity,Nelems,Nnodes_per_elem,params);
+
+  two_layer_scale_coeffs[0] = scale0;
+  two_layer_scale_coeffs[1] = scale1;
+  two_layer_tau_coeffs[0] = tau0;
+  two_layer_tau_coeffs[1] = tau1;
+  sys.initialize_variable_properties(two_layer_stiffness_scaling);
+  sys.initialize_variable_relaxation_time(two_layer_relaxation_time);
+  sys.initialize_state();
+
+  std::vector<Real> sensor_history(2*steps,0.0);
+  Real loss = 0.0;
+  for (int k=0; k<steps; k++) {
+    sys.update_state(dt,PassPhase::Forward);
+    const Real vy0 = Real(sys.v[2*4 + 1].first);
+    const Real vy1 = Real(sys.v[2*5 + 1].first);
+    sensor_history[2*k + 0] = vy0;
+    sensor_history[2*k + 1] = vy1;
+    if (observed_history != nullptr) {
+      const Real r0 = vy0 - (*observed_history)[2*k + 0];
+      const Real r1 = vy1 - (*observed_history)[2*k + 1];
+      loss += 0.5*(r0*r0 + r1*r1);
+    }
+  }
+
+  const Real tau_e0 = element_field_by_name(sys,0,"relaxation_time_local");
+  const Real tau_e1 = element_field_by_name(sys,1,"relaxation_time_local");
+
+  Real grad_tau_sum = 0.0;
+  std::array<Real,2> grad_tau_by_element = { 0.0, 0.0 };
+  if (compute_gradients && (observed_history != nullptr)) {
+    sys.clear_adjoint_state();
+    const int sensor_nodes[2] = { 4, 5 };
+    for (int rev=0; rev<steps; rev++) {
+      const int k = steps - 1 - rev;
+      const double seeds_xy[4] = {
+        0.0, sensor_history[2*k + 0] - (*observed_history)[2*k + 0],
+        0.0, sensor_history[2*k + 1] - (*observed_history)[2*k + 1]
+      };
+      sys.add_nodal_velocity_adjoint_seed(sensor_nodes,seeds_xy,2);
+      sys.update_state(dt,PassPhase::BackwardAdjoint);
+    }
+
+    grad_tau_sum = global_field_by_name(sys,"dL_dparam_relaxation_time");
+    grad_tau_by_element[0] = element_field_by_name(sys,0,"dparam_relaxation_time");
+    grad_tau_by_element[1] = element_field_by_name(sys,1,"dparam_relaxation_time");
+  }
+
+  return { loss, grad_tau_sum, grad_tau_by_element, { tau_e0, tau_e1 }, sensor_history };
 }
 
 } // anonymous namespace
@@ -651,4 +773,68 @@ TEST(test_SystemAdjointKick, two_layer_sensor_misfit_gradients_match_finite_diff
   ASSERT_LT(rel_err(adj.grad_tau,fd_tau),1.0e-1);
   ASSERT_LT(rel_err(adj.grad_layers[0],fd_s0),1.0e-1);
   ASSERT_LT(rel_err(adj.grad_layers[1],fd_s1),1.0e-1);
+}
+
+TEST(test_SystemAdjointKick, spatial_tau_initialization_sets_element_fields) {
+  const int steps = 4;
+  const Real dt = 1.0e-3;
+
+  const Real scale0 = 0.95;
+  const Real scale1 = 1.05;
+  const Real tau0 = 0.07;
+  const Real tau1 = 0.16;
+
+  TwoLayerSpatialTauInverseRun run = run_two_layer_spatial_tau_inverse_case(
+    scale0,scale1,tau0,tau1,steps,dt,nullptr,false
+  );
+
+  ASSERT_NEAR(run.tau_by_element[0],tau0,1.0e-12);
+  ASSERT_NEAR(run.tau_by_element[1],tau1,1.0e-12);
+}
+
+TEST(test_SystemAdjointKick, spatial_tau_element_gradients_match_finite_difference) {
+  const int steps = 14;
+  const Real dt = 1.0e-3;
+
+  const Real true_scale0 = 0.82;
+  const Real true_scale1 = 1.18;
+  const Real true_tau0 = 0.08;
+  const Real true_tau1 = 0.15;
+  TwoLayerSpatialTauInverseRun observed = run_two_layer_spatial_tau_inverse_case(
+    true_scale0,true_scale1,true_tau0,true_tau1,steps,dt,nullptr,false
+  );
+
+  const Real cand_scale0 = 1.06;
+  const Real cand_scale1 = 0.91;
+  const Real cand_tau0 = 0.20;
+  const Real cand_tau1 = 0.11;
+  TwoLayerSpatialTauInverseRun adj = run_two_layer_spatial_tau_inverse_case(
+    cand_scale0,cand_scale1,cand_tau0,cand_tau1,steps,dt,&observed.sensor_history,true
+  );
+
+  const Real h_tau = 1.0e-4;
+  const Real loss_t0_plus = run_two_layer_spatial_tau_inverse_case(
+    cand_scale0,cand_scale1,cand_tau0 + h_tau,cand_tau1,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real loss_t0_minus = run_two_layer_spatial_tau_inverse_case(
+    cand_scale0,cand_scale1,cand_tau0 - h_tau,cand_tau1,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real fd_t0 = (loss_t0_plus - loss_t0_minus)/(2.0*h_tau);
+
+  const Real loss_t1_plus = run_two_layer_spatial_tau_inverse_case(
+    cand_scale0,cand_scale1,cand_tau0,cand_tau1 + h_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real loss_t1_minus = run_two_layer_spatial_tau_inverse_case(
+    cand_scale0,cand_scale1,cand_tau0,cand_tau1 - h_tau,steps,dt,&observed.sensor_history,false
+  ).loss;
+  const Real fd_t1 = (loss_t1_plus - loss_t1_minus)/(2.0*h_tau);
+
+  auto rel_err = [](Real adj_grad, Real fd_grad) {
+    return std::fabs(adj_grad - fd_grad) /
+      std::max({std::fabs(adj_grad),std::fabs(fd_grad),Real(1.0e-12)});
+  };
+
+  ASSERT_LT(rel_err(adj.grad_tau_by_element[0],fd_t0),1.2e-1);
+  ASSERT_LT(rel_err(adj.grad_tau_by_element[1],fd_t1),1.2e-1);
+  ASSERT_NEAR(adj.grad_tau_sum,adj.grad_tau_by_element[0] + adj.grad_tau_by_element[1],1.0e-10);
 }

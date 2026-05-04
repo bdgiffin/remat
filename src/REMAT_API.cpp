@@ -133,6 +133,13 @@ extern "C" {
   void initialize_variable_properties(double (*function_xy)(double,double)) {
     remat->initialize_variable_properties(function_xy);
   } // initialize_variable_properties()
+
+  // ------------------------------------------------------------------------ //
+
+  // Initialize variable material relaxation-time values
+  void initialize_variable_relaxation_time(double (*function_xy)(double,double)) {
+    remat->initialize_variable_relaxation_time(function_xy);
+  } // initialize_variable_relaxation_time()
   
   // ------------------------------------------------------------------------ //
 

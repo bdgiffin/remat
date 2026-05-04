@@ -85,6 +85,8 @@ API.add_nodal_displacement_adjoint_seed.argtypes = [NI_POINTER_1, ND_POINTER_2, 
 API.add_nodal_displacement_adjoint_seed.restype  = None
 API.initialize_variable_properties.argtypes = [c_function_2d]
 API.initialize_variable_properties.restype  = None
+API.initialize_variable_relaxation_time.argtypes = [c_function_2d]
+API.initialize_variable_relaxation_time.restype  = None
 API.update_state.argtypes = [c_double, c_int, c_int]
 API.update_state.restype  = c_double
 API.get_num_dim.argtypes      = None
@@ -143,6 +145,17 @@ def define_variable_properties(py_function_xy):
     # Call REMAT API function to adjust variable properties
     API.initialize_variable_properties(c_function_xy)
     
+# ---------------------------------------------------------------------------- #
+
+# Define spatially varying relaxation-time values
+def define_variable_relaxation_time(py_function_xy):
+
+    # Convert python function to C callback
+    c_function_xy = c_function_2d(py_function_xy)
+
+    # Call REMAT API function to adjust variable relaxation-time values
+    API.initialize_variable_relaxation_time(c_function_xy)
+
 # ---------------------------------------------------------------------------- #
 
 # Define a time-dependent displacement boundary condition
