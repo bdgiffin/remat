@@ -54,7 +54,7 @@ EARLY_STOP_DATA_LOSS = 1.0e-4
 
 OUTPUT_DIR = THIS_DIR / "inverse_outputs_best_example"
 OUTPUT_JSON = OUTPUT_DIR / "best_example_result.json"
-OUTPUT_PLOT = OUTPUT_DIR / "best_example_summary.svg"
+OUTPUT_PLOT = OUTPUT_DIR / "best_example_summary.pdf"
 
 PLOT_COLOR_PRIMARY = "#2b738eff"
 PLOT_COLOR_SECONDARY = "#f9826bff"
