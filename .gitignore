@@ -15,3 +15,9 @@
 *.jpg
 *.gif
 *.json
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.Identifier
