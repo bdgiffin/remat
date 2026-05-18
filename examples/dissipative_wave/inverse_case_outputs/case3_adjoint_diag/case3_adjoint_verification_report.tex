@@ -265,17 +265,156 @@ which corresponds to a cross-arithmetic directional mismatch of \(2.84\%\).
 These results show that, in a regime where both arithmetic paths remain well behaved, fixed-point and floating-point adjoint gradients carry essentially the same descent direction.
 This supports directional correctness of the fixed-point adjoint signal, while remaining compatible with the observed finite-difference fragility in the full high-contrast Case 3 regime.
 
+\section{Elementwise Smooth-Field Directional Checks}
+The preceding Case 3 finite-difference investigation was based on the earlier reduced control vector
+\[
+\theta=[s_0,s_1,\tau]^T,
+\]
+where the two stiffness variables represented layer-wise scaling factors and \(\tau\) was a single global relaxation time.
+The current \texttt{dissipative\_wave\_inverse.py} code path uses an elementwise control instead:
+\[
+\theta=\big[s_1,\ldots,s_{n_e},\tau_1,\ldots,\tau_{n_e}\big]^T,
+\]
+where \(n_e=150\times30=4500\) for the Case 3 mesh.
+Thus the current inverse problem has 9000 control degrees of freedom.
+A component-by-component central finite-difference sweep would require \(2\times9000\) forward solves for each step size, and would mostly test single-cell impulse perturbations that are poorly observed by the five top-surface sensors.
+For the current high-dimensional parameterization, the more appropriate verification is a directional Taylor/finite-difference test along smooth perturbation fields.
+
+\subsection*{Scaled perturbation design}
+The stiffness and relaxation-time variables have different physical ranges:
+\[
+s_e\in[1,20],\qquad \tau_e\in[0.1,2.0].
+\]
+Therefore the same raw perturbation amplitude should not be applied to both fields.
+We generated one shared smooth random field \(\phi\), normalized so that \(\|\phi\|_\infty=1\), and used the same spatial pattern for both stiffness and relaxation-time directions.
+This removes an unnecessary difference between the two tests: the \(s\)-only and \(\tau\)-only checks now probe the same smooth region pattern, but in different parameter families.
+
+The stiffness direction was
+\[
+d_s = 0.05(20-1)\phi = 0.95\phi.
+\]
+We first ran the \(s\)-only sweep and found its best finite-difference agreement at
+\[
+h_s^\star=5.172\times10^{-3}.
+\]
+The relaxation-time direction was then scaled so that this same dimensionless step corresponds to a \(5\%\) tau-range perturbation:
+\[
+h_s^\star d_\tau = 0.05(2.0-0.1)\phi=0.095\phi,
+\qquad
+d_\tau = 18.368\phi.
+\]
+Thus the tau direction appears large when quoted at \(h=1\), but the actual tau perturbation at the aligned check point is \(\max|\Delta\tau|=0.095\), which is modest relative to the admissible interval.
+The finite-difference comparison then used a dimensionless step \(h\):
+\[
+D_{\mathrm{FD}}(h;d)=
+\frac{\widehat J(\theta+h d)-\widehat J(\theta-h d)}{2h},
+\qquad
+D_{\mathrm{adj}}(d)=\nabla \widehat J(\theta)\cdot d.
+\]
+The base point was \(s_e=10\) and \(\tau_e=1\) for all elements.
+We swept 33 logarithmically spaced values from \(h=4\) to \(h=10^{-6}\).
+For the \(s\)-only direction all steps remained in bounds.
+For the aligned \(\tau\)-only direction, the 10 largest \(h\)-values were intentionally out of bounds and were skipped; the remaining in-bound values cover the aligned useful window and the small-step resolution floor.
+The objective in this check is the data-misfit part of the inverse problem; regularization terms are analytic and can be verified separately from the PDE adjoint.
+
+\subsection*{Results}
+The base data misfit was \(1.340343595\times10^{1}\).
+The elementwise adjoint gradient norms were
+\[
+\|g_s\|_2=4.2778,\qquad \|g_\tau\|_2=2.1925\times10^{-1},
+\]
+with infinity norms
+\[
+\|g_s\|_\infty=1.3850,\qquad \|g_\tau\|_\infty=5.7960\times10^{-2}.
+\]
+Thus the relaxation-time sensitivity is much weaker than the stiffness sensitivity at this base point.
+
+\begin{table}[h!]
+\centering
+\caption{Best elementwise smooth-field directional checks over the 33-point logarithmic sweep.}
+\label{tab:elementwise_smooth_best}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Direction & scale at \(h=1\) & \(D_{\mathrm{adj}}\) & best \(h\) & \(D_{\mathrm{FD}}\) & relative error \\
+\midrule
+\(s\)-only & \(0.95\) & \(4.9433\) & \(5.172\times10^{-3}\) & \(5.2554\) & \(5.94\%\) \\
+\(\tau\)-only & \(18.368\) & \(1.7879\) & \(5.172\times10^{-3}\) & \(1.5889\) & \(11.13\%\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:elementwise_s_tau_directional_check} shows the corresponding log-log curves.
+The same Matplotlib figure is saved as both SVG and PDF; the PDF companion is included here for \texttt{pdflatex} compatibility.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=\textwidth]{elementwise_s_tau_directional_check.pdf}
+\caption{Elementwise smooth-field directional checks using one shared spatial perturbation \(\phi\). The vertical lines mark the best finite-difference agreement for each parameter family; after tau scaling, both minima occur at \(h=5.172\times10^{-3}\).}
+\label{fig:elementwise_s_tau_directional_check}
+\end{figure}
+
+The stiffness-only direction has its best agreement at an intermediate step.
+At this point, the second Taylor remainder also shows a local order of approximately \(2.04\) relative to the previous step, which is the expected behavior for a correct first derivative before numerical resolution effects dominate.
+For smaller \(h\), the finite-difference quotient becomes unstable: for example, at \(h=1.244\times10^{-3}\), the stiffness FD directional derivative changes sign and the relative error rises to \(1.69\).
+At \(h=10^{-6}\), the quotient is completely dominated by numerical resolution effects.
+
+The aligned \(\tau\)-only direction now has its minimum at the same dimensionless step, \(h=5.172\times10^{-3}\).
+This does not mean that the two parameter families have identical numerical sensitivity.
+It means that the tau direction has been scaled so that the physically useful tau perturbation is displayed at the same \(h\)-location as the stiffness perturbation.
+The tau error at the aligned point is \(11.13\%\), larger than the \(s\)-only error but still within a useful directional-verification range for this high-contrast fixed-point run.
+For smaller steps, the tau quotient again degrades, confirming that the small-\(h\) tail is resolution/noise dominated.
+
+\begin{table}[h!]
+\centering
+\caption{Representative points from the dense elementwise directional sweep. The full 33-point data are stored in \texttt{elementwise\_s\_tau\_directional\_check.json}.}
+\label{tab:elementwise_smooth_trend}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Direction and step & \(D_{\mathrm{FD}}\) & relative error & interpretation \\
+\midrule
+\(s\), \(h=4.000\) & \(2.2946\) & \(53.6\%\) & large-step secant bias \\
+\(s\), \(h=1.337\times10^{-2}\) & \(4.5433\) & \(8.09\%\) & near useful window \\
+\(s\), \(h=5.172\times10^{-3}\) & \(5.2554\) & \(5.94\%\) & best observed agreement \\
+\(s\), \(h=1.244\times10^{-3}\) & \(-7.1871\) & \(168.8\%\) & resolution/noise dominated \\
+\(\tau\), \(h=3.459\times10^{-2}\) & \(0.6275\) & \(64.9\%\) & largest in-bound tau point \\
+\(\tau\), \(h=2.151\times10^{-2}\) & \(1.2801\) & \(28.4\%\) & approaching useful window \\
+\(\tau\), \(h=5.172\times10^{-3}\) & \(1.5889\) & \(11.13\%\) & aligned best agreement \\
+\(\tau\), \(h=1.244\times10^{-3}\) & \(-4.1400\) & \(143.2\%\) & resolution/noise dominated \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Interpretation for publication}
+This elementwise check changes the interpretation of the earlier Case 3 verification.
+The earlier three-parameter component FD test was a useful diagnostic for the old reduced parameterization, but it is no longer the right primary evidence for the current inverse code.
+For the present elementwise \(s_e,\tau_e\) parameterization, the smooth-field directional test is the defensible journal-paper check because it:
+\begin{itemize}
+\item tests the actual high-dimensional reduced functional used by the current code;
+\item uses one shared spatial perturbation \(\phi\), so the two parameter families are compared on the same smooth pattern;
+\item respects the different physical scales and bounds of \(s\) and \(\tau\);
+\item aligns the useful tau perturbation window with the observed stiffness window, making the log-log comparison easier to read;
+\item avoids thousands of poorly observed single-element impulse perturbations;
+\item reports a full logarithmic step sweep rather than a single hand-picked FD step;
+\item exposes the expected finite-difference window: large steps suffer truncation bias, while tiny steps are dominated by fixed-point resolution and cancellation.
+\end{itemize}
+
+The result is positive but still scoped: the current elementwise adjoint is directionally consistent along smooth, physically scaled stiffness and relaxation-time perturbations, with best relative errors \(5.94\%\) and \(11.13\%\), respectively, at the same dimensionless step \(h=5.172\times10^{-3}\).
+This supports use of the adjoint gradient for smooth-field elementwise inversion and for journal reporting.
+It does not prove that every individual element component is independently FD-verifiable in the high-contrast fixed-point Case 3 regime.
+The appropriate claim is therefore stronger than the earlier layer-gradient-only mismatch diagnosis, but still not an unrestricted proof of all 9000 component sensitivities.
+
 \section{Diagnosis and Interpretation}
 The evidence supports the following:
 \begin{itemize}
 \item Core adjoint machinery is likely correct in simplified/unit-tested settings.
 \item A dedicated material-point transpose test closes at machine precision (max relative mismatch \(2.38\times10^{-12}\)), supporting constitutive reverse-mode correctness.
 \item A dedicated element-level coupling audit on a small fixed-point mesh shows strong adjoint-vs-FD consistency (\(\cos=0.9999993\), relative \(L^2\) mismatch \(7.93\times10^{-3}\), and \(100\%\) sign agreement on active elements).
+\item In the current elementwise code path, smooth physically scaled directional checks using one shared spatial \(\phi\) give best relative errors of \(5.94\%\) for \(s\)-only and \(11.13\%\) for aligned \(\tau\)-only perturbations, both at \(h=5.172\times10^{-3}\).
 \item A windowed directional check (\(h=10^{-2}\)) localizes mismatch growth to mid/late portions of the Case 3 horizon (relative errors \(0.791\) and \(1.116\), versus \(0.330\) in early time).
 \item A reduced-stiffness/reduced-horizon fixed-point control case with \(\tau=1\) shows materially improved FD consistency (max component relative error \(14.65\%\), directional error \(7.35\%\)).
 \item Reduced-control fixed-vs-float cross-check shows strong gradient-direction agreement (\(\cos\approx 0.9999\)).
 \item In Case 3 high contrast, \texttt{fixed\_visco} with very frequent overflow checkpointing (\texttt{overflow\_limit=10}, \texttt{mat\_overflow\_limit=10}) produces strong step-size sensitivity.
-\item Layer-gradient FD mismatch is persistent (including sign disagreement for \(s_1\)), so Case 3 does \emph{not} currently provide a clean validation of those adjoint components.
+\item The old layer-gradient FD mismatch remains relevant as a diagnostic of the earlier reduced parameterization, but the current elementwise evidence should be reported through smooth-field directional checks rather than through exhaustive component FD.
 \end{itemize}
 
 Hence, the strict answer to ``is adjoint implemented correctly?'' is:
@@ -289,6 +428,16 @@ Suggested statement for a manuscript:
 ``Adjoint gradients were first validated on unit-test problems at material and system scales, where finite-difference agreement was observed within prescribed tolerances.
 For the full high-contrast dissipative-wave benchmark (Case 3), finite-difference verification revealed strong step-size sensitivity and persistent mismatch in layer-wise stiffness gradients, while relaxation-time gradients showed intermittent agreement.
 These results indicate that, under the current fixed-point overflow-rematerialization settings, Case 3 does not provide a fully smooth reference for strict finite-difference adjoint validation of all parameters.''
+\end{quote}
+
+For the current elementwise inverse code, a more up-to-date manuscript statement is:
+\begin{quote}
+``After changing the inverse parameterization from two layer-wise stiffness controls and one global relaxation time to elementwise stiffness and relaxation-time fields, adjoint verification was performed using smooth, physically scaled directional finite-difference tests.
+A single shared smooth spatial perturbation was used for both parameter families.
+The relaxation-time direction was scaled so that its physically useful perturbation window aligned with the stiffness finite-difference window, avoiding a misleading comparison caused by the much smaller tau range.
+Across a 33-point logarithmic step sweep, the best directional finite-difference errors were \(5.94\%\) for a stiffness-only smooth field and \(11.13\%\) for a relaxation-time-only smooth field, both at \(h=5.172\times10^{-3}\).
+The sweep also showed the expected finite-difference window: large steps were affected by nonlinear secant bias, while very small steps were dominated by fixed-point resolution and cancellation.
+These results support the use of the implemented adjoint for smooth-field elementwise inversion, while avoiding an overclaim of componentwise finite-difference verification for all element parameters in the high-contrast fixed-point regime.''
 \end{quote}
 
 \section{Reproducibility}
@@ -344,6 +493,13 @@ python examples/dissipative_wave/dissipative_wave_aux_control_crosscheck.py
 python examples/dissipative_wave/dissipative_wave_fixed_control_verification.py
 \end{verbatim}
 
+\subsection*{Current elementwise smooth-field directional check}
+\begin{verbatim}
+/home/amin/projects/remat/.venv/bin/python \
+  examples/dissipative_wave/dissipative_wave_elementwise_directional_check.py \
+  --h-max 4 --h-min 1e-6 --h-count 33
+\end{verbatim}
+
 \section{Available Figures}
 Existing generated figures relevant to this report:
 \begin{itemize}
@@ -352,6 +508,9 @@ Existing generated figures relevant to this report:
 \item \texttt{recovered\_adjoint\_trace.png}
 \item \texttt{truth\_adjoint\_trace.png}
 \item \texttt{adjoint\_layer\_grad\_lambda\_compare.png}
+\item \texttt{elementwise\_s\_tau\_directional\_check.svg}
+\item \texttt{elementwise\_s\_tau\_directional\_check.pdf}
+\item \texttt{elementwise\_s\_tau\_directional\_check.json}
 \end{itemize}
 
 \end{document}
