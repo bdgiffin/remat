@@ -5,12 +5,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-import dissipative_wave_inverse as inv
-import dissipative_wave_inverse_fifth_best_example as fifth
+import dissipative_wave_inverse as inverse
 
 
-DEFAULT_JSON = fifth.OUTPUT_DIR / "elementwise_s_tau_directional_check.json"
-DEFAULT_PLOT = fifth.OUTPUT_DIR / "elementwise_s_tau_directional_check.svg"
+DEFAULT_JSON = inverse.OUTPUT_DIR / "directional_taylor_check.json"
+DEFAULT_PLOT = inverse.OUTPUT_DIR / "directional_taylor_check.svg"
 
 PLOT_COLOR_PRIMARY = "#2b738eff"
 PLOT_COLOR_SECONDARY = "#f9826bff"
@@ -46,8 +45,8 @@ def build_h_values(args):
 def smooth_random_field(problem, seed, max_mode_x, max_mode_z):
     rng = np.random.default_rng(seed)
     centers = np.asarray(problem["elem_centers"], dtype=np.double)
-    x = centers[:, 0] / float(fifth.WIDTH)
-    z = (fifth.DEPTH - centers[:, 1]) / float(fifth.DEPTH)
+    x = centers[:, 0] / float(inverse.WIDTH)
+    z = (inverse.DEPTH - centers[:, 1]) / float(inverse.DEPTH)
 
     field = np.zeros(x.size, dtype=np.double)
     for kx in range(max_mode_x + 1):
@@ -67,19 +66,18 @@ def smooth_random_field(problem, seed, max_mode_x, max_mode_z):
     return field / max_abs
 
 
-def make_fifth_fields():
-    fifth.configure_inverse_backend()
-    experiments = [fifth.make_experiment(center) for center in fifth.IMPACT_CENTERS]
-    labels = fifth.make_labels(experiments[0])
-    true_stiffness = fifth.expand_region_values(fifth.region_stiffness_values(), labels)
-    true_tau = fifth.expand_region_values(fifth.region_tau_values(), labels)
-    initial_stiffness = fifth.make_initial_stiffness(labels)
-    initial_tau = fifth.make_initial_tau(labels)
+def make_inverse_fields():
+    experiments = [inverse.make_experiment(center) for center in inverse.IMPACT_CENTERS]
+    labels = inverse.make_labels(experiments[0])
+    true_stiffness = inverse.expand_region_values(inverse.region_stiffness_values(), labels)
+    true_tau = inverse.expand_region_values(inverse.region_tau_values(), labels)
+    initial_stiffness = inverse.make_initial_stiffness(labels)
+    initial_tau = inverse.make_initial_tau(labels)
     return experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau
 
 
 def load_recovered_fields():
-    fields = fifth.load_saved_fields()
+    fields = inverse.load_saved_fields()
     return fields["recovered_stiffness"], fields["recovered_tau"]
 
 
@@ -88,22 +86,22 @@ def regularization_loss_and_grad(stiffness, tau, objective):
     if objective == "data":
         return 0.0, np.zeros(nelem, dtype=np.double), np.zeros(nelem, dtype=np.double)
 
-    i_idx, j_idx = inv.build_edge_pairs(fifth.NX, fifth.NZ)
-    reg_s_loss, reg_s_grad = inv.regularization_loss_and_grad(
+    i_idx, j_idx = inverse.build_edge_pairs(inverse.NX, inverse.NZ)
+    reg_s_loss, reg_s_grad = inverse.regularization_loss_and_grad(
         stiffness,
         i_idx,
         j_idx,
-        fifth.REG_L2_STIFFNESS,
-        fifth.REG_TV_STIFFNESS,
-        fifth.REG_TV_EPS,
+        inverse.REG_L2_STIFFNESS,
+        inverse.REG_TV_STIFFNESS,
+        inverse.REG_TV_EPS,
     )
-    reg_t_loss, reg_t_grad = inv.regularization_loss_and_grad(
+    reg_t_loss, reg_t_grad = inverse.regularization_loss_and_grad(
         tau,
         i_idx,
         j_idx,
-        fifth.REG_L2_TAU,
-        fifth.REG_TV_TAU,
-        fifth.REG_TV_EPS,
+        inverse.REG_L2_TAU,
+        inverse.REG_TV_TAU,
+        inverse.REG_TV_EPS,
     )
     return (
         float((reg_s_loss + reg_t_loss) / nelem),
@@ -115,7 +113,7 @@ def regularization_loss_and_grad(stiffness, tau, objective):
 def objective_value(experiments, observations, obs_norm_sq, stiffness, tau, objective):
     data_loss = 0.0
     for problem, observed in zip(experiments, observations):
-        run = fifth.run_velocity_history(
+        run = inverse.run_velocity_history(
             problem,
             stiffness,
             tau,
@@ -135,7 +133,7 @@ def objective_and_gradient(experiments, observations, obs_norm_sq, stiffness, ta
     grad_tau = np.zeros(nelem, dtype=np.double)
 
     for problem, observed in zip(experiments, observations):
-        run = fifth.run_velocity_history(
+        run = inverse.run_velocity_history(
             problem,
             stiffness,
             tau,
@@ -160,10 +158,10 @@ def objective_and_gradient(experiments, observations, obs_norm_sq, stiffness, ta
 
 def bounds_ok(stiffness, tau):
     return (
-        np.all(stiffness >= fifth.STIFFNESS_MIN)
-        and np.all(stiffness <= fifth.STIFFNESS_MAX)
-        and np.all(tau >= fifth.TAU_MIN)
-        and np.all(tau <= fifth.TAU_MAX)
+        np.all(stiffness >= inverse.STIFFNESS_MIN)
+        and np.all(stiffness <= inverse.STIFFNESS_MAX)
+        and np.all(tau >= inverse.TAU_MIN)
+        and np.all(tau <= inverse.TAU_MAX)
     )
 
 
@@ -322,14 +320,14 @@ def save_plot(results, output_plot):
     fig.savefig(
         output_plot,
         dpi=200,
-        metadata={"Title": "Fifth example elementwise stiffness and relaxation time Taylor checks"},
+        metadata={"Title": "Element-wise stiffness and relaxation-time Taylor checks"},
     )
     plt.close(fig)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Directional finite-difference checks for the fifth-best elementwise stiffness and relaxation-time example."
+        description="Directional finite-difference checks for element-wise stiffness and relaxation time."
     )
     parser.add_argument("--base", choices=("initial", "truth", "recovered"), default="initial")
     parser.add_argument("--objective", choices=("data", "total"), default="data")
@@ -363,7 +361,7 @@ def main():
     args = build_parser().parse_args()
     h_values = build_h_values(args)
 
-    experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau = make_fifth_fields()
+    experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau = make_inverse_fields()
     nelem = labels.size
 
     if args.base == "initial":
@@ -378,10 +376,10 @@ def main():
     if not bounds_ok(base_stiffness, base_tau):
         raise ValueError("Base fields must be inside the configured stiffness and relaxation-time bounds.")
 
-    print("Generating fifth-example synthetic observations...", flush=True)
-    observations, obs_norm_sq = fifth.generate_observations(experiments, true_stiffness, true_tau)
+    print("Generating synthetic observations...", flush=True)
+    observations, obs_norm_sq = inverse.generate_observations(experiments, true_stiffness, true_tau)
 
-    print("Computing fifth-example elementwise adjoint gradient at the base point...", flush=True)
+    print("Computing element-wise adjoint gradient at the base point...", flush=True)
     base_loss, grad_stiff, grad_tau = objective_and_gradient(
         experiments,
         observations,
@@ -395,12 +393,12 @@ def main():
     stiffness_scale = (
         float(args.stiffness_direction_scale)
         if args.stiffness_direction_scale is not None
-        else float(args.stiffness_step_fraction) * (fifth.STIFFNESS_MAX - fifth.STIFFNESS_MIN)
+        else float(args.stiffness_step_fraction) * (inverse.STIFFNESS_MAX - inverse.STIFFNESS_MIN)
     )
     tau_scale = (
         float(args.tau_direction_scale)
         if args.tau_direction_scale is not None
-        else float(args.tau_step_fraction) * (fifth.TAU_MAX - fifth.TAU_MIN)
+        else float(args.tau_step_fraction) * (inverse.TAU_MAX - inverse.TAU_MIN)
     )
     relaxation_time_scale_mode = (
         "manual" if args.tau_direction_scale is not None else "same_fraction_of_relaxation_time_range"
@@ -458,11 +456,11 @@ def main():
 
     payload = {
         "config": {
-            "example": "fifth_best_elementwise_stiffness_and_relaxation_time",
-            "mesh": {"nx": fifth.NX, "nz": fifth.NZ, "width": fifth.WIDTH, "depth": fifth.DEPTH},
-            "time": {"dt": fifth.DT, "n_steps": fifth.N_STEPS, "n_sub_steps": fifth.N_SUB_STEPS},
-            "integrator_type": fifth.INTEGRATOR_TYPE,
-            "impact_centers": list(fifth.IMPACT_CENTERS),
+            "example": "elementwise_stiffness_and_relaxation_time",
+            "mesh": {"nx": inverse.NX, "nz": inverse.NZ, "width": inverse.WIDTH, "depth": inverse.DEPTH},
+            "time": {"dt": inverse.DT, "n_steps": inverse.N_STEPS, "n_sub_steps": inverse.N_SUB_STEPS},
+            "integrator_type": inverse.INTEGRATOR_TYPE,
+            "impact_centers": list(inverse.IMPACT_CENTERS),
             "sensors": {
                 "type": "sparse surface nodal velocity sensors",
                 "components": ["velocity_x", "velocity_z"],
@@ -471,8 +469,8 @@ def main():
             "objective": args.objective,
             "base": args.base,
             "bounds": {
-                "stiffness": [fifth.STIFFNESS_MIN, fifth.STIFFNESS_MAX],
-                "relaxation_time": [fifth.TAU_MIN, fifth.TAU_MAX],
+                "stiffness": [inverse.STIFFNESS_MIN, inverse.STIFFNESS_MAX],
+                "relaxation_time": [inverse.TAU_MIN, inverse.TAU_MAX],
             },
             "h_values": h_values,
             "smooth_direction": {

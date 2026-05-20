@@ -1,10 +1,13 @@
+import argparse
+import contextlib
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-
 from scipy.optimize import minimize
 
 
@@ -14,38 +17,60 @@ sys.path.append(str(REPO_ROOT / "install" / "package"))
 
 import REMAT
 
-# Matplotlib style rules from AGENTS.md
-plt.rcParams.update(
-    {
-        "font.family": "serif",
-        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
-        "mathtext.fontset": "cm",
-    }
-)
-
 # -----------------------------------------------------------------------------
-# Inversion configuration (single high-fidelity profile)
+# Element-wise dissipative-wave inverse problem
 # -----------------------------------------------------------------------------
 
-# Geometry and mesh
-WIDTH = 15.0
-HEIGHT = 3.0
-NX = int(WIDTH * 10)
-NY = int(HEIGHT * 10)
+WIDTH = 12.0
+DEPTH = 2.0
+NX = 72
+NZ = 12
 
-# Time integration
 DT = 4.0e-3
-N_STEPS = 1000
+N_STEPS = 520
 N_SUB_STEPS = 1
 INTEGRATOR_TYPE = "fixed_visco"
 
-# Excitation and sensors
-IMPACT_VELOCITY = 1.50
-IMPACT_WINDOW_WIDTH = 1.3
-N_SENSORS = 5
-SENSOR_DISTRIBUTION_WIDTH = 4.7
+IMPACT_VELOCITY = 1.5
+IMPACT_WINDOW_WIDTH = 0.8
+IMPACT_CENTERS = [0.8, 2.1, 3.4, 4.7, 6.0, 7.3, 8.6, 9.9, 11.2]
+SURFACE_SENSOR_COUNT = 17
 
-# Material model constants (fixed)
+STIFFNESS_MIN = 1.0
+STIFFNESS_MAX = 20.0
+INIT_BOTTOM_STIFFNESS = 14.4
+INIT_TOP_STIFFNESS = 8.0
+INIT_CROSS_STIFFNESS = 11.0
+
+TAU_MIN = 0.2
+TAU_MAX = 1.2
+INIT_BOTTOM_TAU = 0.50
+INIT_TOP_TAU = 0.40
+INIT_CROSS_TAU = 0.40
+
+TRUE_BOTTOM_STIFFNESS = 15.0
+TRUE_TOP_STIFFNESS = 7.7
+TRUE_CROSS_STIFFNESS = 12.0
+
+TRUE_BOTTOM_TAU = 0.55
+TRUE_TOP_TAU = 0.35
+TRUE_CROSS_TAU = 0.45
+
+CROSS_CENTER = (8.4, 0.55)
+CROSS_ARM_HALF_LENGTH = 0.48
+CROSS_ARM_HALF_WIDTH = 0.20
+
+REG_L2_STIFFNESS = 1.0e-4
+REG_TV_STIFFNESS = 1.0e-3
+REG_L2_TAU = 2.5e-4
+REG_TV_TAU = 1.0e-3
+REG_TV_EPS = 1.0e-5
+
+MAX_ITERS = 260
+LBFGSB_GTOL = 1.0e-10
+LBFGSB_MAXLS = 60
+MAX_OBJECTIVE_EVALS = 180
+
 DENSITY = 1.0
 YOUNGS_MODULUS = 5.0
 POISSONS_RATIO = 0.28
@@ -54,43 +79,48 @@ MASS_DAMPING_FACTOR = 0.0
 OVERFLOW_LIMIT = 10.0
 MAT_OVERFLOW_LIMIT = 10.0
 
-# Unknown bounds
-STIFFNESS_MIN = 1.0
-STIFFNESS_MAX = 20.0
-TAU_MIN = 0.1
-TAU_MAX = 2.0
-
-# Initial guesses
-INIT_STIFFNESS = 10.0
-INIT_TAU = 1.0
-
-# Regularization (applied to both unknown fields)
-REG_L2_STIFFNESS = 7.5e-4
-REG_TV_STIFFNESS = 3.5e-4
-REG_L2_TAU = 6.0e-3
-REG_TV_TAU = 2.5e-3
-REG_TV_EPS = 1.0e-6
-
-# Optimization
-MAX_ITERS = 60
-LBFGSB_GTOL = 1.0e-8
-LBFGSB_MAXLS = 40
-
-# Material discovery (post-hoc)
-K_MIN = 1
-K_MAX = 2
-KMEANS_MAX_ITERS = 10
-KMEANS_RESTARTS = 5
-MODEL_SELECTION_PENALTY = 2.0
-RANDOM_SEED = 7
-
-# Output
-OUTPUT_DIR = THIS_DIR / "inverse_outputs_elementwise"
+OUTPUT_DIR = THIS_DIR / "inverse_outputs"
 OUTPUT_JSON = OUTPUT_DIR / "inverse_result.json"
 OUTPUT_PLOT = OUTPUT_DIR / "inverse_summary.svg"
+OUTPUT_VELOCITY_PLOT = OUTPUT_DIR / "inverse_velocity.svg"
 
 PLOT_COLOR_PRIMARY = "#2b738eff"
 PLOT_COLOR_SECONDARY = "#f9826bff"
+STIFFNESS_CMAP = "viridis"
+TAU_CMAP = "magma"
+
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",
+    }
+)
+
+
+class EarlyStop(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def suppress_solver_output():
+    sys.stdout.flush()
+    sys.stderr.flush()
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        try:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            yield
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(stdout_fd, 1)
+            os.dup2(stderr_fd, 2)
+            os.close(stdout_fd)
+            os.close(stderr_fd)
+
 
 # -----------------------------------------------------------------------------
 # Spatial callbacks consumed by REMAT
@@ -123,15 +153,15 @@ def elementwise_relaxation_time(x, y):
 
 
 # -----------------------------------------------------------------------------
-# Problem setup
+# Problem setup and REMAT configuration
 # -----------------------------------------------------------------------------
 
 
 def make_structured_quad_problem():
     xs = np.linspace(0.0, WIDTH, NX + 1)
-    ys = np.linspace(0.0, HEIGHT, NY + 1)
+    ys = np.linspace(0.0, DEPTH, NZ + 1)
 
-    num_nodes = (NX + 1) * (NY + 1)
+    num_nodes = (NX + 1) * (NZ + 1)
     coordinates = np.zeros((num_nodes, 2), dtype=np.double)
     velocities = np.zeros((num_nodes, 2), dtype=np.double)
     fixity = np.zeros((num_nodes, 2), dtype=np.bool_)
@@ -142,10 +172,10 @@ def make_structured_quad_problem():
             coordinates[nid, 0] = x
             coordinates[nid, 1] = y
 
-    num_elems = NX * NY
+    num_elems = NX * NZ
     connectivity = np.zeros((num_elems, 4), dtype=np.int32)
     e = 0
-    for j in range(NY):
+    for j in range(NZ):
         for i in range(NX):
             n0 = j * (NX + 1) + i
             n1 = n0 + 1
@@ -155,32 +185,9 @@ def make_structured_quad_problem():
             e += 1
 
     eps = 1.0e-12
-    node_x = coordinates[:, 0]
     node_y = coordinates[:, 1]
-
     bottom_nodes = np.where(np.abs(node_y - 0.0) < eps)[0]
-    top_nodes = np.where(np.abs(node_y - HEIGHT) < eps)[0]
     fixity[bottom_nodes, :] = True
-
-    xmid = 0.5 * WIDTH
-    impact_span = min(IMPACT_WINDOW_WIDTH, WIDTH)
-    impact_half_width = 0.5 * impact_span
-    impact_lo = xmid - impact_half_width
-    impact_hi = xmid + impact_half_width
-    impact_nodes = top_nodes[(node_x[top_nodes] >= impact_lo - eps) & (node_x[top_nodes] <= impact_hi + eps)]
-    if impact_nodes.size == 0:
-        impact_nodes = top_nodes[np.array([int(np.argmin(np.abs(node_x[top_nodes] - xmid)))], dtype=np.int32)]
-    velocities[impact_nodes, 1] = -abs(IMPACT_VELOCITY)
-
-    top_interior = top_nodes[(node_x[top_nodes] > eps) & (node_x[top_nodes] < WIDTH - eps)]
-    sensor_span = min(SENSOR_DISTRIBUTION_WIDTH, WIDTH)
-    sx_lo = xmid - 0.5 * sensor_span
-    sx_hi = xmid + 0.5 * sensor_span
-    sensor_candidates = top_interior[(node_x[top_interior] >= sx_lo - eps) & (node_x[top_interior] <= sx_hi + eps)]
-
-    nsensors = min(N_SENSORS, sensor_candidates.size)
-    sensor_pick = np.unique(np.round(np.linspace(0, sensor_candidates.size - 1, nsensors)).astype(int))
-    sensor_nodes = sensor_candidates[sensor_pick]
 
     elem_centers = np.mean(coordinates[connectivity, :], axis=1)
 
@@ -189,18 +196,14 @@ def make_structured_quad_problem():
         "velocities": velocities,
         "fixity": fixity,
         "connectivity": connectivity,
-        "sensor_nodes": sensor_nodes.astype(np.int32),
+        "sensor_nodes": np.zeros(0, dtype=np.int32),
         "elem_centers": elem_centers,
         "nx": NX,
-        "ny": NY,
+        "ny": NZ,
         "width": WIDTH,
-        "height": HEIGHT,
+        "height": DEPTH,
+        "depth": DEPTH,
     }
-
-
-# -----------------------------------------------------------------------------
-# Forward / adjoint solve
-# -----------------------------------------------------------------------------
 
 
 def configure_run(problem, stiffness_elem, tau_elem):
@@ -229,8 +232,6 @@ def configure_run(problem, stiffness_elem, tau_elem):
     REMAT.API.define_parameter(b"youngs_modulus", YOUNGS_MODULUS)
     REMAT.API.define_parameter(b"poissons_ratio", POISSONS_RATIO)
     REMAT.API.define_parameter(b"shear_modulus_Maxwell_element", SHEAR_MODULUS_MAXWELL)
-
-    # Fallback scalar tau for backward compatibility in the material constructor.
     REMAT.API.define_parameter(b"relaxation_time", float(np.mean(_ACTIVE_TAU)))
 
     truss_connectivity = np.zeros((0, 2), dtype=np.int32)
@@ -245,51 +246,6 @@ def configure_run(problem, stiffness_elem, tau_elem):
     REMAT.define_variable_properties(elementwise_stiffness_scaling)
     REMAT.define_variable_relaxation_time(elementwise_relaxation_time)
     REMAT.API.initialize()
-
-
-def run_forward_or_adjoint(problem, stiffness_elem, tau_elem, observed_history=None, compute_gradients=False):
-    configure_run(problem, stiffness_elem, tau_elem)
-
-    sensor_nodes = problem["sensor_nodes"]
-    nsensors = sensor_nodes.size
-    nelem = problem["connectivity"].shape[0]
-
-    sensor_history = np.zeros((N_STEPS, nsensors), dtype=np.double)
-    data_loss = 0.0
-
-    for k in range(N_STEPS):
-        REMAT.API.update_state(DT, N_SUB_STEPS, REMAT.PASS_FORWARD)
-        vy = np.asarray(REMAT.get_field(b"node", "velocity_Y"), dtype=np.double)[sensor_nodes]
-        sensor_history[k, :] = vy
-        if observed_history is not None:
-            residual = vy - observed_history[k, :]
-            data_loss += 0.5 * float(np.dot(residual, residual))
-
-    grad_stiff = np.zeros(nelem, dtype=np.double)
-    grad_tau = np.zeros(nelem, dtype=np.double)
-
-    if compute_gradients:
-        if observed_history is None:
-            raise ValueError("observed_history is required when compute_gradients=True")
-
-        REMAT.clear_adjoint_state()
-        for rev in range(N_STEPS):
-            k = N_STEPS - 1 - rev
-            residual = sensor_history[k, :] - observed_history[k, :]
-            seed_xy = np.zeros((nsensors, 2), dtype=np.double)
-            seed_xy[:, 1] = residual
-            REMAT.add_nodal_velocity_adjoint_seed(sensor_nodes, seed_xy)
-            REMAT.API.update_state(DT, N_SUB_STEPS, REMAT.PASS_BACKWARD_ADJOINT)
-
-        grad_stiff = np.asarray(REMAT.get_field(b"element", "dparam_stiffness_scaling_factor"), dtype=np.double)
-        grad_tau = np.asarray(REMAT.get_field(b"element", "dparam_relaxation_time"), dtype=np.double)
-
-    return {
-        "data_loss": float(data_loss),
-        "sensor_history": sensor_history,
-        "grad_stiff": grad_stiff,
-        "grad_tau": grad_tau,
-    }
 
 
 # -----------------------------------------------------------------------------
@@ -337,329 +293,663 @@ def regularization_loss_and_grad(field, i_idx, j_idx, l2_weight, tv_weight, tv_e
 
 
 # -----------------------------------------------------------------------------
-# Synthetic truth and post-hoc material discovery
+# Inverse problem definition
 # -----------------------------------------------------------------------------
 
+def configure_impact(problem, center_x):
+    coordinates = problem["coordinates"]
+    velocities = problem["velocities"]
+    node_x = coordinates[:, 0]
+    node_vertical = coordinates[:, 1]
+    eps = 1.0e-12
 
-def make_true_fields(problem):
-    y = problem["elem_centers"][:, 1]
+    velocities[:, :] = 0.0
+    surface_nodes = np.where(np.abs(node_vertical - DEPTH) < eps)[0]
+    half_width = 0.5 * min(IMPACT_WINDOW_WIDTH, WIDTH)
+    impact_nodes = surface_nodes[
+        (node_x[surface_nodes] >= center_x - half_width - eps)
+        & (node_x[surface_nodes] <= center_x + half_width + eps)
+    ]
+    if impact_nodes.size == 0:
+        nearest = int(np.argmin(np.abs(node_x[surface_nodes] - center_x)))
+        impact_nodes = surface_nodes[np.array([nearest], dtype=np.int32)]
 
-    # Simpler synthetic target: two horizontal stiffness regions.
-    labels = np.zeros(y.size, dtype=np.int32)
-    labels[y >= 0.5 * HEIGHT] = 1
-
-    stiffness_by_material = np.array([15.0, 7.7], dtype=np.double)
-
-    stiffness_true = stiffness_by_material[labels]
-    # Keep tau consistent with fixed inversion bounds (TAU_MIN == TAU_MAX == 0.1).
-    tau_true = np.full(y.size, TAU_MIN, dtype=np.double)
-
-    return stiffness_true, tau_true, labels
-
-
-def _kmeans_pp_init(features, k, rng):
-    n, d = features.shape
-    centers = np.zeros((k, d), dtype=np.double)
-
-    first = int(rng.integers(0, n))
-    centers[0] = features[first]
-    min_sq = np.sum((features - centers[0]) ** 2, axis=1)
-
-    for c in range(1, k):
-        denom = float(np.sum(min_sq))
-        if denom <= 0.0:
-            centers[c] = features[int(rng.integers(0, n))]
-        else:
-            probs = min_sq / denom
-            idx = int(rng.choice(n, p=probs))
-            centers[c] = features[idx]
-        sq = np.sum((features - centers[c]) ** 2, axis=1)
-        min_sq = np.minimum(min_sq, sq)
-
-    return centers
+    velocities[impact_nodes, 1] = -abs(IMPACT_VELOCITY)
+    problem["impact_center"] = float(center_x)
+    problem["impact_nodes"] = impact_nodes.astype(np.int32)
 
 
-def run_kmeans(features, k, rng_seed):
-    rng = np.random.default_rng(rng_seed)
-    n = features.shape[0]
-
-    centers = _kmeans_pp_init(features, k, rng)
-    labels = np.zeros(n, dtype=np.int32)
-
-    for _ in range(KMEANS_MAX_ITERS):
-        sq_dist = np.sum((features[:, None, :] - centers[None, :, :]) ** 2, axis=2)
-        new_labels = np.argmin(sq_dist, axis=1).astype(np.int32)
-
-        if np.array_equal(new_labels, labels):
-            break
-        labels = new_labels
-
-        for c in range(k):
-            members = features[labels == c]
-            if members.size == 0:
-                farthest_idx = int(np.argmax(np.min(sq_dist, axis=1)))
-                centers[c] = features[farthest_idx]
-            else:
-                centers[c] = np.mean(members, axis=0)
-
-    sq_dist = np.sum((features[:, None, :] - centers[None, :, :]) ** 2, axis=2)
-    inertia = float(np.sum(sq_dist[np.arange(n), labels]))
-    return centers, labels, inertia
+def surface_sensor_targets():
+    if SURFACE_SENSOR_COUNT == len(IMPACT_CENTERS):
+        return np.asarray(IMPACT_CENTERS, dtype=np.double)
+    return np.linspace(min(IMPACT_CENTERS), max(IMPACT_CENTERS), SURFACE_SENSOR_COUNT, dtype=np.double)
 
 
-def discover_materials(stiffness, tau):
-    features = np.column_stack([np.log(stiffness), np.log(tau)])
-    n, d = features.shape
+def use_sparse_surface_velocity_sensors(problem):
+    coordinates = problem["coordinates"]
+    node_x = coordinates[:, 0]
+    node_vertical = coordinates[:, 1]
+    eps = 1.0e-12
+    surface_nodes = np.where(np.abs(node_vertical - DEPTH) < eps)[0]
+    targets = surface_sensor_targets()
+    sensor_nodes = []
+    for target_x in targets:
+        nearest = int(np.argmin(np.abs(node_x[surface_nodes] - target_x)))
+        sensor_nodes.append(int(surface_nodes[nearest]))
 
-    best = None
-    for k in range(K_MIN, K_MAX + 1):
-        best_k = None
-        for r in range(KMEANS_RESTARTS):
-            centers, labels, inertia = run_kmeans(features, k, RANDOM_SEED + 100 * k + r)
-            if best_k is None or inertia < best_k["inertia"]:
-                best_k = {
-                    "centers": centers,
-                    "labels": labels,
-                    "inertia": inertia,
-                }
+    sensor_nodes = np.unique(np.asarray(sensor_nodes, dtype=np.int32))
+    problem["sensor_nodes"] = sensor_nodes
+    problem["sensor_x_targets"] = targets
+    problem["sensor_x_positions"] = node_x[sensor_nodes].astype(np.double)
+    problem["sensor_z_positions"] = np.zeros(sensor_nodes.size, dtype=np.double)
 
-        variance = best_k["inertia"] / max(float(n * d), 1.0)
-        score = float(n * d * np.log(variance + 1.0e-12) + MODEL_SELECTION_PENALTY * k * np.log(max(n, 2)))
 
-        candidate = {
-            "k": k,
-            "score": score,
-            "inertia": best_k["inertia"],
-            "centers_log": best_k["centers"],
-            "labels": best_k["labels"],
-        }
-        if best is None or candidate["score"] < best["score"]:
-            best = candidate
+def make_experiment(center_x):
+    problem = make_structured_quad_problem()
+    configure_impact(problem, center_x)
+    use_sparse_surface_velocity_sensors(problem)
+    return problem
 
-    centers_log = best["centers_log"]
-    centers_phys = np.column_stack([np.exp(centers_log[:, 0]), np.exp(centers_log[:, 1])])
+
+def make_labels(problem):
+    centers = np.asarray(problem["elem_centers"], dtype=np.double)
+    elem_z = DEPTH - centers[:, 1]
+
+    labels = np.zeros(elem_z.size, dtype=np.int32)
+    labels[elem_z <= 0.5 * DEPTH] = 1
+
+    dx = np.abs(centers[:, 0] - CROSS_CENTER[0])
+    dz = np.abs(elem_z - CROSS_CENTER[1])
+    cross_mask = (
+        ((dx <= CROSS_ARM_HALF_WIDTH) & (dz <= CROSS_ARM_HALF_LENGTH))
+        | ((dx <= CROSS_ARM_HALF_LENGTH) & (dz <= CROSS_ARM_HALF_WIDTH))
+    ) & (elem_z <= 0.5 * DEPTH)
+    labels[cross_mask] = 2
+    return labels
+
+
+def region_stiffness_values():
+    return np.array(
+        [TRUE_BOTTOM_STIFFNESS, TRUE_TOP_STIFFNESS, TRUE_CROSS_STIFFNESS],
+        dtype=np.double,
+    )
+
+
+def region_tau_values():
+    return np.array(
+        [TRUE_BOTTOM_TAU, TRUE_TOP_TAU, TRUE_CROSS_TAU],
+        dtype=np.double,
+    )
+
+
+def initial_stiffness_values():
+    return np.array(
+        [INIT_BOTTOM_STIFFNESS, INIT_TOP_STIFFNESS, INIT_CROSS_STIFFNESS],
+        dtype=np.double,
+    )
+
+
+def initial_tau_values():
+    return np.array(
+        [INIT_BOTTOM_TAU, INIT_TOP_TAU, INIT_CROSS_TAU],
+        dtype=np.double,
+    )
+
+
+def expand_region_values(values, labels):
+    return np.asarray(values, dtype=np.double)[labels]
+
+
+def make_initial_stiffness(labels):
+    return expand_region_values(initial_stiffness_values(), labels)
+
+
+def make_initial_tau(labels):
+    return expand_region_values(initial_tau_values(), labels)
+
+
+def pack_controls(stiffness_elem, tau_elem):
+    return np.concatenate(
+        [
+            np.asarray(stiffness_elem, dtype=np.double),
+            np.asarray(tau_elem, dtype=np.double),
+        ]
+    )
+
+
+def unpack_controls(x, nelem):
+    x = np.asarray(x, dtype=np.double)
+    stiffness_elem = x[:nelem]
+    tau_elem = x[nelem : 2 * nelem]
+    return stiffness_elem, tau_elem
+
+
+def run_velocity_history(problem, stiffness_elem, tau_elem, observed_history=None, compute_gradients=False):
+    with suppress_solver_output():
+        configure_run(problem, stiffness_elem, tau_elem)
+
+        sensor_nodes = problem["sensor_nodes"]
+        nsensors = sensor_nodes.size
+        nelem = problem["connectivity"].shape[0]
+
+        history = np.zeros((N_STEPS, nsensors, 2), dtype=np.double)
+        data_loss = 0.0
+
+        for k in range(N_STEPS):
+            REMAT.API.update_state(DT, N_SUB_STEPS, REMAT.PASS_FORWARD)
+            history[k, :, 0] = np.asarray(REMAT.get_field(b"node", "velocity_X"), dtype=np.double)[sensor_nodes]
+            history[k, :, 1] = -np.asarray(REMAT.get_field(b"node", "velocity_Y"), dtype=np.double)[sensor_nodes]
+            if observed_history is not None:
+                residual = history[k, :, :] - observed_history[k, :, :]
+                data_loss += 0.5 * float(np.sum(residual * residual))
+
+        grad_stiff = np.zeros(nelem, dtype=np.double)
+        grad_tau = np.zeros(nelem, dtype=np.double)
+        if compute_gradients:
+            if observed_history is None:
+                raise ValueError("observed_history is required when compute_gradients=True")
+
+            REMAT.clear_adjoint_state()
+            for rev in range(N_STEPS):
+                k = N_STEPS - 1 - rev
+                residual_xz = history[k, :, :] - observed_history[k, :, :]
+                backend_seed = np.empty_like(residual_xz)
+                backend_seed[:, 0] = residual_xz[:, 0]
+                backend_seed[:, 1] = -residual_xz[:, 1]
+                REMAT.add_nodal_velocity_adjoint_seed(sensor_nodes, np.asarray(backend_seed, dtype=np.double))
+                REMAT.API.update_state(DT, N_SUB_STEPS, REMAT.PASS_BACKWARD_ADJOINT)
+
+            grad_stiff = np.asarray(
+                REMAT.get_field(b"element", "dparam_stiffness_scaling_factor"),
+                dtype=np.double,
+            )
+            grad_tau = np.asarray(
+                REMAT.get_field(b"element", "dparam_relaxation_time"),
+                dtype=np.double,
+            )
 
     return {
-        "k": int(best["k"]),
-        "score": float(best["score"]),
-        "inertia": float(best["inertia"]),
-        "centers_log": centers_log,
-        "centers": centers_phys,
-        "labels": best["labels"],
+        "sensor_history": history,
+        "data_loss": float(data_loss),
+        "grad_stiff": grad_stiff,
+        "grad_tau": grad_tau,
     }
 
 
-# -----------------------------------------------------------------------------
-# Inversion driver
-# -----------------------------------------------------------------------------
+def generate_observations(experiments, true_stiffness, true_tau):
+    observations = []
+    norm_sq = 0.0
+    for problem in experiments:
+        run = run_velocity_history(problem, true_stiffness, true_tau)
+        history = run["sensor_history"]
+        observations.append(history)
+        norm_sq += float(np.sum(history * history))
+    return observations, max(norm_sq, 1.0)
 
 
-def invert(problem, observed_history, init_stiffness, init_tau):
-    if minimize is None:
-        raise ImportError("SciPy is required for L-BFGS-B inversion. Install with: pip install scipy")
-
-    nelem = problem["connectivity"].shape[0]
-    i_idx, j_idx = build_edge_pairs(problem["nx"], problem["ny"])
-
-    x0 = np.concatenate([init_stiffness, init_tau])
+def invert(experiments, observations, obs_norm_sq, init_stiffness, init_tau):
+    nelem = init_stiffness.size
+    i_idx, j_idx = build_edge_pairs(NX, NZ)
+    x0 = pack_controls(init_stiffness, init_tau)
     bounds = [(STIFFNESS_MIN, STIFFNESS_MAX)] * nelem + [(TAU_MIN, TAU_MAX)] * nelem
 
-    history = []
-    cache = {
-        "x": None,
+    state = {
+        "x": x0.copy(),
         "total_loss": None,
         "data_loss": None,
-        "reg_loss": None,
-        "grad": None,
+        "reg_stiffness_loss": None,
+        "reg_tau_loss": None,
+        "grad_inf_stiffness": None,
+        "grad_inf_tau": None,
+        "status": "running",
     }
+    history = []
 
     def objective_with_grad(x):
-        x = np.asarray(x, dtype=np.double)
-        stiffness = x[:nelem]
-        tau = x[nelem:]
+        stiffness_elem, tau_elem = unpack_controls(x, nelem)
+        total_data_loss = 0.0
+        grad_data_stiff = np.zeros(nelem, dtype=np.double)
+        grad_data_tau = np.zeros(nelem, dtype=np.double)
 
-        run = run_forward_or_adjoint(problem, stiffness, tau, observed_history=observed_history, compute_gradients=True)
+        for problem, observed in zip(experiments, observations):
+            run = run_velocity_history(
+                problem,
+                stiffness_elem,
+                tau_elem,
+                observed_history=observed,
+                compute_gradients=True,
+            )
+            total_data_loss += run["data_loss"]
+            grad_data_stiff += run["grad_stiff"]
+            grad_data_tau += run["grad_tau"]
 
-        reg_s_loss, reg_s_grad = regularization_loss_and_grad(
-            stiffness, i_idx, j_idx, REG_L2_STIFFNESS, REG_TV_STIFFNESS, REG_TV_EPS
+        data_loss = total_data_loss / obs_norm_sq
+        grad_data_stiff /= obs_norm_sq
+        grad_data_tau /= obs_norm_sq
+
+        reg_s_loss_raw, reg_s_grad_raw = regularization_loss_and_grad(
+            stiffness_elem,
+            i_idx,
+            j_idx,
+            REG_L2_STIFFNESS,
+            REG_TV_STIFFNESS,
+            REG_TV_EPS,
         )
-        reg_t_loss, reg_t_grad = regularization_loss_and_grad(
-            tau, i_idx, j_idx, REG_L2_TAU, REG_TV_TAU, REG_TV_EPS
+        reg_s_loss = reg_s_loss_raw / nelem
+        reg_s_grad = reg_s_grad_raw / nelem
+        reg_t_loss_raw, reg_t_grad_raw = regularization_loss_and_grad(
+            tau_elem,
+            i_idx,
+            j_idx,
+            REG_L2_TAU,
+            REG_TV_TAU,
+            REG_TV_EPS,
         )
+        reg_t_loss = reg_t_loss_raw / nelem
+        reg_t_grad = reg_t_grad_raw / nelem
 
-        reg_loss = reg_s_loss + reg_t_loss
-        total_loss = run["data_loss"] + reg_loss
-
-        grad_stiff = run["grad_stiff"] + reg_s_grad
-        grad_tau = run["grad_tau"] + reg_t_grad
+        total_loss = data_loss + reg_s_loss + reg_t_loss
+        grad_stiff = grad_data_stiff + reg_s_grad
+        grad_tau = grad_data_tau + reg_t_grad
         grad = np.concatenate([grad_stiff, grad_tau])
 
-        cache["x"] = x.copy()
-        cache["total_loss"] = float(total_loss)
-        cache["data_loss"] = float(run["data_loss"])
-        cache["reg_loss"] = float(reg_loss)
-        cache["grad"] = grad.copy()
+        state["x"] = np.asarray(x, dtype=np.double).copy()
+        state["total_loss"] = float(total_loss)
+        state["data_loss"] = float(data_loss)
+        state["reg_stiffness_loss"] = float(reg_s_loss)
+        state["reg_tau_loss"] = float(reg_t_loss)
+        state["grad_inf_stiffness"] = float(np.max(np.abs(grad_stiff)))
+        state["grad_inf_tau"] = float(np.max(np.abs(grad_tau)))
 
         history.append(
             {
                 "eval": len(history),
                 "loss_total": float(total_loss),
-                "loss_data": float(run["data_loss"]),
-                "loss_reg": float(reg_loss),
-                "grad_inf_stiff": float(np.max(np.abs(grad_stiff))),
+                "loss_data": float(data_loss),
+                "loss_reg_stiffness": float(reg_s_loss),
+                "loss_reg_tau": float(reg_t_loss),
+                "grad_inf_stiffness": float(np.max(np.abs(grad_stiff))),
                 "grad_inf_tau": float(np.max(np.abs(grad_tau))),
+                "tau_min": float(np.min(tau_elem)),
+                "tau_mean": float(np.mean(tau_elem)),
+                "tau_max": float(np.max(tau_elem)),
             }
         )
 
-        return cache["total_loss"], grad
+        if len(history) % 10 == 0:
+            print(
+                f"  eval={len(history):03d} total={total_loss:.6e} "
+                f"data={data_loss:.6e} reg_s={reg_s_loss:.6e} reg_tau={reg_t_loss:.6e} "
+                f"tau_range=[{np.min(tau_elem):.4f}, {np.max(tau_elem):.4f}]"
+            )
 
-    iter_counter = {"k": 0}
+        if len(history) >= MAX_OBJECTIVE_EVALS:
+            state["status"] = "max_objective_evals"
+            raise EarlyStop()
 
-    def callback(xk):
-        if cache["x"] is None or not np.array_equal(np.asarray(xk, dtype=np.double), cache["x"]):
-            objective_with_grad(xk)
-        k = iter_counter["k"]
-        print(
-            f"iter={k:03d}  total={cache['total_loss']:.6e}  data={cache['data_loss']:.6e}  "
-            f"reg={cache['reg_loss']:.6e}"
+        return float(total_loss), grad
+
+    t0 = time.time()
+    try:
+        result = minimize(
+            objective_with_grad,
+            x0=x0,
+            method="L-BFGS-B",
+            jac=True,
+            bounds=bounds,
+            options={
+                "maxiter": MAX_ITERS,
+                "gtol": LBFGSB_GTOL,
+                "maxls": LBFGSB_MAXLS,
+                "ftol": 1.0e-13,
+            },
         )
-        iter_counter["k"] += 1
+        state["x"] = np.asarray(result.x, dtype=np.double)
+        state["status"] = f"scipy_status_{int(result.status)}"
+        message = str(result.message)
+        success = bool(result.success)
+    except EarlyStop:
+        message = state["status"]
+        success = True
 
-    # Log initial point.
-    objective_with_grad(x0)
-    print(
-        f"iter=000  total={cache['total_loss']:.6e}  data={cache['data_loss']:.6e}  "
-        f"reg={cache['reg_loss']:.6e}"
-    )
-
-    result = minimize(
-        objective_with_grad,
-        x0=x0,
-        method="L-BFGS-B",
-        jac=True,
-        bounds=bounds,
-        callback=callback,
-        options={
-            "maxiter": MAX_ITERS,
-            "gtol": LBFGSB_GTOL,
-            "maxls": LBFGSB_MAXLS,
-        },
-    )
-
-    return result, history
-
-
-# -----------------------------------------------------------------------------
-# Visualization/output
-# -----------------------------------------------------------------------------
+    return {
+        "x": state["x"],
+        "history": history,
+        "status": state["status"],
+        "message": message,
+        "success": success,
+        "elapsed_seconds": float(time.time() - t0),
+        "n_objective_evals": len(history),
+        "final_total_loss": state["total_loss"],
+        "final_data_loss": state["data_loss"],
+        "final_reg_stiffness_loss": state["reg_stiffness_loss"],
+        "final_reg_tau_loss": state["reg_tau_loss"],
+        "final_grad_inf_stiffness": state["grad_inf_stiffness"],
+        "final_grad_inf_tau": state["grad_inf_tau"],
+    }
 
 
-def _reshape(problem, flat_field):
-    return np.asarray(flat_field, dtype=np.double).reshape(problem["ny"], problem["nx"])
+def evaluate_recovered_histories(experiments, observations, recovered_stiffness, recovered_tau, obs_norm_sq):
+    recovered_histories = []
+    data_loss = 0.0
+    for problem, observed in zip(experiments, observations):
+        run = run_velocity_history(problem, recovered_stiffness, recovered_tau, observed_history=observed)
+        recovered_histories.append(run["sensor_history"])
+        data_loss += run["data_loss"]
+    return recovered_histories, float(data_loss / obs_norm_sq)
+
+
+def summarize_regions(labels, recovered_stiffness, recovered_tau):
+    true_stiffness = region_stiffness_values()
+    true_tau = region_tau_values()
+    names = ["bottom", "top", "cross"]
+    rows = []
+    for label, name in zip([0, 1, 2], names):
+        mask = labels == label
+        stiffness_values = recovered_stiffness[mask]
+        tau_values = recovered_tau[mask]
+        rows.append(
+            {
+                "name": name,
+                "n_elements": int(stiffness_values.size),
+                "true_stiffness": float(true_stiffness[label]),
+                "mean_recovered_stiffness": float(np.mean(stiffness_values)),
+                "mean_absolute_stiffness_error": float(np.mean(np.abs(stiffness_values - true_stiffness[label]))),
+                "max_absolute_stiffness_error": float(np.max(np.abs(stiffness_values - true_stiffness[label]))),
+                "true_tau": float(true_tau[label]),
+                "mean_recovered_tau": float(np.mean(tau_values)),
+                "mean_absolute_tau_error": float(np.mean(np.abs(tau_values - true_tau[label]))),
+                "max_absolute_tau_error": float(np.max(np.abs(tau_values - true_tau[label]))),
+            }
+        )
+    return rows
 
 
 def save_summary_plot(
     problem,
-    true_stiff,
+    labels,
+    true_stiffness,
+    init_stiffness,
+    recovered_stiffness,
     true_tau,
-    init_stiff,
     init_tau,
-    rec_stiff,
-    rec_tau,
-    true_labels,
-    discovered_labels,
-    history,
+    recovered_tau,
 ):
-    fig, axes = plt.subplots(2, 4, figsize=(18, 8))
+    extent = [0.0, WIDTH, DEPTH, 0.0]
 
-    ext = [0.0, problem["width"], 0.0, problem["height"]]
+    fig, axes = plt.subplots(3, 2, figsize=(9.4, 5.80))
+    stiffness_vmin = float(min(np.min(true_stiffness), np.min(init_stiffness), np.min(recovered_stiffness)))
+    stiffness_vmax = float(max(np.max(true_stiffness), np.max(init_stiffness), np.max(recovered_stiffness)))
+    tau_vmin = float(min(np.min(true_tau), np.min(init_tau), np.min(recovered_tau)))
+    tau_vmax = float(max(np.max(true_tau), np.max(init_tau), np.max(recovered_tau)))
 
-    smin = min(np.min(true_stiff), np.min(init_stiff), np.min(rec_stiff))
-    smax = max(np.max(true_stiff), np.max(init_stiff), np.max(rec_stiff))
-    tmin = min(np.min(true_tau), np.min(init_tau), np.min(rec_tau))
-    tmax = max(np.max(true_tau), np.max(init_tau), np.max(rec_tau))
-
-    panels = [
-        (axes[0, 0], _reshape(problem, true_stiff), "True stiffness", smin, smax, "viridis"),
-        (axes[0, 1], _reshape(problem, init_stiff), "Init stiffness", smin, smax, "viridis"),
-        (axes[0, 2], _reshape(problem, rec_stiff), "Recovered stiffness", smin, smax, "viridis"),
-        (axes[1, 0], _reshape(problem, true_tau), "True tau", tmin, tmax, "magma"),
-        (axes[1, 1], _reshape(problem, init_tau), "Init tau", tmin, tmax, "magma"),
-        (axes[1, 2], _reshape(problem, rec_tau), "Recovered tau", tmin, tmax, "magma"),
+    field_panels = [
+        (axes[0, 0], true_stiffness, "True stiffness", STIFFNESS_CMAP, stiffness_vmin, stiffness_vmax),
+        (axes[1, 0], init_stiffness, "Initial stiffness", STIFFNESS_CMAP, stiffness_vmin, stiffness_vmax),
+        (axes[2, 0], recovered_stiffness, "Recovered stiffness", STIFFNESS_CMAP, stiffness_vmin, stiffness_vmax),
+        (axes[0, 1], true_tau, "True relaxation time", TAU_CMAP, tau_vmin, tau_vmax),
+        (axes[1, 1], init_tau, "Initial relaxation time", TAU_CMAP, tau_vmin, tau_vmax),
+        (axes[2, 1], recovered_tau, "Recovered relaxation time", TAU_CMAP, tau_vmin, tau_vmax),
     ]
 
-    for ax, field, title, vmin, vmax, cmap in panels:
-        im = ax.imshow(field, origin="lower", extent=ext, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+    stiffness_image = None
+    tau_image = None
+    for ax, field, title, cmap, vmin, vmax in field_panels:
+        im = ax.imshow(
+            np.flipud(np.asarray(field, dtype=np.double).reshape(NZ, NX)),
+            origin="upper",
+            extent=extent,
+            aspect="equal",
+            interpolation="nearest",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
         ax.set_title(title, fontsize="medium")
         ax.set_xlabel("x", fontsize="large")
-        ax.set_ylabel("y", fontsize="large")
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    ax_true_labels = axes[0, 3]
-    im0 = ax_true_labels.imshow(_reshape(problem, true_labels), origin="lower", extent=ext, aspect="auto", cmap="tab20")
-    ax_true_labels.set_title("True material regions", fontsize="medium")
-    ax_true_labels.set_xlabel("x", fontsize="large")
-    ax_true_labels.set_ylabel("y", fontsize="large")
-    fig.colorbar(im0, ax=ax_true_labels, fraction=0.046, pad=0.04)
-
-    ax_disc_labels = axes[1, 3]
-    im1 = ax_disc_labels.imshow(_reshape(problem, discovered_labels), origin="lower", extent=ext, aspect="auto", cmap="tab20")
-    ax_disc_labels.set_title("Discovered materials", fontsize="medium")
-    ax_disc_labels.set_xlabel("x", fontsize="large")
-    ax_disc_labels.set_ylabel("y", fontsize="large")
-    fig.colorbar(im1, ax=ax_disc_labels, fraction=0.046, pad=0.04)
-
-    # Overlay loss history on discovered-material panel as a compact inset.
-    inset = ax_disc_labels.inset_axes([0.05, 0.05, 0.55, 0.35])
-    loss_vals = [row["loss_total"] for row in history]
-    inset.plot(np.arange(len(loss_vals)), loss_vals, color=PLOT_COLOR_PRIMARY, linewidth=1.6)
-    inset.set_title("Loss", fontsize="medium")
-    inset.tick_params(labelsize=7)
-    inset.grid(True, alpha=0.25)
+        ax.set_ylabel("z", fontsize="large")
+        if "stiffness" in title.lower():
+            stiffness_image = im
+        else:
+            tau_image = im
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(OUTPUT_PLOT, dpi=200, metadata={"Title": "Dissipative wave inverse summary"})
+    fig.tight_layout(rect=[0.03, 0.03, 0.93, 0.97], w_pad=5.0, h_pad=0)
+
+    left_positions = [ax.get_position() for ax in axes[:, 0]]
+    right_positions = [ax.get_position() for ax in axes[:, 1]]
+    left_x1 = max(position.x1 for position in left_positions)
+    right_x0 = min(position.x0 for position in right_positions)
+    right_x1 = max(position.x1 for position in right_positions)
+    panel_bottom = min(position.bounds[1] for position in left_positions + right_positions)
+    panel_top = max(position.bounds[1] + position.bounds[3] for position in left_positions + right_positions)
+
+    colorbar_width = 0.012
+    colorbar_pad = 0.012
+    stiffness_cbar_x = left_x1 + colorbar_pad
+    tau_cbar_x = right_x1 + colorbar_pad
+    stiffness_cax = fig.add_axes([stiffness_cbar_x, panel_bottom, colorbar_width, panel_top - panel_bottom])
+    tau_cax = fig.add_axes([tau_cbar_x, panel_bottom, colorbar_width, panel_top - panel_bottom])
+    fig.colorbar(stiffness_image, cax=stiffness_cax, orientation="vertical")
+    fig.colorbar(tau_image, cax=tau_cax, orientation="vertical")
+    divider_x = 0.5 * (stiffness_cbar_x + colorbar_width + right_x0)
+    fig.add_artist(
+        plt.Line2D(
+            [divider_x, divider_x],
+            [panel_bottom - 0.02, panel_top + 0.02],
+            transform=fig.transFigure,
+            color="black",
+            linewidth=2.4,
+        )
+    )
+    fig.savefig(OUTPUT_PLOT, dpi=200, metadata={"Title": "Element-wise dissipative wave inverse"})
     fig.clf()
     plt.close(fig)
 
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
+def save_velocity_plot(problem, observed_history, recovered_history):
+    time_axis = DT * np.arange(N_STEPS, dtype=np.double)
+    fig, ax = plt.subplots(figsize=(6.2, 3.4))
+
+    sensor_nodes = problem["sensor_nodes"]
+    coordinates = problem["coordinates"]
+    sensor_coords = coordinates[sensor_nodes]
+    target = np.array([problem["impact_center"], DEPTH], dtype=np.double)
+    sensor_idx = int(np.argmin(np.linalg.norm(sensor_coords - target[None, :], axis=1)))
+    ax.plot(
+        time_axis,
+        observed_history[:, sensor_idx, 1],
+        color=PLOT_COLOR_PRIMARY,
+        linewidth=1.6,
+        label="observed",
+    )
+    ax.plot(
+        time_axis,
+        recovered_history[:, sensor_idx, 1],
+        color=PLOT_COLOR_SECONDARY,
+        linewidth=1.6,
+        linestyle="--",
+        label="recovered",
+    )
+    ax.set_title("Surface sensor velocity", fontsize="medium")
+    ax.set_xlabel("time (s)", fontsize="large")
+    ax.set_ylabel("velocity z", fontsize="large")
+    ax.set_xlim(0.0, N_STEPS * DT)
+    ax.legend(fontsize="medium")
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(
+        OUTPUT_VELOCITY_PLOT,
+        dpi=200,
+        metadata={"Title": "Element-wise dissipative wave velocity history"},
+    )
+    fig.clf()
+    plt.close(fig)
+
+
+def load_saved_fields():
+    if not OUTPUT_JSON.exists():
+        raise FileNotFoundError(f"Saved result JSON does not exist: {OUTPUT_JSON}")
+
+    with OUTPUT_JSON.open(encoding="utf-8") as stream:
+        payload = json.load(stream)
+
+    fields = payload["fields"]
+    return {
+        "labels": np.asarray(fields["labels"], dtype=np.int32),
+        "true_stiffness": np.asarray(fields["true_stiffness"], dtype=np.double),
+        "initial_stiffness": np.asarray(fields["initial_stiffness"], dtype=np.double),
+        "recovered_stiffness": np.asarray(fields["recovered_stiffness"], dtype=np.double),
+        "true_tau": np.asarray(fields["true_tau"], dtype=np.double),
+        "initial_tau": np.asarray(fields["initial_tau"], dtype=np.double),
+        "recovered_tau": np.asarray(fields["recovered_tau"], dtype=np.double),
+    }
+
+
+def regenerate_plots_from_saved_result(include_velocity):
+    fields = load_saved_fields()
+    experiments = [make_experiment(center) for center in IMPACT_CENTERS]
+
+    save_summary_plot(
+        experiments[0],
+        fields["labels"],
+        fields["true_stiffness"],
+        fields["initial_stiffness"],
+        fields["recovered_stiffness"],
+        fields["true_tau"],
+        fields["initial_tau"],
+        fields["recovered_tau"],
+    )
+
+    if include_velocity:
+        print("Regenerating velocity plot from saved fields; no optimization will run.")
+        observations, obs_norm_sq = generate_observations(
+            experiments,
+            fields["true_stiffness"],
+            fields["true_tau"],
+        )
+        recovered_histories, _ = evaluate_recovered_histories(
+            experiments,
+            observations,
+            fields["recovered_stiffness"],
+            fields["recovered_tau"],
+            obs_norm_sq,
+        )
+        save_velocity_plot(experiments[0], observations[0], recovered_histories[0])
+        print(f"  wrote velocity plot   : {OUTPUT_VELOCITY_PLOT}")
+
+    print(f"  wrote plot            : {OUTPUT_PLOT}")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Element-wise dissipative-wave inversion for stiffness and relaxation time."
+    )
+    parser.add_argument(
+        "--plot-only",
+        action="store_true",
+        help="Regenerate both SVG plots from the saved JSON and skip the optimizer.",
+    )
+    parser.add_argument(
+        "--field-plot-only",
+        action="store_true",
+        help="Regenerate only the field summary SVG from the saved JSON.",
+    )
+    return parser.parse_args()
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    problem = make_structured_quad_problem()
-    nelem = problem["connectivity"].shape[0]
+    experiments = [make_experiment(center) for center in IMPACT_CENTERS]
+    labels = make_labels(experiments[0])
+    nelem = labels.size
 
-    true_stiff, true_tau, true_labels = make_true_fields(problem)
-    init_stiff = np.full(nelem, INIT_STIFFNESS, dtype=np.double)
-    init_tau = np.full(nelem, INIT_TAU, dtype=np.double)
+    true_region_stiffness = region_stiffness_values()
+    true_region_tau = region_tau_values()
+    true_stiffness = expand_region_values(true_region_stiffness, labels)
+    true_tau = expand_region_values(true_region_tau, labels)
+
+    init_stiffness = make_initial_stiffness(labels)
+    init_tau = make_initial_tau(labels)
 
     print("Generating synthetic observations...")
-    observed = run_forward_or_adjoint(problem, true_stiff, true_tau, observed_history=None, compute_gradients=False)
-    observed_history = observed["sensor_history"]
+    observations, obs_norm_sq = generate_observations(experiments, true_stiffness, true_tau)
 
-    print("Running element-wise inversion (stiffness + tau)...")
-    result, history = invert(problem, observed_history, init_stiff, init_tau)
+    print("Running element-wise stiffness plus relaxation-time inversion...")
+    result = invert(
+        experiments,
+        observations,
+        obs_norm_sq,
+        init_stiffness,
+        init_tau,
+    )
+    recovered_stiffness, recovered_tau = unpack_controls(result["x"], nelem)
 
-    rec_stiff = np.asarray(result.x[:nelem], dtype=np.double)
-    rec_tau = np.asarray(result.x[nelem:], dtype=np.double)
+    recovered_histories, normalized_data_loss = evaluate_recovered_histories(
+        experiments,
+        observations,
+        recovered_stiffness,
+        recovered_tau,
+        obs_norm_sq,
+    )
 
-    discovered = discover_materials(rec_stiff, rec_tau)
-
-    final_eval = run_forward_or_adjoint(problem, rec_stiff, rec_tau, observed_history=observed_history, compute_gradients=False)
+    stiffness_error = recovered_stiffness - true_stiffness
+    tau_error = recovered_tau - true_tau
+    relative_stiffness_error = float(np.linalg.norm(stiffness_error) / np.linalg.norm(true_stiffness))
+    relative_tau_error = float(np.linalg.norm(tau_error) / np.linalg.norm(true_tau))
+    stiffness_rmse = float(np.sqrt(np.mean(stiffness_error * stiffness_error)))
+    stiffness_mae = float(np.mean(np.abs(stiffness_error)))
+    tau_rmse = float(np.sqrt(np.mean(tau_error * tau_error)))
+    tau_mae = float(np.mean(np.abs(tau_error)))
+    recovery_score = float(relative_stiffness_error + 2.0 * relative_tau_error + 10.0 * normalized_data_loss)
+    region_summary = summarize_regions(labels, recovered_stiffness, recovered_tau)
 
     payload = {
         "config": {
-            "mesh": {"nx": NX, "ny": NY, "width": WIDTH, "height": HEIGHT},
+            "mesh": {
+                "nx": NX,
+                "nz": NZ,
+                "width": WIDTH,
+                "depth": DEPTH,
+                "coordinate_convention": "z is depth from the surface",
+            },
             "time": {"dt": DT, "n_steps": N_STEPS, "n_sub_steps": N_SUB_STEPS},
-            "bounds": {
-                "stiffness": [STIFFNESS_MIN, STIFFNESS_MAX],
-                "tau": [TAU_MIN, TAU_MAX],
+            "impact": {
+                "velocity": IMPACT_VELOCITY,
+                "window_width": IMPACT_WINDOW_WIDTH,
+                "centers": IMPACT_CENTERS,
+            },
+            "sensors": {
+                "type": "sparse surface nodal velocity sensors",
+                "components": ["velocity_x", "velocity_z"],
+                "n_sensors_per_impact": int(experiments[0]["sensor_nodes"].size),
+                "surface_only": True,
+                "x_targets": experiments[0]["sensor_x_targets"].tolist(),
+                "x_positions": experiments[0]["sensor_x_positions"].tolist(),
+                "z_positions": experiments[0]["sensor_z_positions"].tolist(),
+            },
+            "truth": {
+                "region_order": ["bottom", "top", "cross"],
+                "region_stiffness": true_region_stiffness.tolist(),
+                "region_tau": true_region_tau.tolist(),
+                "cross_center_xz": list(CROSS_CENTER),
+                "cross_arm_half_length": CROSS_ARM_HALF_LENGTH,
+                "cross_arm_half_width": CROSS_ARM_HALF_WIDTH,
+                "cross_region_element_count": int(np.sum(labels == 2)),
+            },
+            "unknowns": {
+                "stiffness_type": "element-wise stiffness scaling factor",
+                "n_stiffness_unknowns": int(nelem),
+                "tau_type": "element-wise relaxation time independent of stiffness",
+                "n_tau_unknowns": int(nelem),
+                "total_unknowns": int(2 * nelem),
+                "initial_region_stiffness": initial_stiffness_values().tolist(),
+                "initial_region_tau": initial_tau_values().tolist(),
+                "stiffness_bounds": [STIFFNESS_MIN, STIFFNESS_MAX],
+                "tau_bounds": [TAU_MIN, TAU_MAX],
+                "tau_parameterization_note": "labels are used only for truth generation and post-hoc summaries, not as tau controls",
             },
             "regularization": {
                 "l2_stiffness": REG_L2_STIFFNESS,
@@ -667,72 +957,99 @@ def main():
                 "l2_tau": REG_L2_TAU,
                 "tv_tau": REG_TV_TAU,
                 "tv_eps": REG_TV_EPS,
+                "tau_regularization": "same mesh-neighbor L2+smoothed-TV form as stiffness, with tau-specific weights",
+            },
+            "safety": {
+                "overflow_limit": OVERFLOW_LIMIT,
+                "mat_overflow_limit": MAT_OVERFLOW_LIMIT,
+                "tau_min_is_above_strong_dissipation_regime": True,
             },
             "optimizer": {
-                "method": "L-BFGS-B",
+                "method": "L-BFGS-B with adjoint gradient",
                 "max_iters": MAX_ITERS,
-                "gtol": LBFGSB_GTOL,
-                "maxls": LBFGSB_MAXLS,
-            },
-            "material_discovery": {
-                "k_min": K_MIN,
-                "k_max": K_MAX,
-                "kmeans_max_iters": KMEANS_MAX_ITERS,
-                "kmeans_restarts": KMEANS_RESTARTS,
-                "model_selection_penalty": MODEL_SELECTION_PENALTY,
-                "seed": RANDOM_SEED,
+                "max_objective_evals": MAX_OBJECTIVE_EVALS,
             },
         },
         "result": {
-            "status": int(result.status),
-            "message": str(result.message),
-            "objective_final": float(result.fun),
-            "data_loss_final": float(final_eval["data_loss"]),
+            "status": result["status"],
+            "message": result["message"],
+            "success": result["success"],
+            "n_objective_evals": result["n_objective_evals"],
+            "elapsed_seconds": result["elapsed_seconds"],
+            "normalized_data_loss": normalized_data_loss,
+            "recovery_score": recovery_score,
+            "relative_stiffness_error": relative_stiffness_error,
+            "stiffness_rmse": stiffness_rmse,
+            "stiffness_mae": stiffness_mae,
+            "max_absolute_stiffness_error": float(np.max(np.abs(stiffness_error))),
+            "relative_tau_error": relative_tau_error,
+            "tau_rmse": tau_rmse,
+            "tau_mae": tau_mae,
+            "max_absolute_tau_error": float(np.max(np.abs(tau_error))),
+            "region_summary": region_summary,
         },
         "fields": {
-            "true_stiffness": true_stiff.tolist(),
+            "labels": labels.tolist(),
+            "true_stiffness": true_stiffness.tolist(),
+            "initial_stiffness": init_stiffness.tolist(),
+            "recovered_stiffness": recovered_stiffness.tolist(),
             "true_tau": true_tau.tolist(),
-            "init_stiffness": init_stiff.tolist(),
-            "init_tau": init_tau.tolist(),
-            "recovered_stiffness": rec_stiff.tolist(),
-            "recovered_tau": rec_tau.tolist(),
+            "initial_tau": init_tau.tolist(),
+            "recovered_tau": recovered_tau.tolist(),
         },
-        "material_discovery": {
-            "k": int(discovered["k"]),
-            "score": float(discovered["score"]),
-            "inertia": float(discovered["inertia"]),
-            "centers": discovered["centers"].tolist(),
-            "labels": discovered["labels"].tolist(),
-            "true_region_labels": true_labels.tolist(),
-        },
-        "history": history,
+        "history": result["history"],
     }
 
     with OUTPUT_JSON.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
     save_summary_plot(
-        problem,
-        true_stiff,
+        experiments[0],
+        labels,
+        true_stiffness,
+        init_stiffness,
+        recovered_stiffness,
         true_tau,
-        init_stiff,
         init_tau,
-        rec_stiff,
-        rec_tau,
-        true_labels,
-        discovered["labels"],
-        history,
+        recovered_tau,
+    )
+    save_velocity_plot(
+        experiments[0],
+        observations[0],
+        recovered_histories[0],
     )
 
     print("\nRun complete")
-    print(f"  status             : {result.status}")
-    print(f"  message            : {result.message}")
-    print(f"  recovered materials: K = {discovered['k']}")
-    print(f"  final total loss   : {result.fun:.6e}")
-    print(f"  final data loss    : {final_eval['data_loss']:.6e}")
-    print(f"  wrote json         : {OUTPUT_JSON}")
-    print(f"  wrote plot         : {OUTPUT_PLOT}")
+    print(f"  surface sensors       : {experiments[0]['sensor_nodes'].size}")
+    print(f"  stiffness unknowns    : {nelem} element-wise values")
+    print(f"  tau unknowns          : {nelem} independent element-wise values")
+    print(f"  normalized data loss  : {normalized_data_loss:.6e}")
+    print(f"  recovery score        : {recovery_score:.6e}")
+    print(f"  stiffness rel. error  : {relative_stiffness_error:.6e}")
+    print(f"  stiffness RMSE        : {stiffness_rmse:.6e}")
+    print(f"  stiffness MAE         : {stiffness_mae:.6e}")
+    print(f"  tau rel. error        : {relative_tau_error:.6e}")
+    print(f"  tau RMSE              : {tau_rmse:.6e}")
+    print(f"  tau MAE               : {tau_mae:.6e}")
+    for row in region_summary:
+        print(
+            f"  {row['name']:>6s} region      : "
+            f"stiff true={row['true_stiffness']:.6f}, "
+            f"stiff rec={row['mean_recovered_stiffness']:.6f}, "
+            f"tau true={row['true_tau']:.6f}, "
+            f"tau rec mean={row['mean_recovered_tau']:.6f}"
+        )
+    print(f"  tau bounds            : [{TAU_MIN:.3f}, {TAU_MAX:.3f}]")
+    print(f"  wrote json            : {OUTPUT_JSON}")
+    print(f"  wrote plot            : {OUTPUT_PLOT}")
+    print(f"  wrote velocity plot   : {OUTPUT_VELOCITY_PLOT}")
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    if args.field_plot_only:
+        regenerate_plots_from_saved_result(include_velocity=False)
+    elif args.plot_only:
+        regenerate_plots_from_saved_result(include_velocity=True)
+    else:
+        main()

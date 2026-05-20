@@ -4,18 +4,17 @@ from pathlib import Path
 
 import numpy as np
 
-import dissipative_wave_inverse as inv
-import dissipative_wave_inverse_fifth_best_example as fifth
+import dissipative_wave_inverse as inverse
 
 
-DEFAULT_JSON = fifth.OUTPUT_DIR / "cross_arithmetic_gradient_direction_check.json"
+DEFAULT_JSON = inverse.OUTPUT_DIR / "arithmetic_gradient_check.json"
 
 
 def smooth_random_field(problem, seed, max_mode_x, max_mode_z):
     rng = np.random.default_rng(seed)
     centers = np.asarray(problem["elem_centers"], dtype=np.double)
-    x = centers[:, 0] / float(fifth.WIDTH)
-    z = (fifth.DEPTH - centers[:, 1]) / float(fifth.DEPTH)
+    x = centers[:, 0] / float(inverse.WIDTH)
+    z = (inverse.DEPTH - centers[:, 1]) / float(inverse.DEPTH)
 
     field = np.zeros(x.size, dtype=np.double)
     for kx in range(max_mode_x + 1):
@@ -36,20 +35,17 @@ def smooth_random_field(problem, seed, max_mode_x, max_mode_z):
 
 
 def configure_backend(integrator_type):
-    fifth.configure_inverse_backend()
-    inv.INTEGRATOR_TYPE = integrator_type
-    inv.OVERFLOW_LIMIT = fifth.OVERFLOW_LIMIT
-    inv.MAT_OVERFLOW_LIMIT = fifth.MAT_OVERFLOW_LIMIT
+    inverse.INTEGRATOR_TYPE = integrator_type
 
 
-def make_fifth_fields():
+def make_inverse_fields():
     configure_backend("fixed_visco")
-    experiments = [fifth.make_experiment(center) for center in fifth.IMPACT_CENTERS]
-    labels = fifth.make_labels(experiments[0])
-    true_stiffness = fifth.expand_region_values(fifth.region_stiffness_values(), labels)
-    true_tau = fifth.expand_region_values(fifth.region_tau_values(), labels)
-    initial_stiffness = fifth.make_initial_stiffness(labels)
-    initial_tau = fifth.make_initial_tau(labels)
+    experiments = [inverse.make_experiment(center) for center in inverse.IMPACT_CENTERS]
+    labels = inverse.make_labels(experiments[0])
+    true_stiffness = inverse.expand_region_values(inverse.region_stiffness_values(), labels)
+    true_tau = inverse.expand_region_values(inverse.region_tau_values(), labels)
+    initial_stiffness = inverse.make_initial_stiffness(labels)
+    initial_tau = inverse.make_initial_tau(labels)
     return experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau
 
 
@@ -61,7 +57,7 @@ def objective_and_gradient(integrator_type, experiments, observations, obs_norm_
     grad_tau = np.zeros(nelem, dtype=np.double)
 
     for problem, observed in zip(experiments, observations):
-        run = fifth.run_velocity_history(
+        run = inverse.run_velocity_history(
             problem,
             stiffness,
             tau,
@@ -133,7 +129,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Cross-arithmetic fixed_visco vs float_visco adjoint-gradient direction "
-            "check for the fifth-best dissipative-wave example."
+            "check for the dissipative-wave inverse problem."
         )
     )
     parser.add_argument("--output-json", type=str, default=str(DEFAULT_JSON))
@@ -148,15 +144,15 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
-    experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau = make_fifth_fields()
+    experiments, labels, true_stiffness, true_tau, initial_stiffness, initial_tau = make_inverse_fields()
     nelem = labels.size
-    sensor_history_shape = list((fifth.N_STEPS, int(experiments[0]["sensor_nodes"].size), 2))
+    sensor_history_shape = list((inverse.N_STEPS, int(experiments[0]["sensor_nodes"].size), 2))
 
-    print("Generating fifth-example fixed-point synthetic observations...", flush=True)
+    print("Generating fixed-point synthetic observations...", flush=True)
     configure_backend("fixed_visco")
-    observations, obs_norm_sq = fifth.generate_observations(experiments, true_stiffness, true_tau)
+    observations, obs_norm_sq = inverse.generate_observations(experiments, true_stiffness, true_tau)
 
-    print("Computing fixed_visco gradient at the fifth initial point...", flush=True)
+    print("Computing fixed_visco gradient at the initial point...", flush=True)
     fixed_run = objective_and_gradient(
         "fixed_visco",
         experiments,
@@ -166,7 +162,7 @@ def main():
         initial_tau,
     )
 
-    print("Computing float_visco gradient at the same fifth initial point...", flush=True)
+    print("Computing float_visco gradient at the same initial point...", flush=True)
     float_run = objective_and_gradient(
         "float_visco",
         experiments,
@@ -181,8 +177,8 @@ def main():
 
     shared_phi = smooth_random_field(experiments[0], args.seed, args.max_mode_x, args.max_mode_z)
     zero = np.zeros(nelem, dtype=np.double)
-    ds = args.stiffness_step_fraction * (fifth.STIFFNESS_MAX - fifth.STIFFNESS_MIN) * shared_phi
-    dtau = args.tau_step_fraction * (fifth.TAU_MAX - fifth.TAU_MIN) * shared_phi
+    ds = args.stiffness_step_fraction * (inverse.STIFFNESS_MAX - inverse.STIFFNESS_MIN) * shared_phi
+    dtau = args.tau_step_fraction * (inverse.TAU_MAX - inverse.TAU_MIN) * shared_phi
 
     comparisons = {
         "all_controls": vector_metrics(fixed_grad, float_grad, args.activity_tol),
@@ -204,19 +200,19 @@ def main():
 
     payload = {
         "config": {
-            "example": "fifth_best_elementwise_stiffness_and_relaxation_time",
+            "example": "elementwise_stiffness_and_relaxation_time",
             "mesh": {
-                "nx": fifth.NX,
-                "nz": fifth.NZ,
-                "width": fifth.WIDTH,
-                "depth": fifth.DEPTH,
+                "nx": inverse.NX,
+                "nz": inverse.NZ,
+                "width": inverse.WIDTH,
+                "depth": inverse.DEPTH,
                 "n_elements": int(nelem),
             },
             "time": {
-                "dt": fifth.DT,
-                "n_steps": fifth.N_STEPS,
-                "n_sub_steps": fifth.N_SUB_STEPS,
-                "physical_horizon": float(fifth.DT * fifth.N_STEPS),
+                "dt": inverse.DT,
+                "n_steps": inverse.N_STEPS,
+                "n_sub_steps": inverse.N_SUB_STEPS,
+                "physical_horizon": float(inverse.DT * inverse.N_STEPS),
             },
             "observation_integrator": "fixed_visco",
             "gradient_integrators": ["fixed_visco", "float_visco"],
@@ -225,10 +221,10 @@ def main():
                 "regularization_included": False,
             },
             "impact": {
-                "n_impacts": len(fifth.IMPACT_CENTERS),
-                "centers": [float(center) for center in fifth.IMPACT_CENTERS],
-                "window_width": fifth.IMPACT_WINDOW_WIDTH,
-                "velocity": fifth.IMPACT_VELOCITY,
+                "n_impacts": len(inverse.IMPACT_CENTERS),
+                "centers": [float(center) for center in inverse.IMPACT_CENTERS],
+                "window_width": inverse.IMPACT_WINDOW_WIDTH,
+                "velocity": inverse.IMPACT_VELOCITY,
             },
             "sensors": {
                 "type": "sparse top-surface nodal velocity sensors",
@@ -246,21 +242,21 @@ def main():
                 "total_unknowns": int(2 * nelem),
             },
             "bounds": {
-                "stiffness": [fifth.STIFFNESS_MIN, fifth.STIFFNESS_MAX],
-                "relaxation_time": [fifth.TAU_MIN, fifth.TAU_MAX],
+                "stiffness": [inverse.STIFFNESS_MIN, inverse.STIFFNESS_MAX],
+                "relaxation_time": [inverse.TAU_MIN, inverse.TAU_MAX],
             },
             "region_values": {
-                "true_stiffness": fifth.region_stiffness_values().tolist(),
-                "initial_stiffness": fifth.initial_stiffness_values().tolist(),
-                "true_relaxation_time": fifth.region_tau_values().tolist(),
-                "initial_relaxation_time": fifth.initial_tau_values().tolist(),
+                "true_stiffness": inverse.region_stiffness_values().tolist(),
+                "initial_stiffness": inverse.initial_stiffness_values().tolist(),
+                "true_relaxation_time": inverse.region_tau_values().tolist(),
+                "initial_relaxation_time": inverse.initial_tau_values().tolist(),
             },
             "finite_precision_regime": {
-                "larger_relaxation_times_than_case3_diagnostic": True,
+                "relaxation_times_inside_configured_bounds": True,
                 "short_horizon_used_for_reversibility": True,
                 "reason": (
-                    "The comparison is made in the finite-precision regime used by the fifth "
-                    "example so rematerialized backward states remain numerically meaningful."
+                    "The comparison is made in the inverse-problem finite-precision regime "
+                    "so rematerialized backward states remain numerically meaningful."
                 ),
             },
             "smooth_direction": {
