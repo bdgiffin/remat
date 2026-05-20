@@ -60,7 +60,13 @@ blt_add_library(
     DEPENDS_ON  ${REMAT_dependencies}
     SHARED      TRUE
     )
-target_compile_options(REMAT PRIVATE -O2)
+if (NOT EMSCRIPTEN AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(REMAT PRIVATE -O3 -march=native)
+    # print that you are using -O3 and -march=native
+    message(STATUS "Using -O3 and -march=native for REMAT.")
+else ()
+    target_compile_options(REMAT PRIVATE -O2)
+endif ()
 if (EMSCRIPTEN)
     message(STATUS "This is an Emscripten build.")
     # Add Emscripten-specific build settings or flags here

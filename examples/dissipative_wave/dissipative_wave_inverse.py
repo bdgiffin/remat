@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import json
+import multiprocessing as mp
 import os
 import sys
 import time
@@ -70,6 +71,9 @@ MAX_ITERS = 260
 LBFGSB_GTOL = 1.0e-10
 LBFGSB_MAXLS = 60
 MAX_OBJECTIVE_EVALS = 180
+N_WORKERS = 9
+# To run without multiprocessing, use:
+# N_WORKERS = 1
 
 DENSITY = 1.0
 YOUNGS_MODULUS = 5.0
@@ -487,11 +491,25 @@ def generate_observations(experiments, true_stiffness, true_tau):
     return observations, max(norm_sq, 1.0)
 
 
+def run_objective_impact(task):
+    problem, observed, stiffness_elem, tau_elem = task
+    run = run_velocity_history(
+        problem,
+        stiffness_elem,
+        tau_elem,
+        observed_history=observed,
+        compute_gradients=True,
+    )
+    return run["data_loss"], run["grad_stiff"], run["grad_tau"]
+
+
 def invert(experiments, observations, obs_norm_sq, init_stiffness, init_tau):
     nelem = init_stiffness.size
     i_idx, j_idx = build_edge_pairs(NX, NZ)
     x0 = pack_controls(init_stiffness, init_tau)
     bounds = [(STIFFNESS_MIN, STIFFNESS_MAX)] * nelem + [(TAU_MIN, TAU_MAX)] * nelem
+    n_workers = min(max(int(N_WORKERS), 1), len(experiments))
+    pool = mp.Pool(processes=n_workers) if n_workers > 1 else None
 
     state = {
         "x": x0.copy(),
@@ -507,21 +525,25 @@ def invert(experiments, observations, obs_norm_sq, init_stiffness, init_tau):
 
     def objective_with_grad(x):
         stiffness_elem, tau_elem = unpack_controls(x, nelem)
+        stiffness_elem = np.asarray(stiffness_elem, dtype=np.double).copy()
+        tau_elem = np.asarray(tau_elem, dtype=np.double).copy()
         total_data_loss = 0.0
         grad_data_stiff = np.zeros(nelem, dtype=np.double)
         grad_data_tau = np.zeros(nelem, dtype=np.double)
 
-        for problem, observed in zip(experiments, observations):
-            run = run_velocity_history(
-                problem,
-                stiffness_elem,
-                tau_elem,
-                observed_history=observed,
-                compute_gradients=True,
-            )
-            total_data_loss += run["data_loss"]
-            grad_data_stiff += run["grad_stiff"]
-            grad_data_tau += run["grad_tau"]
+        tasks = [
+            (problem, observed, stiffness_elem, tau_elem)
+            for problem, observed in zip(experiments, observations)
+        ]
+        if pool is None:
+            impact_results = [run_objective_impact(task) for task in tasks]
+        else:
+            impact_results = pool.map(run_objective_impact, tasks)
+
+        for data_loss_i, grad_stiff_i, grad_tau_i in impact_results:
+            total_data_loss += data_loss_i
+            grad_data_stiff += grad_stiff_i
+            grad_data_tau += grad_tau_i
 
         data_loss = total_data_loss / obs_norm_sq
         grad_data_stiff /= obs_norm_sq
@@ -611,6 +633,10 @@ def invert(experiments, observations, obs_norm_sq, init_stiffness, init_tau):
     except EarlyStop:
         message = state["status"]
         success = True
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
 
     return {
         "x": state["x"],
