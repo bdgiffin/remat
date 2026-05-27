@@ -1,4 +1,3 @@
-import json
 from math import pi, sin
 import sys
 import matplotlib.pyplot as plt
@@ -100,9 +99,11 @@ def validate_required_params(**params):
 def compute_analytical_stress(times, params):
     tau = params["relaxation_time"]
     eps0 = params["epsilon0"]
+    if params["bc_name"] == "right_node_step":
+        return eps0 * np.exp(-times / tau)
     if params["bc_name"] == "right_node_constant_rate":
         return eps0 * tau * (1.0 - np.exp(-times / tau))
-    raise ValueError("Analytical solution is only implemented for constant strain rate.")
+    raise ValueError("Analytical solution is only implemented for step and constant-rate loading.")
 
 
 def run_truss_relaxation(
@@ -179,6 +180,17 @@ MODE_COLORS = {
 }
 
 SCENARIOS = [
+    {
+        "description": r"Step strain, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_step",
+        "overflow_limit": 100.0e0,
+        "ylim": (-0.025, 0.105),
+    },
     {
         "description": r"Constant strain rate, $\tau=0.3$, $\Delta t=10^{-3}$",
         "relaxation_time": 0.3,
@@ -265,24 +277,6 @@ def summarize_diagnostics(params, fixed_result):
     return metrics
 
 
-def write_metrics_json(params, metrics, output_path):
-    metrics_record = {
-        "comparison": "fixed_vs_analytical",
-        "loading": params["bc_name"],
-        "relaxation_time": float(params["relaxation_time"]),
-        "dt": float(params["dt"]),
-        "nsteps": int(params["Nsteps"]),
-        "nsub_steps": int(params["Nsub_steps"]),
-        "epsilon0": float(params["epsilon0"]),
-        "max_abs_fixed_minus_analytical": metrics["max_abs"],
-        "relative_l2_fixed_minus_analytical": metrics["rel_l2"],
-        "error_definition": "fixed_history - analytical_history",
-    }
-    with open(output_path, "w", encoding="utf-8") as handle:
-        json.dump(metrics_record, handle, indent=2)
-        handle.write("\n")
-
-
 def main():
     for params in SCENARIOS:
         fixed_result = run_truss_relaxation(
@@ -295,7 +289,7 @@ def main():
             record_states=(STATE_TO_PLOT,),
             overflow_limit=params["overflow_limit"],
         )
-        metrics = summarize_diagnostics(params, fixed_result)
+        summarize_diagnostics(params, fixed_result)
         fig = plot_analytical_vs_fixed(params, fixed_result)
         suffix = params["bc_name"].replace("right_node", "")
         output_base = f"analytical_vs_fxd_{suffix}"
@@ -304,7 +298,6 @@ def main():
             metadata={"Title": str(params["description"])},
             dpi=200,
         )
-        write_metrics_json(params, metrics, f"{output_base}_metrics.json")
         fig.clf()
 
 
