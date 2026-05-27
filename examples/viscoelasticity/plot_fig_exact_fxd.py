@@ -1,3 +1,4 @@
+import json
 from math import pi, sin
 import sys
 import matplotlib.pyplot as plt
@@ -96,12 +97,12 @@ def validate_required_params(**params):
             raise ValueError(f"'{name}' must be provided.")
 
 
-def compute_exact_stress(times, params):
+def compute_analytical_stress(times, params):
     tau = params["relaxation_time"]
     eps0 = params["epsilon0"]
     if params["bc_name"] == "right_node_constant_rate":
         return eps0 * tau * (1.0 - np.exp(-times / tau))
-    raise ValueError("Exact solution is only implemented for constant strain rate.")
+    raise ValueError("Analytical solution is only implemented for constant strain rate.")
 
 
 def run_truss_relaxation(
@@ -173,7 +174,7 @@ def compute_relative_metrics(reference, candidate):
 
 STATE_TO_PLOT = "axial_stress"
 MODE_COLORS = {
-    "exact": "#222222",
+    "analytical": "#222222",
     "fixed": "#f9826bff",
 }
 
@@ -192,7 +193,7 @@ SCENARIOS = [
 ]
 
 
-def plot_exact_vs_fixed(params, fixed_result):
+def plot_analytical_vs_fixed(params, fixed_result):
     fig, (ax_state, ax_error) = plt.subplots(
         2,
         1,
@@ -203,7 +204,7 @@ def plot_exact_vs_fixed(params, fixed_result):
 
     times = fixed_result["forward_time"]
     fixed_history = fixed_result["state_history"][STATE_TO_PLOT]
-    exact_history = compute_exact_stress(times, params)
+    analytical_history = compute_analytical_stress(times, params)
     ax_state.plot(
         times,
         fixed_history,
@@ -213,21 +214,19 @@ def plot_exact_vs_fixed(params, fixed_result):
     )
     ax_state.plot(
         times,
-        exact_history,
+        analytical_history,
         linestyle="dotted",
         linewidth=2,
         label="analytical forward",
-        color=MODE_COLORS["exact"],
+        color=MODE_COLORS["analytical"],
     )
 
-
-    diff = fixed_history - exact_history
+    diff = fixed_history - analytical_history
     ax_error.plot(
         times,
         diff,
         linewidth=1.2,
         color="#4a4a4aff",
-        # label=r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{exact}$",
         label=r"error",
     )
 
@@ -244,7 +243,7 @@ def plot_exact_vs_fixed(params, fixed_result):
     ax_state.legend(loc="best", fontsize="medium")
 
     ax_error.set_xlabel("time (s)", fontsize="large")
-    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{exact}$", fontsize="large")
+    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{analytical}$", fontsize="large")
     ax_error.legend(loc="best", fontsize="medium")
 
     fig.tight_layout()
@@ -254,15 +253,34 @@ def plot_exact_vs_fixed(params, fixed_result):
 def summarize_diagnostics(params, fixed_result):
     times = fixed_result["forward_time"]
     fixed_history = fixed_result["state_history"][STATE_TO_PLOT]
-    exact_history = compute_exact_stress(times, params)
-    metrics = compute_relative_metrics(exact_history, fixed_history)
+    analytical_history = compute_analytical_stress(times, params)
+    metrics = compute_relative_metrics(analytical_history, fixed_history)
 
     print("-" * 80)
     print(f"Scenario: {params['description']}")
     print(f"  duration = {params['dt'] * params['Nsteps']:.3f}s, dt = {params['dt']}, tau = {params['relaxation_time']}")
-    print(f"  forward max|fixed - exact| = {metrics['max_abs']:.6e}")
+    print(f"  forward max|fixed - analytical| = {metrics['max_abs']:.6e}")
     print(f"  forward relative L2 error   = {metrics['rel_l2']:.6e}")
     print("-" * 80)
+    return metrics
+
+
+def write_metrics_json(params, metrics, output_path):
+    metrics_record = {
+        "comparison": "fixed_vs_analytical",
+        "loading": params["bc_name"],
+        "relaxation_time": float(params["relaxation_time"]),
+        "dt": float(params["dt"]),
+        "nsteps": int(params["Nsteps"]),
+        "nsub_steps": int(params["Nsub_steps"]),
+        "epsilon0": float(params["epsilon0"]),
+        "max_abs_fixed_minus_analytical": metrics["max_abs"],
+        "relative_l2_fixed_minus_analytical": metrics["rel_l2"],
+        "error_definition": "fixed_history - analytical_history",
+    }
+    with open(output_path, "w", encoding="utf-8") as handle:
+        json.dump(metrics_record, handle, indent=2)
+        handle.write("\n")
 
 
 def main():
@@ -277,14 +295,16 @@ def main():
             record_states=(STATE_TO_PLOT,),
             overflow_limit=params["overflow_limit"],
         )
-        summarize_diagnostics(params, fixed_result)
-        fig = plot_exact_vs_fixed(params, fixed_result)
+        metrics = summarize_diagnostics(params, fixed_result)
+        fig = plot_analytical_vs_fixed(params, fixed_result)
         suffix = params["bc_name"].replace("right_node", "")
+        output_base = f"analytical_vs_fxd_{suffix}"
         fig.savefig(
-            f"exact_vs_fxd_{suffix}.pdf",
+            f"{output_base}.pdf",
             metadata={"Title": str(params["description"])},
             dpi=200,
         )
+        write_metrics_json(params, metrics, f"{output_base}_metrics.json")
         fig.clf()
 
 
