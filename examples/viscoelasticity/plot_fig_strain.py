@@ -161,15 +161,7 @@ def run_truss_relaxation(
 STATE_TO_PLOT = "axial_strain"
 
 SCENARIOS = [
-    {
-        "relaxation_time": 0.1,
-        "dt": 1.0e-3,
-        "Nsteps": 15000,
-        "Nsub_steps": 1,
-        "epsilon0": 0.02,
-        "bc_name": "right_node_constant_rate",
-        "overflow_limit": 1e6,
-    },
+
     {
         "relaxation_time": 0.1,
         "dt": 1.0e-3,
@@ -177,6 +169,15 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
+        "overflow_limit": 1e6,
+    },
+        {
+        "relaxation_time": 0.1,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_constant_rate",
         "overflow_limit": 1e6,
     },
     {
@@ -207,7 +208,7 @@ def format_tau(value):
 def main():
 
     for params in SCENARIOS:
-        fig, ax = plt.subplots(figsize=(5.0, 5.0))
+        fig, ax = plt.subplots(figsize=(3,3))
         result = run_truss_relaxation(
             dt=params["dt"],
             Nsteps=params["Nsteps"],
@@ -230,8 +231,8 @@ def main():
             marker=None,
             label=format_tau(params["relaxation_time"]), color='#2b738eff'
         )
-
-        ax.set_xlabel("time (s)", fontsize="large")
+        # align= right for the x axis label :
+        ax.set_xlabel("time(s)", fontsize="large", horizontalalignment='left', x=0.001)
         ax.set_ylabel(r"axial strain ($\varepsilon_{xx}$)", fontsize="large")
         # ax.legend(loc="upper right", fontsize=10)
         axis_dt = SCENARIOS[0]["dt"]
@@ -255,7 +256,7 @@ def main():
         
 
         fig.tight_layout()
-        fig.savefig(f"strain_{params['bc_name'].replace('right_node', '')}.svg", dpi=200)
+        fig.savefig(f"strain_{params['bc_name'].replace('right_node', '')}.pdf", dpi=200)
         fig.clf()
 
 

@@ -187,8 +187,8 @@ def compute_relative_metrics(reference, candidate):
 STATE_TO_PLOT = "axial_stress"
 # STATE_TO_PLOT = "viscous_strain"
 PRECISION_MODES = [
-    ("float", b"float_truss_visco"),
     ("fixed", b"fixed_truss_visco"),
+    ("float", b"float_truss_visco"),
 ]
 MODE_COLORS = {
     "float": "#2b738eff",
@@ -200,68 +200,46 @@ MODE_OVERFLOW_LIMITS = {
 }
 
 SCENARIOS = [
-
-
-    # {
-    #     "description": r"Step strain, $\tau=1$, $\Delta t=10^{-3}",
-    #     "relaxation_time": 0.3,
-    #     "dt": 1.0e-3,
-    #     "Nsteps": 15000,
-    #     "Nsub_steps": 1,
-    #     "epsilon0": 0.1,
-    #     "bc_name": "right_node_step",
-    #     "ylim": (-0.025, 0.105),
-    # },
-        {
-        "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-3}",
-        "relaxation_time": 1,
+    {
+        "description": r"Step strain, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
-        "epsilon0": 0.02,
-        "bc_name": "right_node_constant_rate",
-        # "ylim": (-0.000, 0.091*0.1),
+        "epsilon0": 0.1,
+        "bc_name": "right_node_step",
+        "ylim": (-0.025, 0.105),
     },
-    # {
-    #     "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-3}",
-    #     "relaxation_time": 1,
-    #     "dt": 1.0e-3,
-    #     "Nsteps": 7000,
-    #     "Nsub_steps": 1,
-    #     "epsilon0": 0.02,
-    #     "bc_name": "right_node_constant_rate",
-    #     "ylim": (-0.00, 0.031),
-    # },
-    #     {
-    #     "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-4}",
-    #     "relaxation_time": 1,
-    #     "dt": 1.0e-4,
-    #     "Nsteps": 70000,
-    #     "Nsub_steps": 1,
-    #     "epsilon0": 0.02,
-    #     "bc_name": "right_node_constant_rate",
-    #     "ylim": (-0.00, 0.031),
-    # },
-    # {
-    #     "description": r"Sinusoidal cyclic, $\tau=1$, $\Delta t=10^{-3}",
-    #     "relaxation_time": 0.3,
-    #     "dt": 1.0e-3,
-    #     "Nsteps": 15000,
-    #     "Nsub_steps": 1,
-    #     "epsilon0": 0.1,
-    #     "bc_name": "right_node_sinusoidal",
-    #     "ylim": (-0.06, 0.06),
-    # },
-    # {
-    #     "description": r"Clipped sinusoid, $\tau=1$, $\Delta t=10^{-3}",
-    #     "relaxation_time": 0.3,
-    #     "dt": 1.0e-3,
-    #     "Nsteps": 15000,
-    #     "Nsub_steps": 1,
-    #     "epsilon0": 0.2,
-    #     "bc_name": "right_node_clipped_sinusoid",
-    #     "ylim": (-0.09, 0.09),
-    # },
+    {
+        "description": r"Constant strain rate, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_constant_rate",
+        "ylim": (0.0, 0.045),
+    },
+    {
+        "description": r"Sinusoidal cyclic, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_sinusoidal",
+        "ylim": (-0.06, 0.06),
+    },
+    {
+        "description": r"Clipped sinusoid, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.2,
+        "bc_name": "right_node_clipped_sinusoid",
+        "ylim": (-0.09, 0.09),
+    },
 ]
 
 
@@ -270,7 +248,7 @@ def plot_precision_histories(params, precision_results):
         2,
         1,
         sharex=True,
-        figsize=(5.0, 5.0),
+        figsize=(4.0, 4.0),
         gridspec_kw={"height_ratios": [3, 1]},
     )
 
@@ -281,16 +259,26 @@ def plot_precision_histories(params, precision_results):
     for mode_name, _ in PRECISION_MODES:
         histories = precision_results[mode_name]["state_history"][STATE_TO_PLOT]
         color = MODE_COLORS[mode_name]
-        ax_state.plot(
-            forward_times,
-            histories["forward"],
-            linewidth=1.6,
-            # linestyle="none",
-            # marker="o",
-            # markersize=0.10,
-            label=f"{mode_name} forward",
-            color=color,
-        )
+        if mode_name == "float":
+            ax_state.plot(
+                forward_times,
+                histories["forward"],
+                linestyle="dotted",
+                linewidth=2,
+                # marker="o",
+                # markersize=0.10,
+                label=f"{mode_name} forward",
+                color=color,
+            )
+        else:
+            ax_state.plot(
+                forward_times,
+                histories["forward"],
+                linewidth=1.6,
+                marker=None,
+                label=f"{mode_name} forward",
+                color=color,
+            )
 
     diff = precision_results["fixed"]["state_history"][STATE_TO_PLOT]["forward"] - reference
     ax_error.plot(
@@ -301,7 +289,9 @@ def plot_precision_histories(params, precision_results):
         # marker="o",
         # markersize=2.5,
         color="#4a4a4aff",
-        label=r"$\Delta\sigma_{xx}$",
+        # label=r"$\Delta\sigma_{xx}$",
+        label=r"error",
+
     )
 
     fmt = ScalarFormatter(useMathText=True)
@@ -318,7 +308,7 @@ def plot_precision_histories(params, precision_results):
 
     ax_error.set_xlabel("time (s)", fontsize="large")
     # ax_error.set_ylabel(r"$\Delta\sigma_{xx}$", fontsize="large")
-    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{float}-\sigma_{xx}^\mathrm{fixed}$", fontsize="large")
+    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{float}$", fontsize="large")
 
     ax_error.legend(loc='best', fontsize="medium")
 
@@ -370,7 +360,7 @@ def main():
         summarize_diagnostics(params, precision_results)
         fig = plot_precision_histories(params, precision_results)
         suffix = params["bc_name"].replace("right_node", "")
-        fig.savefig(f"flt_vs_fxd_{suffix}.svg", metadata={"Title": str(params["description"])}, dpi=200)
+        fig.savefig(f"flt_vs_fxd_{suffix}.pdf", metadata={"Title": str(params["description"])}, dpi=200)
         fig.clf()
 
 

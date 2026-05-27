@@ -175,8 +175,11 @@ def run_truss_relaxation(
 
 STATE_X_TO_PLOT = "axial_strain"
 STATE_Y_TO_PLOT = "axial_stress"
-set_integrator_type = b"fixed_truss_visco"
 overflow_limit_value = 30
+INTEGRATOR_MODES = [
+    (b"float_truss_visco", "stress_vs_strain_float"),
+    (b"fixed_truss_visco", "stress_vs_strain_Fixed"),
+]
 
 SCENARIOS = [
     # {
@@ -193,7 +196,7 @@ SCENARIOS = [
     #     "dt": 1.0e-3,
     #     "Nsteps": 15000,
     #     "Nsub_steps": 1,
-    #     "epsilon0": 0.02,
+    #     "epsilon0": 0.1,
     #     "bc_name": "right_node_constant_rate",
     #     "overflow_limit": overflow_limit_value,
     # },
@@ -245,69 +248,72 @@ def stress_limits(params):
 
 def main():
 
-    for params in SCENARIOS:
-        fig, ax = plt.subplots(figsize=(5.0, 5.0))
-        result = run_truss_relaxation(
-            dt=params["dt"],
-            Nsteps=params["Nsteps"],
-            Nsub_steps=params["Nsub_steps"],
-            epsilon0=params["epsilon0"],
-            bc_name=params["bc_name"],
-            relaxation_time=params["relaxation_time"],
-            include_backward=True,
-            record_states=(STATE_X_TO_PLOT, STATE_Y_TO_PLOT),
-            set_integrator_type=set_integrator_type,
-            overflow_limit=params["overflow_limit"],
-        )
+    for set_integrator_type, output_prefix in INTEGRATOR_MODES:
+        for params in SCENARIOS:
+            fig, ax = plt.subplots(figsize=(4.0, 4.0))
+            result = run_truss_relaxation(
+                dt=params["dt"],
+                Nsteps=params["Nsteps"],
+                Nsub_steps=params["Nsub_steps"],
+                epsilon0=params["epsilon0"],
+                bc_name=params["bc_name"],
+                relaxation_time=params["relaxation_time"],
+                include_backward=True,
+                record_states=(STATE_X_TO_PLOT, STATE_Y_TO_PLOT),
+                set_integrator_type=set_integrator_type,
+                overflow_limit=params["overflow_limit"],
+            )
 
-        histories = result["state_history"]
-        strain_history = histories[STATE_X_TO_PLOT]["forward"]
-        stress_history = histories[STATE_Y_TO_PLOT]["forward"]
-        backward_strain = histories[STATE_X_TO_PLOT].get("backward")
-        backward_stress = histories[STATE_Y_TO_PLOT].get("backward")
+            histories = result["state_history"]
+            strain_history = histories[STATE_X_TO_PLOT]["forward"]
+            stress_history = histories[STATE_Y_TO_PLOT]["forward"]
+            backward_strain = histories[STATE_X_TO_PLOT].get("backward")
+            backward_stress = histories[STATE_Y_TO_PLOT].get("backward")
 
-        ax.plot(
-            strain_history,
-            stress_history,
-            linewidth=1.6,
-            marker=None,
-            label="forward",
-            color="#2b738eff",
-        )
-        ax.plot(strain_history[0], stress_history[0], '.', color="#2b738eff")
-
-        if backward_strain is not None and backward_stress is not None:
             ax.plot(
-                backward_strain[::-1][1:],
-                backward_stress[::-1][1:],
+                strain_history,
+                stress_history,
                 linewidth=1.6,
                 marker=None,
-                dashes=(6, 8),
-                label="backward",
-                color="#f9826bff",
+                label="forward",
+                color="#2b738eff",
             )
-            ax.plot(backward_strain[::-1][-1], backward_stress[::-1][-1], marker=".", color="#f9826bff")
+            ax.plot(strain_history[0], stress_history[0], ".", color="#2b738eff")
 
-        ax.set_xlabel(r"axial strain ($\varepsilon_{xx}$)", fontsize="large")
-        ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
-        # ax.set_title(format_tau(params["relaxation_time"]))
-        legend = ax.legend(loc="upper left", fontsize="medium")
-        legend.get_texts()[0].set_color("#2b738eff")
-        if backward_strain is not None:
-            legend.get_texts()[1].set_color("#f9826bff")
-            legend.get_lines()[1].set_linestyle("--")
-        ax.set_xlim(*strain_limits(params))
-        ax.set_ylim(*stress_limits(params))
-        # ax.spines["right"].set_visible(False)
-        # ax.spines["top"].set_visible(False)
+            if backward_strain is not None and backward_stress is not None:
+                ax.plot(
+                    backward_strain[::-1][1:],
+                    backward_stress[::-1][1:],
+                    linewidth=1.6,
+                    marker=None,
+                    dashes=(6, 8),
+                    label="backward",
+                    color="#f9826bff",
+                )
+                ax.plot(
+                    backward_strain[::-1][-1],
+                    backward_stress[::-1][-1],
+                    marker=".",
+                    color="#f9826bff",
+                )
 
-        fig.tight_layout()
-        suffix = params["bc_name"].replace("right_node", "")
-        if set_integrator_type == b"fixed_truss_visco":
-            fig.savefig(f"stress_vs_strain_Fixed_{suffix}.svg", format="svg", dpi=200)
-        else:
-            fig.savefig(f"stress_vs_strain_float_{suffix}.svg", format="svg", dpi=200)
-        fig.clf()
+            ax.set_xlabel(r"axial strain ($\varepsilon_{xx}$)", fontsize="large")
+            ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
+            # ax.set_title(format_tau(params["relaxation_time"]))
+            legend = ax.legend(loc="upper left", fontsize="medium")
+            legend.get_texts()[0].set_color("#2b738eff")
+            if backward_strain is not None:
+                legend.get_texts()[1].set_color("#f9826bff")
+                legend.get_lines()[1].set_linestyle("--")
+            ax.set_xlim(*strain_limits(params))
+            ax.set_ylim(*stress_limits(params))
+            # ax.spines["right"].set_visible(False)
+            # ax.spines["top"].set_visible(False)
+
+            fig.tight_layout()
+            suffix = params["bc_name"].replace("right_node", "")
+            fig.savefig(f"{output_prefix}_{suffix}.pdf", format="pdf", dpi=200)
+            fig.clf()
 
 
 if __name__ == "__main__":

@@ -174,8 +174,11 @@ def run_truss_relaxation(
 
 
 STATE_TO_PLOT = "axial_stress"
-set_integrator_type = b"float_truss_visco"
-overflow_limit_value = 1e6
+overflow_limit_value = 100.0
+INTEGRATOR_MODES = [
+    (b"float_truss_visco", "stress_float"),
+    (b"fixed_truss_visco", "stress_Fixed"),
+]
 
 SCENARIOS = [
     {
@@ -192,7 +195,7 @@ SCENARIOS = [
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
-        "epsilon0": 0.02,
+        "epsilon0": 0.10001,
         "bc_name": "right_node_constant_rate",
         "overflow_limit": overflow_limit_value,
     },
@@ -223,88 +226,83 @@ def format_tau(value):
 
 def main():
 
-    for params in SCENARIOS:
-        fig, ax = plt.subplots(figsize=(5.0, 5.0))
-        result = run_truss_relaxation(
-            dt=params["dt"],
-            Nsteps=params["Nsteps"],
-            Nsub_steps=params["Nsub_steps"],
-            epsilon0=params["epsilon0"],
-            bc_name=params["bc_name"],
-            relaxation_time=params["relaxation_time"],
-            include_backward=True,
-            record_states=(STATE_TO_PLOT,),
-            set_integrator_type=set_integrator_type,
-            overflow_limit=params["overflow_limit"],
-        )
-
-        histories = result["state_history"][STATE_TO_PLOT]
-        forward_history = histories["forward"]
-        backward_history = histories.get("backward")
-        forward_times = result["forward_time"]
-
-        ax.plot(
-            forward_times,
-            forward_history,
-            linewidth=1.6,
-            marker=None,
-            label="forward",
-            color="#2b738eff",
-        )
-
-        if backward_history is not None:
-            ax.plot(
-                forward_times[:-1],
-                backward_history[::-1][1:],
-                linewidth=1.6,
-                marker=None,
-                dashes=(6, 8),
-                label="backward",
-                # color="#f9a41bff",
-                color="#f9826bff",
+    for set_integrator_type, output_prefix in INTEGRATOR_MODES:
+        for params in SCENARIOS:
+            fig, ax = plt.subplots(figsize=(4.0, 3.5))
+            result = run_truss_relaxation(
+                dt=params["dt"],
+                Nsteps=params["Nsteps"],
+                Nsub_steps=params["Nsub_steps"],
+                epsilon0=params["epsilon0"],
+                bc_name=params["bc_name"],
+                relaxation_time=params["relaxation_time"],
+                include_backward=True,
+                record_states=(STATE_TO_PLOT,),
+                set_integrator_type=set_integrator_type,
+                overflow_limit=params["overflow_limit"],
             )
 
-        # ax.set_title(format_tau(params["relaxation_time"]))
-        ax.set_xlabel("time (s)", fontsize="large")
-        if STATE_TO_PLOT == "axial_stress":
-            ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
-        elif STATE_TO_PLOT == "viscous_strain":
-            ax.set_ylabel(r"viscous strain ($\varepsilon_{xx}^{v}$)", fontsize="large")
+            histories = result["state_history"][STATE_TO_PLOT]
+            forward_history = histories["forward"]
+            backward_history = histories.get("backward")
+            forward_times = result["forward_time"]
 
-        _legend = ax.legend(loc="upper right", fontsize="medium")
-        _legend.get_texts()[0].set_color("#2b738eff")  # "forward"
-        if backward_history is not None:
-            _legend.get_texts()[1].set_color("#f9826bff")  # "backward"
-            _legend.get_lines()[1].set_linestyle('--')
-        ax.set_xlim(0, 15)
-        # ax.spines['right'].set_visible(False)
-        # ax.spines['top'].set_visible(False)
-        # ax.spines['bottom'].set_position('zero')
-        if params["bc_name"] == "right_node_step":
-            ax.set_ylim(-0.02,.12)
-        elif params["bc_name"] == "right_node_constant_rate":
-            ax.set_ylim(0,.01)
-        elif params["bc_name"] == "right_node_sinusoidal": 
-            ax.set_ylim(-0.09,0.09)
-        elif params["bc_name"] == "right_node_clipped_sinusoid":
-            ax.set_ylim(-0.060,0.060)
+            ax.plot(
+                forward_times,
+                forward_history,
+                linewidth=1.6,
+                marker=None,
+                label="forward",
+                color="#2b738eff",
+            )
 
-            # ax.set_ylim(-0.12,0.12)
-            # ticks = ax.xaxis.get_major_ticks()
-            # for tick in ax.get_xticklabels():
-            #     if tick.get_text() == '0':
-            #         tick.set_visible(False)
-        
+            if backward_history is not None:
+                ax.plot(
+                    forward_times[:-1],
+                    backward_history[::-1][1:],
+                    linewidth=1.6,
+                    marker=None,
+                    dashes=(4, 3.5),
+                    label="backward",
+                    # color="#f9a41bff",
+                    color="#f9826bff",
+                )
 
-        fig.tight_layout()
-        suffix = params["bc_name"].replace("right_node", "")
-        if set_integrator_type == b"fixed_truss_visco":
-            fig.savefig(f"stress_Fixed_{suffix}.svg", dpi=200)
-        else:
-            fig.savefig(f"stress_float_{suffix}.svg", dpi=200)
+            # ax.set_title(format_tau(params["relaxation_time"]))
+            ax.set_xlabel("time (s)", fontsize="large")
+            if STATE_TO_PLOT == "axial_stress":
+                ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
+            elif STATE_TO_PLOT == "viscous_strain":
+                ax.set_ylabel(r"viscous strain ($\varepsilon_{xx}^{v}$)", fontsize="large")
 
-        
-        fig.clf()
+            _legend = ax.legend(loc="upper right", fontsize="medium")
+            _legend.get_texts()[0].set_color("#2b738eff")  # "forward"
+            if backward_history is not None:
+                _legend.get_texts()[1].set_color("#f9826bff")  # "backward"
+                _legend.get_lines()[1].set_linestyle("dashed")
+            ax.set_xlim(0, 15)
+            # ax.spines['right'].set_visible(False)
+            # ax.spines['top'].set_visible(False)
+            # ax.spines['bottom'].set_position('zero')
+            if params["bc_name"] == "right_node_step":
+                ax.set_ylim(-0.02, .12)
+            elif params["bc_name"] == "right_node_constant_rate":
+                ax.set_ylim(0, .04)
+            elif params["bc_name"] == "right_node_sinusoidal":
+                ax.set_ylim(-0.09, 0.09)
+            elif params["bc_name"] == "right_node_clipped_sinusoid":
+                ax.set_ylim(-0.060, 0.060)
+
+                # ax.set_ylim(-0.12,0.12)
+                # ticks = ax.xaxis.get_major_ticks()
+                # for tick in ax.get_xticklabels():
+                #     if tick.get_text() == '0':
+                #         tick.set_visible(False)
+
+            fig.tight_layout()
+            suffix = params["bc_name"].replace("right_node", "")
+            fig.savefig(f"{output_prefix}_{suffix}.pdf", dpi=200)
+            fig.clf()
 
 
 if __name__ == "__main__":
