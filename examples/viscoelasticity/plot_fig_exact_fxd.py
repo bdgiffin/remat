@@ -179,14 +179,15 @@ MODE_COLORS = {
 
 SCENARIOS = [
     {
-        "description": r"Constant strain rate, $\tau=1$, $\Delta t=10^{-2}$",
-        "relaxation_time": 0.1,
-        "dt": 1.0e-2,
-        "Nsteps": 1000,
+        "description": r"Constant strain rate, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
         "Nsub_steps": 1,
-        "epsilon0": 0.001,
+        "epsilon0": 0.1,
         "bc_name": "right_node_constant_rate",
-        "overflow_limit": 1.0e0,
+        "overflow_limit": 100.0e0,
+        "ylim": (0.0, 0.045),
     },
 ]
 
@@ -196,29 +197,29 @@ def plot_exact_vs_fixed(params, fixed_result):
         2,
         1,
         sharex=True,
-        figsize=(5.0, 5.0),
+        figsize=(4.0, 4.0),
         gridspec_kw={"height_ratios": [3, 1]},
     )
 
     times = fixed_result["forward_time"]
     fixed_history = fixed_result["state_history"][STATE_TO_PLOT]
     exact_history = compute_exact_stress(times, params)
-    metrics = compute_relative_metrics(exact_history, fixed_history)
-
-    ax_state.plot(
-        times,
-        exact_history,
-        linewidth=1.6,
-        label="exact",
-        color=MODE_COLORS["exact"],
-    )
     ax_state.plot(
         times,
         fixed_history,
         linewidth=1.6,
-        label="fixed",
+        label="fixed forward",
         color=MODE_COLORS["fixed"],
     )
+    ax_state.plot(
+        times,
+        exact_history,
+        linestyle="dotted",
+        linewidth=2,
+        label="analytical forward",
+        color=MODE_COLORS["exact"],
+    )
+
 
     diff = fixed_history - exact_history
     ax_error.plot(
@@ -226,7 +227,8 @@ def plot_exact_vs_fixed(params, fixed_result):
         diff,
         linewidth=1.2,
         color="#4a4a4aff",
-        label=r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{exact}$",
+        # label=r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{exact}$",
+        label=r"error",
     )
 
     fmt = ScalarFormatter(useMathText=True)
@@ -237,18 +239,13 @@ def plot_exact_vs_fixed(params, fixed_result):
 
     ax_state.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
     ax_state.set_xlim(0, params["dt"] * params["Nsteps"])
+    if "ylim" in params:
+        ax_state.set_ylim(*params["ylim"])
     ax_state.legend(loc="best", fontsize="medium")
 
     ax_error.set_xlabel("time (s)", fontsize="large")
     ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{exact}$", fontsize="large")
     ax_error.legend(loc="best", fontsize="medium")
-
-    title = (
-        f"{params['description']}\n"
-        f"max|Δ|={metrics['max_abs']:.2e}, "
-        f"rel‖Δ‖₂={metrics['rel_l2']:.2e}"
-    )
-    ax_state.set_title(title, fontsize="medium")
 
     fig.tight_layout()
     return fig
@@ -284,7 +281,7 @@ def main():
         fig = plot_exact_vs_fixed(params, fixed_result)
         suffix = params["bc_name"].replace("right_node", "")
         fig.savefig(
-            f"exact_vs_fxd_{suffix}.svg",
+            f"exact_vs_fxd_{suffix}.pdf",
             metadata={"Title": str(params["description"])},
             dpi=200,
         )
