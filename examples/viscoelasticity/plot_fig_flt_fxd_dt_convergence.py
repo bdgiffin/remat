@@ -194,11 +194,11 @@ MODE_OVERFLOW_LIMITS = {
     "fixed": 1000.0,
 }
 
-# Sweep Δt from 1e-5 to 1s with a fixed duration of 10s (Nsteps = 10 / Δt).
+# Evaluate Delta t from 1e-5 to 1e-1 s with fixed duration 10 s (Nsteps = 10 / Delta t).
 DT_VALUES = np.logspace(-5, -1, num=9)
 DURATION = 10
 SCENARIO = {
-    "description": r"Constant strain rate, $\tau=0.3$, $\Delta t$ sweep",
+    "description": r"Constant strain rate, $\tau=0.3$, $\Delta t/\tau$ convergence",
     "relaxation_time": 0.3,
     "Nsub_steps": 1,
     "epsilon0": 0.1,
@@ -206,7 +206,7 @@ SCENARIO = {
 }
 
 
-def compute_exact_stress(times, params):
+def compute_analytical_stress(times, params):
     tau = params["relaxation_time"]
     eps0 = params["epsilon0"]
     if params["bc_name"] == "right_node_step":
@@ -216,7 +216,7 @@ def compute_exact_stress(times, params):
         # constant strain rate: epsilon = eps0 * t, sigma = E * eps0 * tau * (1 - exp(-t/tau))
         return eps0 * tau * (1.0 - np.exp(-times / tau))
     else:
-        raise ValueError("No exact solution implemented for this bc.")
+        raise ValueError("No analytical solution implemented for this bc.")
 
 
 def run_precision_suite(params):
@@ -237,7 +237,7 @@ def run_precision_suite(params):
     return results
 
 
-def sweep_time_steps(dt_values, scenario):
+def evaluate_time_step_convergence(dt_values, scenario):
     results = []
     for dt in dt_values:
         nsteps = max(1, int(np.round(DURATION / dt)))
@@ -245,10 +245,10 @@ def sweep_time_steps(dt_values, scenario):
         precision_results = run_precision_suite(params)
         float_hist = precision_results["float"]["state_history"][STATE_TO_PLOT]["forward"]
         fixed_hist = precision_results["fixed"]["state_history"][STATE_TO_PLOT]["forward"]
-        exact_hist = compute_exact_stress(precision_results["float"]["forward_time"], params)
+        analytical_hist = compute_analytical_stress(precision_results["float"]["forward_time"], params)
 
-        float_err = compute_max_relative_error(exact_hist, float_hist)
-        fixed_err = compute_max_relative_error(exact_hist, fixed_hist)
+        float_err = compute_max_relative_error(analytical_hist, float_hist)
+        fixed_err = compute_max_relative_error(analytical_hist, fixed_hist)
 
         results.append(
             {
@@ -272,7 +272,7 @@ def print_convergence_orders(dt_results):
         return
 
     data = sorted(dt_results, key=lambda x: x["dt"], reverse=True)  # coarse to fine
-    print("Convergence order (max relative error vs exact):")
+    print("Convergence order (max relative error vs analytical):")
     print("  dt_coarse | dt_fine | float_order | fixed_order")
     print("  -----------------------------------------------")
     for i in range(len(data) - 1):
@@ -327,16 +327,6 @@ def plot_dt_errors(dt_results, scenario):
         linewidth=1.0,
         alpha=0.85,
     )
-    text_x = np.sqrt(normalized_steps.min() * normalized_steps.max())
-    # ax.text(
-    #     text_x,
-    #     fixed_min_error * 1.2,
-    #     "fixed-point precision limit",
-    #     color=MODE_COLORS["fixed"],
-    #     fontsize="small",
-    #     ha="center",
-    #     va="bottom",
-    # )
     x_right = ax.get_xlim()[1]
 
     ax.text(
@@ -365,11 +355,11 @@ def plot_dt_errors(dt_results, scenario):
 
 
 def main():
-    dt_results = sweep_time_steps(DT_VALUES, SCENARIO)
+    dt_results = evaluate_time_step_convergence(DT_VALUES, SCENARIO)
     #print_convergence_orders(dt_results)
     fig = plot_dt_errors(dt_results, SCENARIO)
     fig.savefig(
-        "flt_vs_fxd_dt_sweep.pdf",
+        "flt_vs_fxd_dt_convergence.pdf",
         metadata={"Title": str(SCENARIO["description"])},
         dpi=200,
     )
