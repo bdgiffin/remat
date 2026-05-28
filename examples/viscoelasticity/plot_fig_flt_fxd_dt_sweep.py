@@ -295,14 +295,15 @@ def print_convergence_orders(dt_results):
 
 
 def plot_dt_errors(dt_results, scenario):
-    fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    fig, ax = plt.subplots(figsize=(4.5, 3.0))
 
     dts = np.asarray([entry["dt"] for entry in dt_results])
+    normalized_steps = dts / scenario["relaxation_time"]
     max_rel_error_float = np.asarray([entry["float_err"] for entry in dt_results])
     max_rel_error_fixed = np.asarray([entry["fixed_err"] for entry in dt_results])
 
     ax.plot(
-        dts,
+        normalized_steps,
         max_rel_error_float,
         marker="o",
         linewidth=1.6,
@@ -310,7 +311,7 @@ def plot_dt_errors(dt_results, scenario):
         color=MODE_COLORS["float"],
     )
     ax.plot(
-        dts,
+        normalized_steps,
         max_rel_error_fixed,
         marker="s",
         linewidth=1.6,
@@ -318,12 +319,42 @@ def plot_dt_errors(dt_results, scenario):
         color=MODE_COLORS["fixed"],
     )
 
+    fixed_min_error = np.min(max_rel_error_fixed)
+    ax.axhline(
+        fixed_min_error,
+        color=MODE_COLORS["fixed"],
+        linestyle="--",
+        linewidth=1.0,
+        alpha=0.85,
+    )
+    text_x = np.sqrt(normalized_steps.min() * normalized_steps.max())
+    # ax.text(
+    #     text_x,
+    #     fixed_min_error * 1.2,
+    #     "fixed-point precision limit",
+    #     color=MODE_COLORS["fixed"],
+    #     fontsize="small",
+    #     ha="center",
+    #     va="bottom",
+    # )
+    x_right = ax.get_xlim()[1]
+
+    ax.text(
+        x_right,
+        fixed_min_error * 0.9,
+        "fixed-point precision limit",
+        color=MODE_COLORS["fixed"],
+        fontsize="small",
+        ha="right",
+        va="top",
+    )
+
     ax.set_xscale("log")
     ax.set_yscale("log")
-    # ax.grid(True, which="both", linestyle=":", linewidth=0.8, alpha=0.6)
-    ax.set_xlabel(r"time step $\Delta t$ (s)", fontsize="large")
+    ax.set_xlabel(r"normalized time step $\Delta t/\tau$", fontsize="large")
     ax.set_ylabel("max relative error", fontsize="large")
-
+    # very low opacity grid lines for better readability of log-log plot
+    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
     # ax.set_title(
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
@@ -338,7 +369,7 @@ def main():
     #print_convergence_orders(dt_results)
     fig = plot_dt_errors(dt_results, SCENARIO)
     fig.savefig(
-        "flt_vs_fxd_dt_sweep.svg",
+        "flt_vs_fxd_dt_sweep.pdf",
         metadata={"Title": str(SCENARIO["description"])},
         dpi=200,
     )
