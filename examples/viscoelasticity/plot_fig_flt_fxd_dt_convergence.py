@@ -1,4 +1,6 @@
 from math import pi, sin
+from contextlib import contextmanager
+import os
 import sys
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +16,25 @@ plt.rcParams.update(
         "mathtext.fontset": "cm",
     }
 )
+
+
+@contextmanager
+def suppress_c_stdout(enabled=True):
+    if not enabled:
+        yield
+        return
+
+    sys.stdout.flush()
+    saved_stdout_fd = os.dup(1)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull_fd, 1)
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved_stdout_fd, 1)
+        os.close(saved_stdout_fd)
+        os.close(devnull_fd)
 
 
 def set_material_parameters(relaxation_time, overflow_limit):
@@ -174,10 +195,15 @@ def run_truss_relaxation(
     return result
 
 
-def compute_max_relative_error(reference, candidate):
+def compute_error_components(reference, candidate):
     diff = candidate - reference
     denom = max(np.linalg.norm(reference), np.finfo(np.float64).eps)
-    return float(np.max(np.abs(diff)) / denom)
+    max_abs = float(np.max(np.abs(diff)))
+    return max_abs, float(denom), float(max_abs / denom)
+
+
+def compute_max_relative_error(reference, candidate):
+    return compute_error_components(reference, candidate)[2]
 
 
 STATE_TO_PLOT = "axial_stress"
@@ -194,9 +220,9 @@ MODE_OVERFLOW_LIMITS = {
     "fixed": 1000.0,
 }
 
-# Evaluate Delta t from 1e-5 to 1e-1 s with fixed duration 10 s (Nsteps = 10 / Delta t).
+# Evaluate Delta t from 1e-5 to 1e-1 s with a fixed duration.
 DT_VALUES = np.logspace(-5, -1, num=9)
-DURATION = 10
+DURATION = 15.0
 SCENARIO = {
     "description": r"Constant strain rate, $\tau=0.3$, $\Delta t/\tau$ convergence",
     "relaxation_time": 0.3,
@@ -219,21 +245,22 @@ def compute_analytical_stress(times, params):
         raise ValueError("No analytical solution implemented for this bc.")
 
 
-def run_precision_suite(params):
+def run_precision_suite(params, quiet=True):
     results = {}
     for mode_name, integrator in PRECISION_MODES:
-        results[mode_name] = run_truss_relaxation(
-            dt=params["dt"],
-            Nsteps=params["Nsteps"],
-            Nsub_steps=params["Nsub_steps"],
-            epsilon0=params["epsilon0"],
-            bc_name=params["bc_name"],
-            relaxation_time=params["relaxation_time"],
-            include_backward=False,
-            record_states=(STATE_TO_PLOT,),
-            set_integrator_type=integrator,
-            overflow_limit=MODE_OVERFLOW_LIMITS[mode_name],
-        )
+        with suppress_c_stdout(quiet):
+            results[mode_name] = run_truss_relaxation(
+                dt=params["dt"],
+                Nsteps=params["Nsteps"],
+                Nsub_steps=params["Nsub_steps"],
+                epsilon0=params["epsilon0"],
+                bc_name=params["bc_name"],
+                relaxation_time=params["relaxation_time"],
+                include_backward=False,
+                record_states=(STATE_TO_PLOT,),
+                set_integrator_type=integrator,
+                overflow_limit=MODE_OVERFLOW_LIMITS[mode_name],
+            )
     return results
 
 
@@ -247,22 +274,36 @@ def evaluate_time_step_convergence(dt_values, scenario):
         fixed_hist = precision_results["fixed"]["state_history"][STATE_TO_PLOT]["forward"]
         analytical_hist = compute_analytical_stress(precision_results["float"]["forward_time"], params)
 
-        float_err = compute_max_relative_error(analytical_hist, float_hist)
-        fixed_err = compute_max_relative_error(analytical_hist, fixed_hist)
+        float_max_abs, reference_l2_norm, float_err = compute_error_components(
+            analytical_hist, float_hist
+        )
+        fixed_max_abs, _, fixed_err = compute_error_components(
+            analytical_hist, fixed_hist
+        )
 
         results.append(
             {
                 "dt": float(dt),
                 "Nsteps": nsteps,
+                "reference_l2_norm": reference_l2_norm,
+                "float_max_abs_error": float_max_abs,
                 "float_err": float_err,
+                "fixed_max_abs_error": fixed_max_abs,
                 "fixed_err": fixed_err,
             }
         )
 
         print("-" * 80)
         print(f"Δt = {dt:.2e} s, Nsteps = {nsteps}")
-        print(f"  float max relative error = {float_err:.6e}")
-        print(f"  fixed max relative error = {fixed_err:.6e}")
+        print(f"  reference L2 norm = {reference_l2_norm:.6e}")
+        print(
+            f"  float max abs error = {float_max_abs:.6e}, "
+            f"normalized = {float_err:.6e}"
+        )
+        print(
+            f"  fixed max abs error = {fixed_max_abs:.6e}, "
+            f"normalized = {fixed_err:.6e}"
+        )
     return results
 
 
@@ -326,29 +367,19 @@ def plot_dt_errors(dt_results, scenario):
         linestyle="--",
         linewidth=1.0,
         alpha=0.85,
-    )
-    x_right = ax.get_xlim()[1]
-
-    ax.text(
-        x_right,
-        fixed_min_error * 0.9,
-        "fixed-point precision limit",
-        color=MODE_COLORS["fixed"],
-        fontsize="small",
-        ha="right",
-        va="top",
+        label=r"fixed min.",
     )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(r"normalized time step $\Delta t/\tau$", fontsize="large")
-    ax.set_ylabel("max relative error", fontsize="large")
-    # very low opacity grid lines for better readability of log-log plot
-    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
+    ax.set_ylabel("normalized max stress error", fontsize="large")
     # ax.set_title(
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
     # )
+    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
+
     ax.legend(loc="best", fontsize="medium")
     fig.tight_layout()
     return fig
