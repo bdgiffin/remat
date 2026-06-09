@@ -195,16 +195,16 @@ def run_truss_relaxation(
     return result
 
 
-def compute_error_components(reference, candidate, dt):
+def compute_error_components(reference, candidate):
     diff = candidate - reference
-    error_l2_norm = float(np.sqrt(dt * np.sum(diff * diff)))
-    reference_l2_norm = float(np.sqrt(dt * np.sum(reference * reference)))
+    error_l2_norm = float(np.sqrt(np.sum(diff * diff)))
+    reference_l2_norm = float(np.sqrt(np.sum(reference * reference)))
     denom = max(reference_l2_norm, np.finfo(np.float64).eps)
     return error_l2_norm, reference_l2_norm, float(error_l2_norm / denom)
 
 
-def compute_relative_l2_error(reference, candidate, dt):
-    return compute_error_components(reference, candidate, dt)[2]
+def compute_relative_l2_error(reference, candidate):
+    return compute_error_components(reference, candidate)[2]
 
 
 STATE_TO_PLOT = "axial_stress"
@@ -276,10 +276,10 @@ def evaluate_time_step_convergence(dt_values, scenario):
         analytical_hist = compute_analytical_stress(precision_results["float"]["forward_time"], params)
 
         float_l2_error, reference_l2_norm, float_err = compute_error_components(
-            analytical_hist, float_hist, float(dt)
+            analytical_hist, float_hist
         )
         fixed_l2_error, _, fixed_err = compute_error_components(
-            analytical_hist, fixed_hist, float(dt)
+            analytical_hist, fixed_hist
         )
 
         results.append(
@@ -379,6 +379,7 @@ def plot_dt_errors(dt_results, scenario):
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
     # )
+    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
     ax.legend(loc="best", fontsize="medium")
     fig.tight_layout()
     return fig
