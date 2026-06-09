@@ -195,15 +195,16 @@ def run_truss_relaxation(
     return result
 
 
-def compute_error_components(reference, candidate):
+def compute_error_components(reference, candidate, dt):
     diff = candidate - reference
-    denom = max(np.linalg.norm(reference), np.finfo(np.float64).eps)
-    max_abs = float(np.max(np.abs(diff)))
-    return max_abs, float(denom), float(max_abs / denom)
+    error_l2_norm = float(np.sqrt(dt * np.sum(diff * diff)))
+    reference_l2_norm = float(np.sqrt(dt * np.sum(reference * reference)))
+    denom = max(reference_l2_norm, np.finfo(np.float64).eps)
+    return error_l2_norm, reference_l2_norm, float(error_l2_norm / denom)
 
 
-def compute_max_relative_error(reference, candidate):
-    return compute_error_components(reference, candidate)[2]
+def compute_relative_l2_error(reference, candidate, dt):
+    return compute_error_components(reference, candidate, dt)[2]
 
 
 STATE_TO_PLOT = "axial_stress"
@@ -274,11 +275,11 @@ def evaluate_time_step_convergence(dt_values, scenario):
         fixed_hist = precision_results["fixed"]["state_history"][STATE_TO_PLOT]["forward"]
         analytical_hist = compute_analytical_stress(precision_results["float"]["forward_time"], params)
 
-        float_max_abs, reference_l2_norm, float_err = compute_error_components(
-            analytical_hist, float_hist
+        float_l2_error, reference_l2_norm, float_err = compute_error_components(
+            analytical_hist, float_hist, float(dt)
         )
-        fixed_max_abs, _, fixed_err = compute_error_components(
-            analytical_hist, fixed_hist
+        fixed_l2_error, _, fixed_err = compute_error_components(
+            analytical_hist, fixed_hist, float(dt)
         )
 
         results.append(
@@ -286,9 +287,9 @@ def evaluate_time_step_convergence(dt_values, scenario):
                 "dt": float(dt),
                 "Nsteps": nsteps,
                 "reference_l2_norm": reference_l2_norm,
-                "float_max_abs_error": float_max_abs,
+                "float_l2_error": float_l2_error,
                 "float_err": float_err,
-                "fixed_max_abs_error": fixed_max_abs,
+                "fixed_l2_error": fixed_l2_error,
                 "fixed_err": fixed_err,
             }
         )
@@ -297,12 +298,12 @@ def evaluate_time_step_convergence(dt_values, scenario):
         print(f"Δt = {dt:.2e} s, Nsteps = {nsteps}")
         print(f"  reference L2 norm = {reference_l2_norm:.6e}")
         print(
-            f"  float max abs error = {float_max_abs:.6e}, "
-            f"normalized = {float_err:.6e}"
+            f"  float L2 error = {float_l2_error:.6e}, "
+            f"relative = {float_err:.6e}"
         )
         print(
-            f"  fixed max abs error = {fixed_max_abs:.6e}, "
-            f"normalized = {fixed_err:.6e}"
+            f"  fixed L2 error = {fixed_l2_error:.6e}, "
+            f"relative = {fixed_err:.6e}"
         )
     return results
 
@@ -313,7 +314,7 @@ def print_convergence_orders(dt_results):
         return
 
     data = sorted(dt_results, key=lambda x: x["dt"], reverse=True)  # coarse to fine
-    print("Convergence order (max relative error vs analytical):")
+    print("Convergence order (relative L2 error vs analytical):")
     print("  dt_coarse | dt_fine | float_order | fixed_order")
     print("  -----------------------------------------------")
     for i in range(len(data) - 1):
@@ -340,12 +341,12 @@ def plot_dt_errors(dt_results, scenario):
 
     dts = np.asarray([entry["dt"] for entry in dt_results])
     normalized_steps = dts / scenario["relaxation_time"]
-    max_rel_error_float = np.asarray([entry["float_err"] for entry in dt_results])
-    max_rel_error_fixed = np.asarray([entry["fixed_err"] for entry in dt_results])
+    rel_l2_error_float = np.asarray([entry["float_err"] for entry in dt_results])
+    rel_l2_error_fixed = np.asarray([entry["fixed_err"] for entry in dt_results])
 
     ax.plot(
         normalized_steps,
-        max_rel_error_float,
+        rel_l2_error_float,
         marker="o",
         linewidth=1.6,
         label=r"floating point",
@@ -353,14 +354,14 @@ def plot_dt_errors(dt_results, scenario):
     )
     ax.plot(
         normalized_steps,
-        max_rel_error_fixed,
+        rel_l2_error_fixed,
         marker="s",
         linewidth=1.6,
         label=r"rev. fixed point",
         color=MODE_COLORS["fixed"],
     )
 
-    fixed_min_error = np.min(max_rel_error_fixed)
+    fixed_min_error = np.min(rel_l2_error_fixed)
     ax.axhline(
         fixed_min_error,
         color=MODE_COLORS["fixed"],
@@ -373,13 +374,11 @@ def plot_dt_errors(dt_results, scenario):
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(r"normalized time step $\Delta t/\tau$", fontsize="large")
-    ax.set_ylabel("normalized max stress error", fontsize="large")
+    ax.set_ylabel(r"relative $L^2$ stress error", fontsize="large")
     # ax.set_title(
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
     # )
-    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
-
     ax.legend(loc="best", fontsize="medium")
     fig.tight_layout()
     return fig
