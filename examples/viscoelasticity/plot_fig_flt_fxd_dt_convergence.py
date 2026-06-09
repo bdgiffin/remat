@@ -348,7 +348,7 @@ def plot_dt_errors(dt_results, scenario):
         max_rel_error_float,
         marker="o",
         linewidth=1.6,
-        label=r"float",
+        label=r"floating point",
         color=MODE_COLORS["float"],
     )
     ax.plot(
@@ -356,7 +356,7 @@ def plot_dt_errors(dt_results, scenario):
         max_rel_error_fixed,
         marker="s",
         linewidth=1.6,
-        label=r"fixed",
+        label=r"rev. fixed point",
         color=MODE_COLORS["fixed"],
     )
 
@@ -367,7 +367,7 @@ def plot_dt_errors(dt_results, scenario):
         linestyle="--",
         linewidth=1.0,
         alpha=0.85,
-        label=r"fixed min.",
+        label=r"rev. fixed point min.",
     )
 
     ax.set_xscale("log")

@@ -194,6 +194,10 @@ MODE_COLORS = {
     "float": "#2b738eff",
     "fixed": "#f9826bff",
 }
+MODE_LABELS = {
+    "float": "floating point",
+    "fixed": "rev. fixed point",
+}
 MODE_OVERFLOW_LIMITS = {
     "float": 1.0e56,
     "fixed": 100.0,
@@ -267,7 +271,7 @@ def plot_precision_histories(params, precision_results):
                 linewidth=2,
                 # marker="o",
                 # markersize=0.10,
-                label=f"{mode_name} forward",
+                label=f"{MODE_LABELS[mode_name]} forward",
                 color=color,
             )
         else:
@@ -276,7 +280,7 @@ def plot_precision_histories(params, precision_results):
                 histories["forward"],
                 linewidth=1.6,
                 marker=None,
-                label=f"{mode_name} forward",
+                label=f"{MODE_LABELS[mode_name]} forward",
                 color=color,
             )
 
@@ -308,7 +312,7 @@ def plot_precision_histories(params, precision_results):
 
     ax_error.set_xlabel("time (s)", fontsize="large")
     # ax_error.set_ylabel(r"$\Delta\sigma_{xx}$", fontsize="large")
-    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{float}$", fontsize="large")
+    ax_error.set_ylabel(r"$\Delta\sigma_{xx}$", fontsize="large")
 
     ax_error.legend(loc='best', fontsize="medium")
 
@@ -349,7 +353,7 @@ def summarize_diagnostics(params, precision_results):
     print("-" * 80)
     print(f"Scenario: {params['description']}")
     print(f"  duration = {params['dt'] * params['Nsteps']:.3f}s, dt = {params['dt']}, tau = {params['relaxation_time']}")
-    print(f"  forward max|fixed - float| = {metrics['max_abs']:.6e}")
+    print(f"  forward max|rev. fixed point - floating point| = {metrics['max_abs']:.6e}")
     print(f"  forward relative L2 error   = {metrics['rel_l2']:.6e}")
     print("-" * 80)
 

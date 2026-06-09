@@ -221,7 +221,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         times,
         fixed_history,
         linewidth=1.6,
-        label="fixed forward",
+        label="rev. fixed point forward",
         color=MODE_COLORS["fixed"],
     )
     ax_state.plot(
@@ -255,7 +255,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
     ax_state.legend(loc="best", fontsize="medium")
 
     ax_error.set_xlabel("time (s)", fontsize="large")
-    ax_error.set_ylabel(r"$\sigma_{xx}^\mathrm{fixed}-\sigma_{xx}^\mathrm{analytical}$", fontsize="large")
+    ax_error.set_ylabel(r"$\Delta\sigma_{xx}$", fontsize="large")
     ax_error.legend(loc="best", fontsize="medium")
 
     fig.tight_layout()
@@ -271,7 +271,7 @@ def summarize_diagnostics(params, fixed_result):
     print("-" * 80)
     print(f"Scenario: {params['description']}")
     print(f"  duration = {params['dt'] * params['Nsteps']:.3f}s, dt = {params['dt']}, tau = {params['relaxation_time']}")
-    print(f"  forward max|fixed - analytical| = {metrics['max_abs']:.6e}")
+    print(f"  forward max|rev. fixed point - analytical| = {metrics['max_abs']:.6e}")
     print(f"  forward relative L2 error   = {metrics['rel_l2']:.6e}")
     print("-" * 80)
     return metrics

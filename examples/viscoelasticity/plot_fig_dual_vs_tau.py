@@ -1,5 +1,10 @@
+from contextlib import contextmanager
 from math import pi, sin
+import os
 import sys
+from matplotlib import colors as mcolors
+from matplotlib.cm import ScalarMappable
+import matplotlib.ticker as mticker
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -11,9 +16,29 @@ plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
-        "mathtext.fontset": "cm",       
+        "mathtext.fontset": "cm",
     }
 )
+
+
+@contextmanager
+def suppress_c_stdout(enabled=True):
+    if not enabled:
+        yield
+        return
+
+    sys.stdout.flush()
+    saved_stdout_fd = os.dup(1)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull_fd, 1)
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved_stdout_fd, 1)
+        os.close(saved_stdout_fd)
+        os.close(devnull_fd)
+
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -159,16 +184,29 @@ def run_truss_relaxation(
 
 
 STATE_TO_PLOT = "dual_viscous_strain"
+OUTPUT_FILE = "plot_fig_dual_vs_tau.pdf"
+MIN_POSITIVE_MAGNITUDE = 1.0e-8
+DISPLAY_YMIN = 1.0e-2
+DISPLAY_YMAX = 1.0e3
+BUFFER_LEVEL = 5e2
+DEFAULT_RATE_MARKER_OFFSET = 0.55
+DEFAULT_RATE_MARKER_TIME_FACTOR = 7.0
+TAU_CMAP = mcolors.LinearSegmentedColormap.from_list(
+    "tau_gray",
+    ["0.12", "0.68"],
+)
 
 SCENARIOS = [
     {
-        "relaxation_time": 0.01,
+        "relaxation_time": 0.03,
         "dt": 1.0e-3,
-        "Nsteps": 100,
+        "Nsteps": 1000,
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
+        "rate_marker_offset": 0.45,
+        "rate_marker_time": 0.19,
     },
     {
         "relaxation_time": 0.1,
@@ -178,6 +216,8 @@ SCENARIOS = [
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
+        "rate_marker_offset": 0.70,
+        "rate_marker_time": 0.80,
     },
     {
         "relaxation_time": 0.3,
@@ -187,15 +227,8 @@ SCENARIOS = [
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
-    },
-    {
-        "relaxation_time": 0.5,
-        "dt": 1.0e-3,
-        "Nsteps": 4500,
-        "Nsub_steps": 1,
-        "epsilon0": 0.1,
-        "bc_name": "right_node_step",
-        "overflow_limit": 1e6,
+        "rate_marker_offset": 0.85,
+        "rate_marker_time": 1.6,
     },
     {
         "relaxation_time": 1,
@@ -205,51 +238,242 @@ SCENARIOS = [
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
+        "rate_marker_offset": 0.75,
+        "rate_marker_time": 2.60,
     },
 ]
 
 
+TAU_NORM = mcolors.LogNorm(
+    vmin=min(params["relaxation_time"] for params in SCENARIOS),
+    vmax=max(params["relaxation_time"] for params in SCENARIOS),
+)
+
+
+def information_rate(relaxation_time):
+    return 1.0 / (relaxation_time * np.log(2.0))
+
+
 def format_tau(value):
-    return rf"$\tau = {value:.2f}$"
+    return rf"$\tau={value:g}$"
+
+
+def local_semilog_rate(times, values, index, half_window):
+    lower = max(0, index - half_window)
+    upper = min(times.size, index + half_window + 1)
+    if upper - lower < 3:
+        return np.nan
+
+    log_value = np.log(values[lower:upper])
+    if not np.all(np.isfinite(log_value)):
+        return np.nan
+
+    rate, _intercept = np.polyfit(times[lower:upper], log_value, 1)
+    return rate
+
+
+def choose_rate_marker(
+    times,
+    values,
+    relaxation_time,
+    marker_offset,
+    marker_time,
+    x_limit,
+    y_limit,
+):
+    half_window = max(5, min(60, times.size // 25))
+    if times.size <= 2 * half_window + 1:
+        return None
+
+    if marker_time is None:
+        marker_time = DEFAULT_RATE_MARKER_TIME_FACTOR * relaxation_time
+    target_time = np.clip(
+        marker_time,
+        times[half_window],
+        times[-half_window - 1],
+    )
+    candidate_indices = np.arange(half_window, times.size - half_window)
+    marker_options = []
+    duration = max(0.015, min(0.22 * relaxation_time, 0.18))
+
+    for index in candidate_indices:
+        rate = local_semilog_rate(times, values, int(index), half_window)
+        if not np.isfinite(rate) or not (0.2 <= rate <= 250.0):
+            continue
+        if times[index] + duration >= x_limit:
+            continue
+        marker_base = values[index] * marker_offset
+        if marker_base * np.exp(rate * duration) >= 0.80 * y_limit:
+            continue
+        if marker_base <= 1.2 * DISPLAY_YMIN:
+            continue
+        score = abs(np.log(times[index] / target_time))
+        marker_options.append((score, int(index), float(rate), duration))
+
+    if not marker_options:
+        return None
+    return min(marker_options, key=lambda item: item[0])[1:]
+
+
+def format_rate(value):
+    if value >= 10.0:
+        return f"{value:.0f}"
+    return f"{value:.1f}"
+
+
+def add_rate_marker(ax, x, y, rate, color, marker_offset, x_limit, duration):
+    y = y * marker_offset
+    x_right = x + duration
+    y_top = y * np.exp(rate * duration)
+    if x_right * 1.05 > 0.92 * x_limit:
+        text_x = x - 0.03
+        ha = "right"
+    else:
+        text_x = x_right + 0.03
+        ha = "left"
+
+    ax.plot([x, x_right], [y, y], color=color, linewidth=0.8, alpha=0.95)
+    ax.plot([x_right, x_right], [y, y_top], color=color, linewidth=0.8, alpha=0.95)
+    ax.plot([x, x_right], [y, y_top], color=color, linewidth=0.8, alpha=0.95)
+    ax.text(
+        text_x,
+        np.sqrt(y * y_top),
+        rf"$r\approx{format_rate(rate)}\,\mathrm{{s}}^{{-1}}$",
+        color=color,
+        fontsize=8,
+        ha=ha,
+        va="center",
+    )
+
+
+def line_angle_degrees(ax, x, y, rate, duration):
+    x2 = x + duration
+    y2 = y * np.exp(rate * duration)
+    p1 = ax.transData.transform((x, y))
+    p2 = ax.transData.transform((x2, y2))
+    return np.degrees(np.arctan2(p2[1] - p1[1], p2[0] - p1[0]))
+
+
+def add_tau_label(ax, x, y, rate, color, relaxation_time, duration):
+    label_y = min(y * 1.35, DISPLAY_YMAX / 1.25)
+    rotation = line_angle_degrees(ax, x, label_y, rate, duration)
+    ax.text(
+        x,
+        label_y,
+        format_tau(relaxation_time),
+        color=color,
+        fontsize=9,
+        rotation=rotation,
+        rotation_mode="anchor",
+        ha="center",
+        va="bottom",
+    )
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(7.5, 4.0))
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    histories = []
 
     for params in SCENARIOS:
-        result = run_truss_relaxation(
-            dt=params["dt"],
-            Nsteps=params["Nsteps"],
-            Nsub_steps=params["Nsub_steps"],
-            epsilon0=params["epsilon0"],
-            bc_name=params["bc_name"],
-            relaxation_time=params["relaxation_time"],
-            include_backward=False,
-            record_states=(STATE_TO_PLOT,),
-            overflow_limit=params["overflow_limit"],
-        )
+        with suppress_c_stdout():
+            result = run_truss_relaxation(
+                dt=params["dt"],
+                Nsteps=params["Nsteps"],
+                Nsub_steps=params["Nsub_steps"],
+                epsilon0=params["epsilon0"],
+                bc_name=params["bc_name"],
+                relaxation_time=params["relaxation_time"],
+                include_backward=False,
+                record_states=(STATE_TO_PLOT,),
+                overflow_limit=params["overflow_limit"],
+            )
 
         history = result["state_history"][STATE_TO_PLOT]
-        steps = np.arange(1, history.size + 1) * params["dt"]
+        times = np.arange(1, history.size + 1) * params["dt"]
+        magnitude = np.maximum(np.abs(history), MIN_POSITIVE_MAGNITUDE)
+        color = TAU_CMAP(TAU_NORM(params["relaxation_time"]))
 
         ax.plot(
-            steps,
-            history,
-            linewidth=1.1,
+            times,
+            magnitude,
+            linewidth=1.6,
             marker=None,
-            label=format_tau(params["relaxation_time"]),
+            color=color,
+            label="_nolegend_",
         )
 
-    ax.set_xlabel("time (s)", fontsize="large")
-    ax.set_ylabel("dual variable", fontsize="large")
-    ax.legend(loc="upper right", fontsize=10)
+        histories.append((params, times, magnitude, color))
+
     axis_dt = SCENARIOS[0]["dt"]
-    ax.set_xlim(-200 * axis_dt, 3400 * axis_dt)
+    x_max = 3400 * axis_dt
     ax.set_yscale("log")
-    ax.set_ylim(10**-2, 1000)
+    ax.set_xlim(-200 * axis_dt, x_max)
+    ax.set_ylim(DISPLAY_YMIN, DISPLAY_YMAX)
+
+    for _params, times, magnitude, color in histories:
+        marker_offset = _params.get("rate_marker_offset", DEFAULT_RATE_MARKER_OFFSET)
+        marker_time = _params.get("rate_marker_time")
+        marker = choose_rate_marker(
+            times,
+            magnitude,
+            _params["relaxation_time"],
+            marker_offset,
+            marker_time,
+            x_max,
+            DISPLAY_YMAX,
+        )
+        if marker is None:
+            continue
+        marker_index, rate, duration = marker
+        add_rate_marker(
+            ax,
+            times[marker_index],
+            magnitude[marker_index],
+            rate,
+            color,
+            marker_offset,
+            x_max,
+            duration=duration,
+        )
+        add_tau_label(
+            ax,
+            times[marker_index],
+            magnitude[marker_index],
+            rate,
+            color,
+            _params["relaxation_time"],
+            duration,
+        )
+
+    ax.axhline(
+        BUFFER_LEVEL,
+        color="0.35",
+        linestyle=":",
+        linewidth=1.0,
+        label=rf"example buffer level $y_{{\max}}={BUFFER_LEVEL:g}$",
+    )
+
+    ax.set_xlabel("time (s)", fontsize="large")
+    ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")
+    ax.minorticks_on()
+    ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0))
+    ax.yaxis.set_minor_locator(
+        mticker.LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1)
+    )
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.tick_params(axis="y", which="major", length=5, width=0.8)
+    ax.tick_params(axis="y", which="minor", length=3, width=0.6)
+
+    sm = ScalarMappable(norm=TAU_NORM, cmap=TAU_CMAP)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, pad=0.02)
+    cbar.set_label(r"relaxation time $\tau$ (s)", fontsize="medium")
+
+    # ax.legend(loc="lower right", fontsize="small")
 
     fig.tight_layout()
-    fig.savefig("dual_vs_tau.svg", dpi=200)
+    fig.savefig(OUTPUT_FILE, format="pdf", dpi=200)
+    fig.clf()
 
 
 if __name__ == "__main__":
