@@ -99,11 +99,105 @@ def validate_required_params(**params):
 def compute_analytical_stress(times, params):
     tau = params["relaxation_time"]
     eps0 = params["epsilon0"]
+    youngs_modulus = params.get("youngs_modulus", 1.0)
     if params["bc_name"] == "right_node_step":
-        return eps0 * np.exp(-times / tau)
+        return youngs_modulus * eps0 * np.exp(-times / tau)
     if params["bc_name"] == "right_node_constant_rate":
-        return eps0 * tau * (1.0 - np.exp(-times / tau))
-    raise ValueError("Analytical solution is only implemented for step and constant-rate loading.")
+        return youngs_modulus * eps0 * tau * (1.0 - np.exp(-times / tau))
+    if params["bc_name"] == "right_node_sinusoidal":
+        return compute_sinusoidal_stress(times, params)
+    if params["bc_name"] == "right_node_clipped_sinusoid":
+        return compute_clipped_sinusoidal_stress(times, params)
+    raise ValueError(f"Analytical solution is not implemented for '{params['bc_name']}'.")
+
+
+def compute_sinusoidal_stress(times, params):
+    tau = params["relaxation_time"]
+    eps0 = params["epsilon0"]
+    omega = params.get("omega", 0.2 * pi)
+    youngs_modulus = params.get("youngs_modulus", 1.0)
+    a = 1.0 / tau
+    denominator = a * a + omega * omega
+    harmonic = a * np.cos(omega * times) + omega * np.sin(omega * times)
+    transient = a * np.exp(-a * times)
+    return youngs_modulus * eps0 * omega * (harmonic - transient) / denominator
+
+
+def clipping_transition_times(end_time, omega, clip_ratio):
+    if clip_ratio <= 0.0 or clip_ratio >= 1.0:
+        return []
+    alpha = np.arcsin(clip_ratio)
+    base_angles = (alpha, pi - alpha, pi + alpha, 2.0 * pi - alpha)
+    ncycles = int(np.ceil(omega * end_time / (2.0 * pi))) + 1
+    transitions = []
+    for cycle in range(ncycles + 1):
+        offset = 2.0 * pi * cycle
+        for angle in base_angles:
+            transition = (offset + angle) / omega
+            if 0.0 < transition < end_time:
+                transitions.append(float(transition))
+    return sorted(transitions)
+
+
+def advance_sinusoidal_stress(sigma0, t0, t1, params):
+    tau = params["relaxation_time"]
+    eps0 = params["epsilon0"]
+    omega = params.get("omega", 0.2 * pi)
+    youngs_modulus = params.get("youngs_modulus", 1.0)
+    a = 1.0 / tau
+    dt = t1 - t0
+    decay = np.exp(-dt / tau)
+    denominator = a * a + omega * omega
+    primitive_t1 = a * np.cos(omega * t1) + omega * np.sin(omega * t1)
+    primitive_t0 = a * np.cos(omega * t0) + omega * np.sin(omega * t0)
+    convolution = (primitive_t1 - decay * primitive_t0) / denominator
+    return sigma0 * decay + youngs_modulus * eps0 * omega * convolution
+
+
+def advance_constant_strain_stress(sigma0, t0, t1, params):
+    tau = params["relaxation_time"]
+    return sigma0 * np.exp(-(t1 - t0) / tau)
+
+
+def compute_clipped_sinusoidal_stress(times, params):
+    omega = params.get("omega", 0.2 * pi)
+    clip_ratio = params.get("clip_ratio", 0.5)
+    transitions = clipping_transition_times(float(times[-1]), omega, clip_ratio)
+    transition_index = 0
+    current_time = 0.0
+    current_stress = 0.0
+    result = []
+    tol = 1.0e-12
+
+    for target_time in times:
+        target_time = float(target_time)
+        while current_time < target_time - tol:
+            while (
+                transition_index < len(transitions)
+                and transitions[transition_index] <= current_time + tol
+            ):
+                transition_index += 1
+            next_time = target_time
+            if (
+                transition_index < len(transitions)
+                and transitions[transition_index] < target_time - tol
+            ):
+                next_time = transitions[transition_index]
+
+            midpoint = 0.5 * (current_time + next_time)
+            if abs(np.sin(omega * midpoint)) < clip_ratio:
+                current_stress = advance_sinusoidal_stress(
+                    current_stress, current_time, next_time, params
+                )
+            else:
+                current_stress = advance_constant_strain_stress(
+                    current_stress, current_time, next_time, params
+                )
+            current_time = next_time
+
+        result.append(current_stress)
+
+    return np.asarray(result, dtype=np.float64)
 
 
 def run_truss_relaxation(
@@ -202,6 +296,28 @@ SCENARIOS = [
         "overflow_limit": 100.0e0,
         "ylim": (0.0, 0.045),
     },
+    {
+        "description": r"Sinusoidal cyclic, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.1,
+        "bc_name": "right_node_sinusoidal",
+        "overflow_limit": 100.0e0,
+        "ylim": (-0.025, 0.025),
+    },
+    {
+        "description": r"Clipped sinusoid, $\tau=0.3$, $\Delta t=10^{-3}$",
+        "relaxation_time": 0.3,
+        "dt": 1.0e-3,
+        "Nsteps": 15000,
+        "Nsub_steps": 1,
+        "epsilon0": 0.2,
+        "bc_name": "right_node_clipped_sinusoid",
+        "overflow_limit": 100.0e0,
+        "ylim": (-0.045, 0.045),
+    },
 ]
 
 
@@ -221,7 +337,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         times,
         fixed_history,
         linewidth=1.6,
-        label="rev. fixed point forward",
+        label="rev. fixed point",
         color=MODE_COLORS["fixed"],
     )
     ax_state.plot(
@@ -229,7 +345,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         analytical_history,
         linestyle="dotted",
         linewidth=2,
-        label="analytical forward",
+        label="analytical",
         color=MODE_COLORS["analytical"],
     )
 
@@ -252,11 +368,17 @@ def plot_analytical_vs_fixed(params, fixed_result):
     ax_state.set_xlim(0, params["dt"] * params["Nsteps"])
     if "ylim" in params:
         ax_state.set_ylim(*params["ylim"])
-    ax_state.legend(loc="best", fontsize="medium")
+    ax_state.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=2,
+        fontsize="small",
+        borderaxespad=0.0,
+    )
 
     ax_error.set_xlabel("time (s)", fontsize="large")
     ax_error.set_ylabel(r"$\Delta\sigma_{xx}$", fontsize="large")
-    ax_error.legend(loc="best", fontsize="medium")
+    ax_error.legend(loc="best", fontsize="small")
 
     fig.tight_layout()
     return fig
