@@ -1,8 +1,11 @@
 """
 Generate the Paper 1 squeeze-map lattice figure.
 
-The finite points are produced by `squeezeE` in `src/arithmetic.h` through a
-small C++ helper. The dashed boundary is the real-valued squeeze reference.
+The orange points are the fixed-precision lattice produced by `squeezeE` in
+`src/arithmetic.h` through a small C++ helper; in the right column they are the
+image of that lattice under the discrete rational squeeze S_{p/q}. The dashed
+boundary is the continuous squeeze reference Sigma_{p/q}, i.e. the infinite-
+precision limit of the discrete map.
 """
 
 from __future__ import annotations
@@ -131,10 +134,11 @@ def main() -> None:
             rasterized=True,
         )
         initial_ax.plot(initial_box[:, 0], initial_box[:, 1], color="0.2", linewidth=1.3)
+        exponent = refinement.bit_length() - 1  # refinement = 2**exponent
         initial_ax.text(
             0.05,
             common_ylim[1] - 0.04 * (common_ylim[1] - common_ylim[0]),
-            rf"spacing $=1/{refinement}$",
+            rf"$h = 2^{{-{exponent}}}$",
             ha="left",
             va="top",
             fontsize="small",
@@ -176,8 +180,8 @@ def main() -> None:
         mapped_ax.yaxis.set_label_position("right")
         mapped_ax.set_xticks([0.0, x_scale])
         mapped_ax.set_yticks([0.0, x_star_scale])
-        mapped_ax.set_xticklabels([r"$0$", r"$1\times \frac{p}{q}$"])
-        mapped_ax.set_yticklabels([r"$0$", r"$1\div(\frac{p}{q})$"])
+        mapped_ax.set_xticklabels([r"$0$", r"$\frac{p}{q}$"])
+        mapped_ax.set_yticklabels([r"$0$", r"$\frac{q}{p}$"])
         set_square_axes(mapped_ax, common_xlim, common_ylim)
 
     for initial_ax, mapped_ax in zip(initial_axes, mapped_axes):
@@ -219,7 +223,7 @@ def main() -> None:
                 linewidth=1.6,
             ),
         ],
-        ["finite integer-lattice map", "real-valued squeeze reference"],
+        [r"discrete map $S_{p/q}$", r"continuous squeeze $\Sigma_{p/q}$"],
         loc="lower center",
         ncol=2,
         frameon=False,
