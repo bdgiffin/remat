@@ -337,7 +337,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         times,
         fixed_history,
         linewidth=1.6,
-        label="rev. fixed point",
+        label="rev. fixed-point",
         color=MODE_COLORS["fixed"],
     )
     ax_state.plot(
@@ -393,7 +393,7 @@ def summarize_diagnostics(params, fixed_result):
     print("-" * 80)
     print(f"Scenario: {params['description']}")
     print(f"  duration = {params['dt'] * params['Nsteps']:.3f}s, dt = {params['dt']}, tau = {params['relaxation_time']}")
-    print(f"  forward max|rev. fixed point - analytical| = {metrics['max_abs']:.6e}")
+    print(f"  forward max|rev. fixed-point - analytical| = {metrics['max_abs']:.6e}")
     print(f"  forward relative L2 error   = {metrics['rel_l2']:.6e}")
     print("-" * 80)
     return metrics

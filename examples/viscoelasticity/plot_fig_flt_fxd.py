@@ -195,8 +195,8 @@ MODE_COLORS = {
     "fixed": "#f9826bff",
 }
 MODE_LABELS = {
-    "float": "floating point",
-    "fixed": "rev. fixed point",
+    "float": "floating-point",
+    "fixed": "rev. fixed-point",
 }
 MODE_OVERFLOW_LIMITS = {
     "float": 1.0e56,
@@ -353,7 +353,7 @@ def summarize_diagnostics(params, precision_results):
     print("-" * 80)
     print(f"Scenario: {params['description']}")
     print(f"  duration = {params['dt'] * params['Nsteps']:.3f}s, dt = {params['dt']}, tau = {params['relaxation_time']}")
-    print(f"  forward max|rev. fixed point - floating point| = {metrics['max_abs']:.6e}")
+    print(f"  forward max|rev. fixed-point - floating-point| = {metrics['max_abs']:.6e}")
     print(f"  forward relative L2 error   = {metrics['rel_l2']:.6e}")
     print("-" * 80)
 

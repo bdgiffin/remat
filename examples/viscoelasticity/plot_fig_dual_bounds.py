@@ -239,7 +239,7 @@ def compute_predicted_bounds(times, relaxation_time, y0, dt, overflow_limit):
     # The Lyapunov growth rate lambda=1/tau
     lower = np.maximum(y0 * np.exp(times / relaxation_time), MIN_POSITIVE_BOUND)
 
-    # Assumption: model worst-case roundoff accumulation with R(dt)=exp(dt/tau)/dt.
+    # Assumption: model worst-case round-off accumulation with R(dt)=exp(dt/tau)/dt.
     r_max = np.exp(dt / relaxation_time) / dt
     upper = (y0 + r_max * relaxation_time) * np.exp(times / relaxation_time) - r_max * relaxation_time
 
@@ -247,10 +247,10 @@ def compute_predicted_bounds(times, relaxation_time, y0, dt, overflow_limit):
         upper = np.minimum(upper, overflow_limit)
 
     base = y0 + r_max * relaxation_time
-    limit_plus_roundoff = None if overflow_limit is None else overflow_limit + r_max * relaxation_time
+    limit_plus_round_off = None if overflow_limit is None else overflow_limit + r_max * relaxation_time
     t_max = None
-    if limit_plus_roundoff and base > 0:
-        t_max = (np.log(limit_plus_roundoff) - np.log(base)) * relaxation_time
+    if limit_plus_round_off and base > 0:
+        t_max = (np.log(limit_plus_round_off) - np.log(base)) * relaxation_time
 
     return lower, upper, t_max
 
