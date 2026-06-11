@@ -163,7 +163,7 @@ STATE_TO_PLOT = "axial_strain"
 SCENARIOS = [
 
     {
-        "relaxation_time": 0.1,
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
@@ -172,7 +172,7 @@ SCENARIOS = [
         "overflow_limit": 1e6,
     },
         {
-        "relaxation_time": 0.1,
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
@@ -181,7 +181,7 @@ SCENARIOS = [
         "overflow_limit": 1e6,
     },
     {
-        "relaxation_time": 0.1,
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
@@ -190,7 +190,7 @@ SCENARIOS = [
         "overflow_limit": 1e6,
     },
     {
-        "relaxation_time": 0.1,
+        "relaxation_time": 0.3,
         "dt": 1.0e-3,
         "Nsteps": 15000,
         "Nsub_steps": 1,
