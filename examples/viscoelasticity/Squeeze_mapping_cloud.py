@@ -1,10 +1,11 @@
 """
 Generate the Paper 1 squeeze-map deformation progression figure.
 
-It places each initial fixed-point lattice directly before its image under
-S_{p/q}. Tile color is assigned from the initial x coordinate, so the mapped
-cloud records how columns of the original lattice are carried by the discrete
-squeeze map.
+It places each initial fixed-point lattice directly before its image under the
+fixed-point realization of S_{p/q}. The integer squeeze map is applied to the
+mantissas, and the returned mantissas are rescaled by the lattice spacing h.
+Tile color is assigned from the initial z_1 coordinate, so the mapped cloud
+records how columns of the original lattice are carried by the fixed-point map.
 """
 
 from __future__ import annotations
@@ -133,7 +134,7 @@ def draw_gradient_key(ax) -> None:
     ax.tick_params(axis="x", labelsize="small", length=0, pad=1)
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_xlabel(r"initial column $x$", fontsize="medium", labelpad=1)
+    ax.set_xlabel(r"initial column $z_1$", fontsize="medium", labelpad=1)
 
 
 def draw_points(ax, points: np.ndarray, colors: np.ndarray, refinement: int) -> None:
@@ -184,8 +185,11 @@ def style_axes(
     ax.set_xlim(*x_limits)
     ax.set_ylim(*y_limits)
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel(r"$x$", fontsize="large", labelpad=0)
-    ax.set_ylabel(r"$x^*$" if show_ylabel else "", fontsize="large", labelpad=1)
+    ax.set_xlabel(r"$z_1$", fontsize="large", labelpad=0)
+    ax.set_ylabel(r"$z_2$" if show_ylabel else "", fontsize="large", labelpad=1)
+    if show_ylabel:
+        square_center = (0.5 - y_limits[0]) / (y_limits[1] - y_limits[0])
+        ax.yaxis.label.set_y(square_center)
     ax.set_xticks(xticks)
     ax.set_yticks(yticks)
     ax.set_xticklabels(xticklabels)
@@ -274,7 +278,7 @@ def add_transform_arrow(fig, left_ax, right_ax) -> None:
     fig.text(
         0.5 * (x_start + x_end),
         y_position +.02,
-        r"$S_{p/q}$",
+        r"$\widehat{S}_{p/q,h}$",
         ha="center",
         va="bottom",
         fontsize="small",
@@ -322,11 +326,12 @@ def main() -> None:
         [r"continuous reference $S^{\mathbb{R}}_{p/q}$"],
         loc="lower center",
         frameon=False,
-        fontsize="medium",
-        bbox_to_anchor=(0.5, 0.015),
+        fontsize="small",
+        bbox_to_anchor=(0.5, 0.15),
+        borderaxespad=0.0,
     )
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUTPUT, dpi=200)
+    fig.savefig(OUTPUT, dpi=200, bbox_inches="tight", pad_inches=0.02)
     plt.close(fig)
     print(f"Wrote {OUTPUT}")
 
