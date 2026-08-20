@@ -181,7 +181,7 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
-        "overflow_limit": 550,
+        "overflow_limit": 1e6,
     },
     # {
     #     "relaxation_time": 0.3,
@@ -323,7 +323,7 @@ def main():
         y_max_values.append(np.max([history.max(), upper.max()]))
 
     ax.set_xlabel("time (s)", fontsize="large")
-    ax.set_ylabel("dual variable", fontsize="large")
+    ax.set_ylabel("ancillary variable", fontsize="large")
     # ax.legend(loc="lower right", bbox_to_anchor=(0.0, 1.0), fontsize=10)
     ax.legend(loc="lower right", fontsize='medium')
 
@@ -355,7 +355,7 @@ def main():
 
 
     fig.tight_layout()
-    fig.savefig("dual_bounds.svg", dpi=200)
+    fig.savefig("dual_bounds.pdf", dpi=200)
 
 
 if __name__ == "__main__":
