@@ -123,7 +123,21 @@ struct SystemBase {
 
   // Request the current analysis time
   virtual double get_time(void) = 0;
-  
+
+  // ===================================================================== //
+
+  // Request the number of raw element state values (all integration points)
+  virtual int get_num_raw_element_state(void) = 0;
+
+  // Request a copy of the raw element state values (all integration points)
+  virtual void get_raw_element_state(double* state_data) = 0;
+
+  // Request the number of bytes currently held in overflow (flush) records
+  virtual long get_overflow_record_bytes(void) = 0;
+
+  // Request the number of bytes currently held in the time/time-step history
+  virtual long get_time_history_bytes(void) = 0;
+
   // ===================================================================== //
 
   // Clear global adjoint state (u*, v*, kick seeds and global adjoint accumulators)
@@ -1032,7 +1046,39 @@ struct System : public SystemBase {
 
   // Request the current analysis time
   virtual double get_time(void) { return m_time; }
-  
+
+  // ===================================================================== //
+
+  // Request the number of raw element state values (all integration points)
+  virtual int get_num_raw_element_state(void) { return int(state.size()); }
+
+  // Request a copy of the raw element state values (all integration points)
+  virtual void get_raw_element_state(double* state_data) {
+    for (std::size_t i=0; i<state.size(); i++) {
+      state_data[i] = state[i];
+    }
+  } // get_raw_element_state()
+
+  // Request the number of bytes currently held in overflow (flush) records
+  virtual long get_overflow_record_bytes(void) {
+    long bytes = 0;
+    for (auto& v_overflow_n : v_overflow) {
+      bytes += long(v_overflow_n.size()*sizeof(FixedV));
+    }
+    for (auto& overflow_e : element_state_overflow) {
+      bytes += long(overflow_e.size()*sizeof(Real));
+    }
+    for (auto& overflow_e : truss_state_overflow) {
+      bytes += long(overflow_e.size()*sizeof(Real));
+    }
+    return bytes;
+  } // get_overflow_record_bytes()
+
+  // Request the number of bytes currently held in the time/time-step history
+  virtual long get_time_history_bytes(void) {
+    return long((m_time_history.size() + m_dt_history.size())*sizeof(Real));
+  } // get_time_history_bytes()
+
   // ===================================================================== //
 
   virtual void clear_adjoint_state(void) {

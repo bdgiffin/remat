@@ -2,7 +2,7 @@
 
 # Python package for calling C/C++ functions from Python
 from ctypes import CDLL, POINTER, CFUNCTYPE
-from ctypes import c_size_t, c_double, c_int, c_char_p, c_bool
+from ctypes import c_size_t, c_double, c_int, c_char_p, c_bool, c_long
 
 # Other needed Python packages
 import sys, platform
@@ -105,6 +105,14 @@ API.get_fields.argtypes       = [c_char_p, ND_POINTER_2]
 API.get_fields.restype        = None
 API.get_time.argtypes         = None
 API.get_time.restype          = c_double
+API.get_num_raw_element_state.argtypes = None
+API.get_num_raw_element_state.restype  = c_int
+API.get_raw_element_state.argtypes     = [ND_POINTER_1]
+API.get_raw_element_state.restype      = None
+API.get_overflow_record_bytes.argtypes = None
+API.get_overflow_record_bytes.restype  = c_long
+API.get_time_history_bytes.argtypes    = None
+API.get_time_history_bytes.restype     = c_long
 
 # Pass phases for explicit solver direction control
 PASS_FORWARD = 0

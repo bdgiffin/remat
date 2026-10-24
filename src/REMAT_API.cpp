@@ -269,7 +269,21 @@ extern "C" {
 
   // Request the current analysis time
   double get_time(void) { return remat->get_time(); }
-  
+
+  // ------------------------------------------------------------------------ //
+
+  // Request the number of raw element state values (all integration points)
+  int get_num_raw_element_state(void) { return remat->get_num_raw_element_state(); }
+
+  // Request a copy of the raw element state values (all integration points)
+  void get_raw_element_state(double* state_data) { remat->get_raw_element_state(state_data); }
+
+  // Request the number of bytes currently held in overflow (flush) records
+  long get_overflow_record_bytes(void) { return remat->get_overflow_record_bytes(); }
+
+  // Request the number of bytes currently held in the time/time-step history
+  long get_time_history_bytes(void) { return remat->get_time_history_bytes(); }
+
   // ------------------------------------------------------------------------ //
   
 } // extern "C"
