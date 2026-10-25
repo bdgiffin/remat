@@ -138,6 +138,15 @@ struct SystemBase {
   // Request the number of bytes currently held in the time/time-step history
   virtual long get_time_history_bytes(void) = 0;
 
+  // Request the number of values in a solver-state snapshot
+  virtual int get_snapshot_size(void) = 0;
+
+  // Copy the solver state into a snapshot
+  virtual void save_snapshot(double* data) = 0;
+
+  // Restore the solver state from a snapshot saved earlier in the same analysis
+  virtual void load_snapshot(const double* data) = 0;
+
   // ===================================================================== //
 
   // Clear global adjoint state (u*, v*, kick seeds and global adjoint accumulators)
@@ -1078,6 +1087,74 @@ struct System : public SystemBase {
   virtual long get_time_history_bytes(void) {
     return long((m_time_history.size() + m_dt_history.size())*sizeof(Real));
   } // get_time_history_bytes()
+
+  // Snapshot layout: time, time step ID, overflow counter; per DoF the primal/dual
+  // displacement, velocity, and acceleration and the damping factor; the element and
+  // truss state; and the sizes of all overflow records. Positions, masses, forces, and
+  // energies are recomputed from these values at the next update.
+  static const int Nvals_per_dof = 7;
+
+  // Snapshot conversion: fixed-point values are stored by their integer mantissa
+  template<class T> static Real snapshot_value(const T& value) { return Real(value.mantissa); }
+  static Real snapshot_value(const Real& value) { return value; }
+  template<class T> static void snapshot_restore(Real data, T& value) { value.mantissa = Integer(data); }
+  static void snapshot_restore(Real data, Real& value) { value = data; }
+
+  // Request the number of values in a solver-state snapshot
+  virtual int get_snapshot_size(void) {
+    return 3 + Nvals_per_dof*Ndofs + int(state.size()) + int(truss_state.size()) + 1 + Nelems + Ntruss;
+  } // get_snapshot_size()
+
+  // Copy the solver state into a snapshot
+  virtual void save_snapshot(double* data) {
+    int k = 0;
+    data[k++] = m_time;
+    data[k++] = Real(m_time_step);
+    data[k++] = Real(m_overflow_counter);
+    for (int i=0; i<Ndofs; i++) {
+      data[k++] = snapshot_value(u[i].first);
+      data[k++] = snapshot_value(u[i].second);
+      data[k++] = snapshot_value(v[i].first);
+      data[k++] = snapshot_value(v[i].second);
+      data[k++] = a[i].first;
+      data[k++] = a[i].second;
+      data[k++] = alpha[i];
+    }
+    for (std::size_t i=0; i<state.size(); i++)       { data[k++] = state[i]; }
+    for (std::size_t i=0; i<truss_state.size(); i++) { data[k++] = truss_state[i]; }
+    data[k++] = Real(v_overflow.size());
+    for (int e=0; e<Nelems; e++) { data[k++] = Real(element_state_overflow[e].size()); }
+    for (int e=0; e<Ntruss; e++) { data[k++] = Real(truss_state_overflow[e].size()); }
+  } // save_snapshot()
+
+  // Restore the solver state from a snapshot saved earlier in the same analysis.
+  // Time histories and overflow records written after the snapshot are discarded.
+  virtual void load_snapshot(const double* data) {
+    int k = 0;
+    m_time             = data[k++];
+    m_time_step        = int(data[k++]);
+    m_overflow_counter = int(data[k++]);
+    for (int i=0; i<Ndofs; i++) {
+      snapshot_restore(data[k++], u[i].first);
+      snapshot_restore(data[k++], u[i].second);
+      snapshot_restore(data[k++], v[i].first);
+      snapshot_restore(data[k++], v[i].second);
+      a[i].first  = data[k++];
+      a[i].second = data[k++];
+      alpha[i]    = data[k++];
+    }
+    for (std::size_t i=0; i<state.size(); i++)       { state[i] = data[k++]; }
+    for (std::size_t i=0; i<truss_state.size(); i++) { truss_state[i] = data[k++]; }
+    if ((int(m_time_history.size()) < m_time_step) || (int(m_dt_history.size()) < m_time_step)) {
+      std::cout << "System::load_snapshot requires a snapshot saved earlier in the same analysis" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    m_time_history.resize(m_time_step);
+    m_dt_history.resize(m_time_step);
+    v_overflow.resize(std::size_t(data[k++]));
+    for (int e=0; e<Nelems; e++) { element_state_overflow[e].resize(std::size_t(data[k++])); }
+    for (int e=0; e<Ntruss; e++) { truss_state_overflow[e].resize(std::size_t(data[k++])); }
+  } // load_snapshot()
 
   // ===================================================================== //
 

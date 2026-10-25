@@ -189,21 +189,143 @@ def worker_verify(mode, n_steps, mat_limit, v_limit, out_npz):
     print(json.dumps(meta))
 
 
+def timed_step(dt, phase):
+    """Advance one step and return the time spent in the solver call."""
+    t0 = time.perf_counter()
+    REMAT.API.update_state(dt, 1, phase)
+    return time.perf_counter() - t0
+
+
 def worker_timing(mode, n_steps, mat_limit, v_limit, repeats):
+    """Solver time of the forward and backward passes (bit-reversible strategy)."""
     t_fwd, t_bwd = [], []
     for _ in range(repeats):
         setup(mode, mat_limit, v_limit)
         dt = inverse.DT
         with inverse.suppress_solver_output():
-            t0 = time.perf_counter()
-            for _ in range(n_steps):
-                REMAT.API.update_state(dt, 1, REMAT.PASS_FORWARD)
-            t_fwd.append(time.perf_counter() - t0)
-            t0 = time.perf_counter()
-            for _ in range(n_steps):
-                REMAT.API.update_state(dt, 1, REMAT.PASS_BACKWARD)
-            t_bwd.append(time.perf_counter() - t0)
+            t_fwd.append(sum(timed_step(dt, REMAT.PASS_FORWARD) for _ in range(n_steps)))
+            t_bwd.append(sum(timed_step(dt, REMAT.PASS_BACKWARD) for _ in range(n_steps)))
     print(json.dumps({"mode": mode, "t_forward": float(np.median(t_fwd)), "t_backward": float(np.median(t_bwd))}))
+
+
+# ----------------------------------------------------------------- checkpointing
+# A checkpoint holds the restart state of the double-precision calculation: time,
+# step and overflow counters, nodal displacement, velocity, and acceleration, and
+# the viscous strain at every integration point. The remaining entries of the
+# solver snapshot are material constants, which are taken from the initial
+# snapshot, or quantities recomputed at the next update.
+
+def snapshot_layout():
+    n_dofs = 2 * REMAT.API.get_num_entities(b"node")
+    n_raw = REMAT.API.get_num_raw_element_state()
+    dof0 = 3
+    state0 = dof0 + 7 * n_dofs
+    gp = np.arange(n_raw).reshape(-1, NUM_GP + 1, NUM_MAT_STATE)[:, 1:, VISCOUS].ravel()
+    dof = dof0 + 7 * np.arange(n_dofs)
+    return {
+        "size": REMAT.API.get_snapshot_size(),
+        "head": np.arange(3),
+        "u": dof + 0, "v": dof + 2, "a": dof + 4,
+        "viscous": state0 + gp,
+    }
+
+
+def save_snapshot(layout):
+    snap = np.zeros(layout["size"])
+    REMAT.API.save_snapshot(snap)
+    return snap
+
+
+def restart_state(snap, layout):
+    return np.concatenate([snap[layout[k]] for k in ("head", "u", "v", "a", "viscous")])
+
+
+def level_state(snap, layout):
+    """State recovered at each time level: nodal u and v and integration-point viscous strain."""
+    return np.concatenate([snap[layout[k]] for k in ("u", "v", "viscous")])
+
+
+def load_restart(template, restart, layout):
+    snap = template.copy()
+    k = 0
+    for key in ("head", "u", "v", "a", "viscous"):
+        n = layout[key].size
+        snap[layout[key]] = restart[k:k + n]
+        k += n
+    REMAT.API.load_snapshot(snap)
+
+
+def checkpoint_levels(n_steps):
+    k = math.ceil(math.sqrt(n_steps))
+    starts = list(range(0, n_steps, k))
+    return k, [(n0, min(n0 + k, n_steps)) for n0 in starts]
+
+
+def worker_checkpoint(n_steps, mat_limit, v_limit, repeats):
+    """Uniform sqrt(N) checkpointing of the double-precision calculation.
+
+    The verification pass stores every level, restarts each segment from its
+    checkpoint restart state alone, and compares every recomputed level with the
+    stored forward level. The timed passes record the solver time of the forward
+    pass and of the recomputation; copies of states to and from storage are not
+    timed for any strategy.
+    """
+    dt = inverse.DT
+    k, segments = checkpoint_levels(n_steps)
+
+    # Verification (floating point needs no ancillary flushes)
+    setup("float_visco", v_limit, v_limit)
+    layout = snapshot_layout()
+    with inverse.suppress_solver_output():
+        template = save_snapshot(layout)
+        reference = [restart_state(template, layout)]
+        for _ in range(n_steps):
+            REMAT.API.update_state(dt, 1, REMAT.PASS_FORWARD)
+            reference.append(restart_state(save_snapshot(layout), layout))
+        mismatches, recomputed = 0, 0
+        for n0, n1 in reversed(segments):
+            load_restart(template, reference[n0], layout)
+            mismatches += int(np.count_nonzero(restart_state(save_snapshot(layout), layout) != reference[n0]))
+            for n in range(n0 + 1, n1):
+                REMAT.API.update_state(dt, 1, REMAT.PASS_FORWARD)
+                recomputed += 1
+                mismatches += int(np.count_nonzero(restart_state(save_snapshot(layout), layout) != reference[n]))
+    restart_values = int(reference[0].size)
+    level_values = int(level_state(template, layout).size)
+    del reference
+
+    # Timing
+    t_fwd, t_rec, t_restore = [], [], []
+    for _ in range(repeats):
+        setup("float_visco", v_limit, v_limit)
+        with inverse.suppress_solver_output():
+            template = save_snapshot(layout)
+            checkpoints = {}
+            tf = 0.0
+            for n in range(n_steps):
+                if n % k == 0:
+                    checkpoints[n] = restart_state(save_snapshot(layout), layout)
+                tf += timed_step(dt, REMAT.PASS_FORWARD)
+            tr, tl = 0.0, 0.0
+            for n0, n1 in reversed(segments):
+                t0 = time.perf_counter()
+                load_restart(template, checkpoints[n0], layout)
+                tl += time.perf_counter() - t0
+                for _ in range(n0 + 1, n1):
+                    tr += timed_step(dt, REMAT.PASS_FORWARD)
+        t_fwd.append(tf); t_rec.append(tr); t_restore.append(tl)
+
+    print(json.dumps({
+        "segment_length": k,
+        "n_checkpoints": len(segments),
+        "recomputed_steps": recomputed,
+        "restart_mismatches": mismatches,
+        "restart_values": restart_values,
+        "level_values": level_values,
+        "t_forward": float(np.median(t_fwd)),
+        "t_recompute": float(np.median(t_rec)),
+        "t_restore": float(np.median(t_restore)),
+    }))
 
 
 def build_strict_package(dest):
@@ -227,27 +349,36 @@ def spawn(args, package=None):
     return json.loads(out[-1])
 
 
-def storage_summary(meta, timing_fixed, timing_float):
-    """Bytes needed for backward access to every forward state, for each strategy."""
+def storage_summary(meta, timing_fixed, ckpt):
+    """Bytes and solver times for backward access to every forward state, for each strategy."""
     n = meta["n_steps"]
-    n_nodes, n_ip = meta["n_nodes"], meta["n_integration_points"]
-    # Persistent forward state per step: nodal u and v (2 components each), viscous strain at each integration point
-    state_bytes = 8 * (4 * n_nodes + 3 * n_ip)
-    k = math.ceil(math.sqrt(n))
-    n_ckpt = math.ceil(n / k)
+    n_ip = meta["n_integration_points"]
+    level_bytes = 8 * ckpt["level_values"]        # nodal u and v, integration-point viscous strain
+    restart_bytes = 8 * ckpt["restart_values"]    # level state plus nodal acceleration and counters
+    full_time = ckpt["t_forward"]
+    ckpt_time = ckpt["t_forward"] + ckpt["t_recompute"] + ckpt["t_restore"]
+    rev_bytes = meta["peak_overflow_record_bytes"] + 8 * 3 * n_ip + meta["time_history_bytes"]
+    rev_time = timing_fixed["t_forward"] + timing_fixed["t_backward"]
     return {
-        "state_bytes_per_step": state_bytes,
-        "full_storage_bytes": state_bytes * (n + 1),
-        "checkpoint_bytes": state_bytes * (n_ckpt + k),
-        "checkpoint_extra_forward_steps": n - n_ckpt,
-        "checkpoint_time_estimate": timing_float["t_forward"] * (2.0 - n_ckpt / n),
+        "level_bytes": level_bytes,
+        "restart_bytes": restart_bytes,
+        "full_storage_bytes": level_bytes * (n + 1),
+        "checkpoint_bytes": restart_bytes * ckpt["n_checkpoints"] + level_bytes * ckpt["segment_length"],
+        "checkpoint_recomputed_steps": ckpt["recomputed_steps"],
         "reversible_record_bytes": meta["peak_overflow_record_bytes"],
         "reversible_ancillary_bytes": 8 * 3 * n_ip,
         "reversible_time_history_bytes": meta["time_history_bytes"],
-        "reversible_time": timing_fixed["t_forward"] + timing_fixed["t_backward"],
-        "float_forward_time": timing_float["t_forward"],
-        "fixed_forward_time": timing_fixed["t_forward"],
-        "fixed_backward_time": timing_fixed["t_backward"],
+        "reversible_bytes": rev_bytes,
+        "full_storage_time": full_time,
+        "checkpoint_forward_time": ckpt["t_forward"],
+        "checkpoint_backward_time": ckpt["t_recompute"] + ckpt["t_restore"],
+        "checkpoint_time": ckpt_time,
+        "reversible_forward_time": timing_fixed["t_forward"],
+        "reversible_backward_time": timing_fixed["t_backward"],
+        "reversible_time": rev_time,
+        "checkpoint_time_ratio": ckpt_time / full_time,
+        "reversible_time_ratio": rev_time / full_time,
+        "reversible_over_checkpoint_time": rev_time / ckpt_time,
     }
 
 
@@ -316,10 +447,10 @@ def plot(results):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--worker", choices=["verify", "timing"])
+    parser.add_argument("--worker", choices=["verify", "timing", "checkpoint"])
     parser.add_argument("--mode", default="fixed_visco")
     parser.add_argument("--steps", type=int, default=N_STEPS)
-    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--plot-only", action="store_true")
     parser.add_argument("--package", default=None)
     parser.add_argument("--tag", default="")
@@ -336,6 +467,9 @@ def main():
     if args.worker == "timing":
         worker_timing(args.mode, args.steps, mat_limit, v_limit, args.repeats)
         return
+    if args.worker == "checkpoint":
+        worker_checkpoint(args.steps, mat_limit, v_limit, args.repeats)
+        return
 
     if args.plot_only:
         results = json.loads(OUT_JSON.read_text())
@@ -345,14 +479,16 @@ def main():
             pkg = build_strict_package(Path(tmpdir) / "package")
             for mode in ["fixed_visco", "float_visco"]:
                 results[mode] = spawn(["--worker", "verify", "--mode", mode, "--steps", str(args.steps)], pkg)
-            timing = {mode: spawn(["--worker", "timing", "--mode", mode, "--steps", str(args.steps),
+            timing = {"fixed_visco": spawn(["--worker", "timing", "--mode", "fixed_visco", "--steps",
+                                            str(args.steps), "--repeats", str(args.repeats)], pkg)}
+            checkpointing = spawn(["--worker", "checkpoint", "--steps", str(args.steps),
                                    "--repeats", str(args.repeats)], pkg)
-                      for mode in ["fixed_visco", "float_visco"]}
         # Same check with the default installed build (floating-point contraction enabled)
         results["fixed_visco_default_build"] = spawn(
             ["--worker", "verify", "--mode", "fixed_visco", "--steps", str(args.steps), "--tag", "_default_build"])
         results["timing"] = timing
-        results["storage"] = storage_summary(results["fixed_visco"], timing["fixed_visco"], timing["float_visco"])
+        results["checkpointing"] = checkpointing
+        results["storage"] = storage_summary(results["fixed_visco"], timing["fixed_visco"], checkpointing)
         OUT_JSON.write_text(json.dumps(results, indent=2))
     print(json.dumps(results, indent=2))
     plot(results)

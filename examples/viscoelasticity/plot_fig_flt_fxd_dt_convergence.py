@@ -1,5 +1,6 @@
 from math import pi, sin
 from contextlib import contextmanager
+import json
 import os
 import sys
 import matplotlib.pyplot as plt
@@ -216,10 +217,22 @@ MODE_COLORS = {
     "float": "#2b738eff",
     "fixed": "#f9826bff",
 }
-MODE_OVERFLOW_LIMITS = {
-    "float": 1.0e56,
-    "fixed": 1000.0,
-}
+FLOAT_OVERFLOW_LIMIT = 1.0e56
+INT32_MAX = 2**31 - 1
+Y_MAX = 2**30  # half of the int32 range, kept as headroom
+
+
+def fixed_flush_interval(dt, tau):
+    """Ancillary flush interval from eq:flush-time (y0 = 0, worst-case remainder rate R = q/dt).
+
+    A fixed interval for all time steps lets the ancillary overflow at coarse dt,
+    which breaks bit-reversibility, so the interval is sized for each dt.
+    """
+    q = int(np.sqrt(INT32_MAX))
+    p = int(np.exp(-dt / tau) * q)
+    tau_eff = dt / np.log(q / p)  # growth rate of the ancillary under the rational factor q/p
+    t_max = tau_eff * np.log(1.0 + Y_MAX / ((q / dt) * tau_eff))
+    return float(max(1, int(t_max / dt)))
 
 # Evaluate Delta t from 1e-5 to 1e-1 s with a fixed duration.
 DT_VALUES = np.logspace(-5, -1, num=9)
@@ -246,9 +259,25 @@ def compute_analytical_stress(times, params):
         raise ValueError("No analytical solution implemented for this bc.")
 
 
+def count_backward_mismatches(history):
+    """Compare the backward state at each time level with the forward state."""
+    forward, backward = history["forward"], history["backward"]
+    n = forward.size
+    # backward[j] holds level n-1-j; forward[i] holds level i+1; level 0 is the zero initial state
+    mismatches = int(np.count_nonzero(backward[: n - 1] != forward[n - 2 :: -1]))
+    return mismatches + int(backward[n - 1] != 0.0)
+
+
 def run_precision_suite(params, quiet=True):
     results = {}
     for mode_name, integrator in PRECISION_MODES:
+        fixed = mode_name == "fixed"
+        if fixed:
+            overflow_limit = fixed_flush_interval(params["dt"], params["relaxation_time"])
+            record_states = (STATE_TO_PLOT, "viscous_strain", "dual_viscous_strain")
+        else:
+            overflow_limit = FLOAT_OVERFLOW_LIMIT
+            record_states = (STATE_TO_PLOT,)
         with suppress_c_stdout(quiet):
             results[mode_name] = run_truss_relaxation(
                 dt=params["dt"],
@@ -257,10 +286,17 @@ def run_precision_suite(params, quiet=True):
                 epsilon0=params["epsilon0"],
                 bc_name=params["bc_name"],
                 relaxation_time=params["relaxation_time"],
-                include_backward=False,
-                record_states=(STATE_TO_PLOT,),
+                include_backward=fixed,
+                record_states=record_states,
                 set_integrator_type=integrator,
-                overflow_limit=MODE_OVERFLOW_LIMITS[mode_name],
+                overflow_limit=overflow_limit,
+            )
+        if fixed:
+            histories = results[mode_name]["state_history"]
+            results[mode_name]["flush_interval"] = int(overflow_limit)
+            results[mode_name]["backward_mismatches"] = sum(
+                count_backward_mismatches(histories[name])
+                for name in ("viscous_strain", "dual_viscous_strain")
             )
     return results
 
@@ -291,6 +327,8 @@ def evaluate_time_step_convergence(dt_values, scenario):
                 "float_err": float_err,
                 "fixed_l2_error": fixed_l2_error,
                 "fixed_err": fixed_err,
+                "fixed_flush_interval": precision_results["fixed"]["flush_interval"],
+                "fixed_backward_mismatches": precision_results["fixed"]["backward_mismatches"],
             }
         )
 
@@ -304,6 +342,10 @@ def evaluate_time_step_convergence(dt_values, scenario):
         print(
             f"  fixed L2 error = {fixed_l2_error:.6e}, "
             f"relative = {fixed_err:.6e}"
+        )
+        print(
+            f"  fixed flush interval = {results[-1]['fixed_flush_interval']} steps, "
+            f"backward mismatches (viscous strain + ancillary) = {results[-1]['fixed_backward_mismatches']}"
         )
     return results
 
@@ -387,6 +429,8 @@ def plot_dt_errors(dt_results, scenario):
 
 def main():
     dt_results = evaluate_time_step_convergence(DT_VALUES, SCENARIO)
+    with open("flt_vs_fxd_dt_convergence.json", "w", encoding="utf-8") as f:
+        json.dump(dt_results, f, indent=2)
     #print_convergence_orders(dt_results)
     fig = plot_dt_errors(dt_results, SCENARIO)
     fig.savefig(

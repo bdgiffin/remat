@@ -284,6 +284,15 @@ extern "C" {
   // Request the number of bytes currently held in the time/time-step history
   long get_time_history_bytes(void) { return remat->get_time_history_bytes(); }
 
+  // Request the number of values in a solver-state snapshot
+  int get_snapshot_size(void) { return remat->get_snapshot_size(); }
+
+  // Copy the solver state into a snapshot
+  void save_snapshot(double* data) { remat->save_snapshot(data); }
+
+  // Restore the solver state from a snapshot saved earlier in the same analysis
+  void load_snapshot(double* data) { remat->load_snapshot(data); }
+
   // ------------------------------------------------------------------------ //
   
 } // extern "C"

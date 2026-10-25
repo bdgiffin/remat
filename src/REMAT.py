@@ -113,6 +113,12 @@ API.get_overflow_record_bytes.argtypes = None
 API.get_overflow_record_bytes.restype  = c_long
 API.get_time_history_bytes.argtypes    = None
 API.get_time_history_bytes.restype     = c_long
+API.get_snapshot_size.argtypes         = None
+API.get_snapshot_size.restype          = c_int
+API.save_snapshot.argtypes             = [ND_POINTER_1]
+API.save_snapshot.restype              = None
+API.load_snapshot.argtypes             = [ND_POINTER_1]
+API.load_snapshot.restype              = None
 
 # Pass phases for explicit solver direction control
 PASS_FORWARD = 0
