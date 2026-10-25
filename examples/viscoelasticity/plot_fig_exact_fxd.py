@@ -7,6 +7,7 @@ import numpy as np
 sys.path.append("../../install/package/")
 
 import REMAT
+from plot_fig_flt_fxd_dt_convergence import fixed_flush_interval
 
 plt.rcParams.update(
     {
@@ -282,7 +283,6 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
-        "overflow_limit": 100.0e0,
         "ylim": (-0.025, 0.105),
     },
     {
@@ -293,7 +293,6 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_constant_rate",
-        "overflow_limit": 100.0e0,
         "ylim": (0.0, 0.045),
     },
     {
@@ -304,7 +303,6 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.1,
         "bc_name": "right_node_sinusoidal",
-        "overflow_limit": 100.0e0,
         "ylim": (-0.025, 0.025),
     },
     {
@@ -315,7 +313,6 @@ SCENARIOS = [
         "Nsub_steps": 1,
         "epsilon0": 0.2,
         "bc_name": "right_node_clipped_sinusoid",
-        "overflow_limit": 100.0e0,
         "ylim": (-0.045, 0.045),
     },
 ]
@@ -409,7 +406,8 @@ def main():
             bc_name=params["bc_name"],
             relaxation_time=params["relaxation_time"],
             record_states=(STATE_TO_PLOT,),
-            overflow_limit=params["overflow_limit"],
+            # ancillary flush interval from eq:flush-time, as in the time-step study
+            overflow_limit=fixed_flush_interval(params["dt"], params["relaxation_time"]),
         )
         summarize_diagnostics(params, fixed_result)
         fig = plot_analytical_vs_fixed(params, fixed_result)
