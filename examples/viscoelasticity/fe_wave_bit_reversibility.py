@@ -430,7 +430,7 @@ def plot(results):
     ax1.text(0.02 * t_end, M_MAX * 0.6, r"sizing level $m_{\max}$", fontsize="small", va="top")
     ax1.set_ylim(top=INT32_MAX * 12)
     ax1.set_xlim(0.0, t_end)
-    ax1.set_xlabel("time (s)", fontsize="large")
+    ax1.set_xlabel("time", fontsize="large")
     ax1.set_ylabel("max ancillary mantissa", fontsize="large")
     ax1.set_title("(b) ancillary growth with flushes", fontsize="medium")
 
@@ -439,7 +439,7 @@ def plot(results):
     ax2.semilogy(t, np.maximum(fl["err_q"], 1e-18), color="#f9826bff", linewidth=1.6, linestyle="--",
                  label="viscous strain")
     ax2.set_xlim(0.0, t_end)
-    ax2.set_xlabel("time (s)", fontsize="large")
+    ax2.set_xlabel("time", fontsize="large")
     ax2.set_ylabel("relative backward error", fontsize="large")
     ax2.set_title("(c) floating point (fixed point: 0)", fontsize="medium")
     ax2.legend(fontsize="small", frameon=False)

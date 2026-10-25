@@ -1,4 +1,4 @@
-"""Finite-precision contributions to the time-step study of Section 9.
+"""Finite-precision contributions to the time-step study (sec:accuracy of Paper 1).
 
 The fixed-point Maxwell update has two truncation errors that grow as dt/tau
 decreases:
@@ -6,9 +6,14 @@ decreases:
     which lowers the viscous strain and raises the stress;
   - the numerator p = floor(A q) makes p/q slightly smaller than A, which shortens
     the effective relaxation time and lowers the stress.
-To separate them, REMAT is recompiled with a 100 times smaller lattice spacing
-and/or a larger common denominator q, and the forward constant-rate study of
-plot_fig_flt_fxd_dt_convergence.py is repeated for each build.
+To separate them, REMAT is recompiled with a 100 times smaller lattice spacing,
+which removes the first error, and the forward constant-rate study of
+plot_fig_flt_fxd_dt_convergence.py is repeated for both builds.
+
+A larger denominator q is not used. The ancillary mantissa is int32, and for
+q = 2^24 eq:flush-time requires a flush about every 60 steps, whereas
+fixed_flush_interval sizes the flush for q = 46340, so such a build overflows
+the ancillary and is no longer bit-reversible.
 
 Output: dt_convergence_finite_precision.json
 
@@ -34,16 +39,13 @@ THIS_DIR = Path(__file__).resolve().parent
 SRC_DIR = THIS_DIR.parent.parent / "src"
 
 DEFAULT_Q = "std::sqrt(std::numeric_limits<Integer>::max())"
-LARGE_Q = "(Integer(1)<<24)"
 VARIANTS = {
     "baseline": {"q": DEFAULT_Q, "exponent": -6},
-    "larger_q": {"q": LARGE_Q, "exponent": -6},
     "smaller_h": {"q": DEFAULT_Q, "exponent": -8},
-    "both": {"q": LARGE_Q, "exponent": -8},
 }
 COMPILE_FLAGS = ["-std=c++17", "-fPIC", "-O3", "-march=native"]
 # Integer is int32_t in src/types.h, so DEFAULT_Q evaluates to floor(sqrt(2^31 - 1)) = 46340
-Q_VALUES = {DEFAULT_Q: math.isqrt(np.iinfo(np.int32).max), LARGE_Q: 1 << 24}
+Q_VALUES = {DEFAULT_Q: math.isqrt(np.iinfo(np.int32).max)}
 RATE = 0.1  # epsilon0 of plot_fig_flt_fxd_dt_convergence.SCENARIO (constant-rate history)
 
 
@@ -153,6 +155,8 @@ def compare_model():
     worst = 0.0
     print(f"{'variant':>10} {'mode':>6} {'dt/tau':>10} {'measured':>10} {'model':>10}")
     for r in results:
+        if r["variant"] not in VARIANTS:
+            continue
         tau = r["dt"] / r["dt_over_tau"]
         if r["mode"] == "fixed":
             model = model_error(r["variant"], r["dt"], tau)

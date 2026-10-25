@@ -6,6 +6,7 @@ import numpy as np
 sys.path.append("../../install/package/")
 
 import REMAT
+from plot_fig_flt_fxd_dt_convergence import fixed_flush_interval
 
 plt.rcParams.update(
     {
@@ -175,7 +176,8 @@ def run_truss_relaxation(
 
 STATE_X_TO_PLOT = "axial_strain"
 STATE_Y_TO_PLOT = "axial_stress"
-overflow_limit_value = 30
+# ancillary flush interval from eq:flush-time (N_max = 1303 for tau = 0.3, dt = 1e-3)
+overflow_limit_value = fixed_flush_interval(1.0e-3, 0.3)
 INTEGRATOR_MODES = [
     (b"float_truss_visco", "stress_vs_strain_float"),
     (b"fixed_truss_visco", "stress_vs_strain_Fixed"),
