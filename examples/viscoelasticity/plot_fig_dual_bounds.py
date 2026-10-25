@@ -254,7 +254,7 @@ def compute_predicted_bounds(times, relaxation_time, dt, y_anchor):
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(7.5, 4.0))
+    fig, ax = plt.subplots(figsize=(6, 3.5))  # same size as plot_fig_dual_vs_tau.py
     params = SCENARIOS[0]
     result = run_truss_relaxation(
         dt=params["dt"],
@@ -281,14 +281,14 @@ def main():
     ax.axhline(H * M_MAX, color="gray", linestyle=":", linewidth=1.0)
     ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"sizing level $h\,m_{\max}$", fontsize="small", va="bottom")
     ax.axvline(t_max, color="gray", linestyle=":", linewidth=1.0)
-    ax.text(t_max * 1.02, 1.5e-3, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom")
+    ax.text(t_max - 0.03, 2.0e-2, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom", ha="right")
 
     ax.set_xlabel("time (s)", fontsize="large")
-    ax.set_ylabel("ancillary variable", fontsize="large")
+    ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")
     ax.legend(loc="lower right", fontsize="medium", frameon=False)
     ax.set_yscale("log")
     ax.set_xlim(0.0, params["Nsteps"] * params["dt"])
-    ax.set_ylim(1.0e-3, 1.0e5)
+    ax.set_ylim(1.0e-2, 1.0e5)
 
     fig.tight_layout()
     fig.savefig("dual_bounds.pdf", dpi=200)
