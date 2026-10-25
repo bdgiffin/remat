@@ -338,7 +338,7 @@ def add_rate_marker(ax, x, y, rate, color, marker_offset, x_limit, duration):
     ax.text(
         text_x,
         np.sqrt(y * y_top),
-        rf"$r\approx{format_rate(rate)}\,\mathrm{{s}}^{{-1}}$",
+        rf"${format_rate(rate)}\,\mathrm{{s}}^{{-1}}$",
         color=color,
         fontsize=8,
         ha=ha,
