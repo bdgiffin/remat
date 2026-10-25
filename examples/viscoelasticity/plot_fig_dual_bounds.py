@@ -279,7 +279,7 @@ def main():
     ax.plot(times, upper, linestyle="--", linewidth=1.2, color="k",
             label="worst-case bound")
     ax.axhline(H * M_MAX, color="gray", linestyle=":", linewidth=1.0)
-    ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"sizing level $h\,m_{\max}$", fontsize="small", va="bottom")
+    ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"ancillary limit $h\,m_{\max}$", fontsize="small", va="bottom")
     ax.axvline(t_max, color="gray", linestyle=":", linewidth=1.0)
     ax.text(t_max - 0.03, 2.0e-2, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom", ha="right")
 

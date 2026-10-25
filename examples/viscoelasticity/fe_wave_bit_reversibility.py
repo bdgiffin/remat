@@ -427,11 +427,11 @@ def plot(results):
     ax1.axhline(INT32_MAX, color="k", linestyle="--", linewidth=1.0)
     ax1.axhline(M_MAX, color="k", linestyle=":", linewidth=1.0)
     ax1.text(0.02 * t_end, INT32_MAX * 1.6, "int32 limit", fontsize="small", va="bottom")
-    ax1.text(0.02 * t_end, M_MAX * 0.6, r"sizing level $m_{\max}$", fontsize="small", va="top")
+    ax1.text(0.02 * t_end, M_MAX * 0.6, r"ancillary limit $m_{\max}$", fontsize="small", va="top")
     ax1.set_ylim(top=INT32_MAX * 12)
     ax1.set_xlim(0.0, t_end)
     ax1.set_xlabel("time", fontsize="large")
-    ax1.set_ylabel("max ancillary mantissa", fontsize="large")
+    ax1.set_ylabel(r"max ancillary $m$", fontsize="large")
     ax1.set_title("(b) ancillary growth with flushes", fontsize="medium")
 
     ax2 = fig.add_subplot(2, 2, 4)

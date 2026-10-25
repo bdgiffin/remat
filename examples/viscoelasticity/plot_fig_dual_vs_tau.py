@@ -456,9 +456,9 @@ def main():
         color="0.35",
         linestyle=":",
         linewidth=1.0,
-        label=r"sizing level $h\,m_{\max}$",
+        label=r"ancillary limit $h\,m_{\max}$",
     )
-    ax.text(1.3, SIZING_LEVEL / 1.3, r"sizing level $h\,m_{\max}$", fontsize="small", va="top")
+    ax.text(1.3, SIZING_LEVEL / 1.3, r"ancillary limit $h\,m_{\max}$", fontsize="small", va="top")
 
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")
