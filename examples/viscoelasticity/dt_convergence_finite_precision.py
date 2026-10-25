@@ -1,4 +1,4 @@
-"""Finite-precision contributions to the time-step study of Section 8.
+"""Finite-precision contributions to the time-step study of Section 9.
 
 The fixed-point Maxwell update has two truncation errors that grow as dt/tau
 decreases:
@@ -11,10 +11,14 @@ and/or a larger common denominator q, and the forward constant-rate study of
 plot_fig_flt_fxd_dt_convergence.py is repeated for each build.
 
 Output: dt_convergence_finite_precision.json
+
+With --model, the stored results are compared with the steady constant-rate
+stress ratio of eq:steady-stress-ratio, without rebuilding or rerunning.
 """
 
 import contextlib
 import json
+import math
 import multiprocessing as mp
 import os
 import shutil
@@ -38,6 +42,9 @@ VARIANTS = {
     "both": {"q": LARGE_Q, "exponent": -8},
 }
 COMPILE_FLAGS = ["-std=c++17", "-fPIC", "-O3", "-march=native"]
+# Integer is int32_t in src/types.h, so DEFAULT_Q evaluates to floor(sqrt(2^31 - 1)) = 46340
+Q_VALUES = {DEFAULT_Q: math.isqrt(np.iinfo(np.int32).max), LARGE_Q: 1 << 24}
+RATE = 0.1  # epsilon0 of plot_fig_flt_fxd_dt_convergence.SCENARIO (constant-rate history)
 
 
 def build_variant(dest, q_expr, exponent):
@@ -132,5 +139,35 @@ def main():
               + f" {fl['relative_l2_error']:.3e} ({fl['signed_mean_error']:+.2e})")
 
 
+def model_error(variant, dt, tau):
+    """Steady constant-rate sigma/sigma_analytical - 1 from eq:steady-stress-ratio."""
+    q = Q_VALUES[VARIANTS[variant]["q"]]
+    h = 10.0 ** VARIANTS[variant]["exponent"]
+    a = math.floor(math.exp(-dt / tau) * q) / q
+    return dt / (tau * (1.0 - a)) * (a + h / (2.0 * RATE * dt)) - 1.0
+
+
+def compare_model():
+    """Compare the stored signed mean stress errors with eq:steady-stress-ratio."""
+    results = json.loads((THIS_DIR / "dt_convergence_finite_precision.json").read_text())
+    worst = 0.0
+    print(f"{'variant':>10} {'mode':>6} {'dt/tau':>10} {'measured':>10} {'model':>10}")
+    for r in results:
+        tau = r["dt"] / r["dt_over_tau"]
+        if r["mode"] == "fixed":
+            model = model_error(r["variant"], r["dt"], tau)
+            worst = max(worst, abs(r["signed_mean_error"] - model))
+        else:
+            # double precision: h = 0 and p/q = A, the SA1 error alone
+            A = math.exp(-r["dt"] / tau)
+            model = A * r["dt"] / (tau * (1.0 - A)) - 1.0
+        print(f"{r['variant']:>10} {r['mode']:>6} {r['dt_over_tau']:10.3e} "
+              f"{r['signed_mean_error']:+10.4f} {model:+10.4f}")
+    print(f"largest |measured - model| over the fixed-point runs: {100 * worst:.2f} percentage points")
+
+
 if __name__ == "__main__":
-    main()
+    if "--model" in sys.argv:
+        compare_model()
+    else:
+        main()
