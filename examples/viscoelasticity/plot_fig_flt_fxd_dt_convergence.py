@@ -219,20 +219,22 @@ MODE_COLORS = {
 }
 FLOAT_OVERFLOW_LIMIT = 1.0e56
 INT32_MAX = 2**31 - 1
-Y_MAX = 2**30  # half of the int32 range, kept as headroom
+M_MAX = 2**30  # largest admissible ancillary mantissa, half of the int32 range
 
 
 def fixed_flush_interval(dt, tau):
-    """Ancillary flush interval from eq:flush-time (y0 = 0, worst-case remainder rate R = q/dt).
+    """Largest ancillary flush interval allowed by eq:flush-time.
 
-    A fixed interval for all time steps lets the ancillary overflow at coarse dt,
-    which breaks bit-reversibility, so the interval is sized for each dt.
+    The ancillary mantissa obeys m_{n+1} <= (q/p) m_n + (q - 1), so from m_0 = 0 it stays
+    below M_MAX for N < ln(1 + (q/p - 1) M_MAX / (q - 1)) / ln(q/p). A fixed interval for
+    all time steps lets the ancillary overflow at coarse dt, which breaks bit-reversibility,
+    so the interval is sized for each dt.
     """
     q = int(np.sqrt(INT32_MAX))
     p = int(np.exp(-dt / tau) * q)
-    tau_eff = dt / np.log(q / p)  # growth rate of the ancillary under the rational factor q/p
-    t_max = tau_eff * np.log(1.0 + Y_MAX / ((q / dt) * tau_eff))
-    return float(max(1, int(t_max / dt)))
+    ratio = q / p
+    bound = np.log(1.0 + (ratio - 1.0) * M_MAX / (q - 1)) / np.log(ratio)
+    return float(max(1, int(np.ceil(bound)) - 1))
 
 # Evaluate Delta t from 1e-5 to 1e-1 s with a fixed duration.
 DT_VALUES = np.logspace(-5, -1, num=9)
@@ -421,7 +423,6 @@ def plot_dt_errors(dt_results, scenario):
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
     # )
-    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.2)
     ax.legend(loc="best", fontsize="medium")
     fig.tight_layout()
     return fig

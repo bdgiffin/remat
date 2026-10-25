@@ -33,7 +33,7 @@ SRC_DIR = THIS_DIR.parent.parent / "src"
 DT = 1.0e-3
 TAU = 0.3
 INT32_MAX = 2**31 - 1
-Y_MAX = 2**30  # half of the int32 range, kept as headroom
+M_MAX = 2**30  # largest admissible ancillary mantissa, half of the int32 range
 
 TABLE_NP = 10368  # 864 elements x 4 integration points x 3 deviatoric components
 TABLE_N = 15000
@@ -50,13 +50,16 @@ LABELS = {
 
 
 def flush_interval(dt, tau):
-    """Flush interval from eq:flush-time with y0 = 0 and the worst-case remainder rate R = q/dt."""
+    """Largest flush interval allowed by eq:flush-time.
+
+    The ancillary mantissa obeys m_{n+1} <= (q/p) m_n + (q - 1), so from m_0 = 0 it stays
+    below M_MAX for N < ln(1 + (q/p - 1) M_MAX / (q - 1)) / ln(q/p).
+    """
     q = int(math.sqrt(INT32_MAX))
     p = int(math.exp(-dt / tau) * q)
-    tau_eff = dt / math.log(q / p)  # growth rate of the ancillary under the rational factor q/p
-    rate = q / dt
-    t_max = tau_eff * math.log(1.0 + Y_MAX / (rate * tau_eff))
-    return int(t_max / dt), p, q
+    ratio = q / p
+    bound = math.log(1.0 + (ratio - 1.0) * M_MAX / (q - 1)) / math.log(ratio)
+    return math.ceil(bound) - 1, p, q
 
 
 def build(tmpdir):
@@ -128,7 +131,7 @@ def main():
         sweep = {n: run(exe, SWEEP_NP, n, flush, REPEATS) for n in SWEEP_N}
 
     out = {
-        "dt": DT, "tau": TAU, "p": p, "q": q, "flush_interval": flush, "y_max": Y_MAX,
+        "dt": DT, "tau": TAU, "p": p, "q": q, "flush_interval": flush, "m_max": M_MAX,
         "table": {"n_points": TABLE_NP, "n_steps": TABLE_N, **table},
         "sweep": {"n_points": SWEEP_NP, "results": {str(n): r for n, r in sweep.items()}},
     }

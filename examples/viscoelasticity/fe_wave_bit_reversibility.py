@@ -59,7 +59,7 @@ REMAT = inverse.REMAT
 N_STEPS = 2500            # 10 s with dt = 4e-3
 IMPACT_CENTER = 6.0
 INT32_MAX = 2**31 - 1
-Y_MAX = 2**30             # half of the int32 range, kept as headroom
+M_MAX = 2**30             # largest admissible ancillary mantissa, half of the int32 range
 NUM_GP = 4                # 2x2 Gauss quadrature per element
 NUM_MAT_STATE = 29        # ViscoElasticity::num_state_vars()
 VISCOUS = slice(9, 12)    # viscous_strain_{xx,yy,xy}
@@ -71,12 +71,16 @@ OUT_JSON = THIS_DIR / "fe_wave_bit_reversibility.json"
 
 
 def flush_interval(dt, tau_min):
-    """Flush interval from eq:flush-time with y0 = 0 and the worst-case remainder rate R = q/dt."""
+    """Largest flush interval allowed by eq:flush-time for the shortest relaxation time.
+
+    The ancillary mantissa obeys m_{n+1} <= (q/p) m_n + (q - 1), so from m_0 = 0 it stays
+    below M_MAX for N < ln(1 + (q/p - 1) M_MAX / (q - 1)) / ln(q/p).
+    """
     q = int(math.sqrt(INT32_MAX))
     p = int(math.exp(-dt / tau_min) * q)
-    tau_eff = dt / math.log(q / p)
-    t_max = tau_eff * math.log(1.0 + Y_MAX / ((q / dt) * tau_eff))
-    return int(t_max / dt)
+    ratio = q / p
+    bound = math.log(1.0 + (ratio - 1.0) * M_MAX / (q - 1)) / math.log(ratio)
+    return math.ceil(bound) - 1
 
 
 def setup(mode, mat_limit, v_limit):
@@ -421,9 +425,9 @@ def plot(results):
     ax1 = fig.add_subplot(2, 2, 3)
     ax1.semilogy(t, np.maximum(fx["anc_mantissa"], 1.0), color="#2b738eff", linewidth=1.6)
     ax1.axhline(INT32_MAX, color="k", linestyle="--", linewidth=1.0)
-    ax1.axhline(Y_MAX, color="k", linestyle=":", linewidth=1.0)
+    ax1.axhline(M_MAX, color="k", linestyle=":", linewidth=1.0)
     ax1.text(0.02 * t_end, INT32_MAX * 1.6, "int32 limit", fontsize="small", va="bottom")
-    ax1.text(0.02 * t_end, Y_MAX * 0.6, r"sizing level $y_{\max}$", fontsize="small", va="top")
+    ax1.text(0.02 * t_end, M_MAX * 0.6, r"sizing level $m_{\max}$", fontsize="small", va="top")
     ax1.set_ylim(top=INT32_MAX * 12)
     ax1.set_xlim(0.0, t_end)
     ax1.set_xlabel("time (s)", fontsize="large")

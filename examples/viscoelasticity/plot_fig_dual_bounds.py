@@ -16,9 +16,6 @@ plt.rcParams.update(
     }
 )
 
-# Assumption: enforce a tiny positive floor to keep log-scale bounds well defined.
-MIN_POSITIVE_BOUND = 1.0e-6
-
 
 def set_material_parameters(relaxation_time, overflow_limit):
     parameter_values = {
@@ -227,135 +224,75 @@ def format_tau(value,dt):
         return rf"$\tau = {value:.2f}, \Delta t = {dt}$ "
 
 
-def estimate_initial_dual(first_value, dt, relaxation_time):
-    if first_value <= 0.0:
-        # Assumption: a tiny positive value when the dual variable value starts at or less than zero
-        return MIN_POSITIVE_BOUND
-    # Assumption: approximate y(t=0) from the first stored state
-    return first_value / np.exp(dt / relaxation_time)
+H = 1.0e-6          # lattice spacing of the decimal fixed-point lattice (Fixed<10,-6>)
+INT32_MAX = 2**31 - 1
+M_MAX = 2**30       # largest admissible ancillary mantissa, half of the int32 range
+T_ANCHOR = 1.0      # time at which the homogeneous-growth reference passes through the simulation
 
 
-def compute_predicted_bounds(times, relaxation_time, y0, dt, overflow_limit):
-    # The Lyapunov growth rate lambda=1/tau
-    lower = np.maximum(y0 * np.exp(times / relaxation_time), MIN_POSITIVE_BOUND)
+def rational_factor(dt, relaxation_time):
+    """Rational relaxation factor p/q of eq:rational-approximation, as computed in REMAT."""
+    q = int(np.sqrt(INT32_MAX))
+    p = int(np.exp(-dt / relaxation_time) * q)
+    return p, q
 
-    # Assumption: model worst-case round-off accumulation with R(dt)=exp(dt/tau)/dt.
-    r_max = np.exp(dt / relaxation_time) / dt
-    upper = (y0 + r_max * relaxation_time) * np.exp(times / relaxation_time) - r_max * relaxation_time
 
-    if overflow_limit is not None:
-        upper = np.minimum(upper, overflow_limit)
+def compute_predicted_bounds(times, relaxation_time, dt, y_anchor):
+    # Homogeneous growth at the rate 1/tau (eq:dual-lower), through the simulated value at T_ANCHOR
+    lower = y_anchor * np.exp((times - T_ANCHOR) / relaxation_time)
 
-    base = y0 + r_max * relaxation_time
-    limit_plus_round_off = None if overflow_limit is None else overflow_limit + r_max * relaxation_time
-    t_max = None
-    if limit_plus_round_off and base > 0:
-        t_max = (np.log(limit_plus_round_off) - np.log(base)) * relaxation_time
+    # Worst-case bound eq:dual-upper with m_0 = 0, converted from mantissas to values
+    p, q = rational_factor(dt, relaxation_time)
+    ratio = q / p
+    n = np.rint(times / dt)
+    upper = H * (q - 1) * (ratio**n - 1.0) / (ratio - 1.0)
 
+    # Flush interval eq:flush-time for the sizing level M_MAX
+    bound = np.log(1.0 + (ratio - 1.0) * M_MAX / (q - 1)) / np.log(ratio)
+    t_max = (np.ceil(bound) - 1) * dt
     return lower, upper, t_max
 
 
 def main():
     fig, ax = plt.subplots(figsize=(7.5, 4.0))
-    axis_dt = SCENARIOS[0]["dt"]
-    bounds_label_added = False
-    y_min_values = []
-    y_max_values = []
+    params = SCENARIOS[0]
+    result = run_truss_relaxation(
+        dt=params["dt"],
+        Nsteps=params["Nsteps"],
+        Nsub_steps=params["Nsub_steps"],
+        epsilon0=params["epsilon0"],
+        bc_name=params["bc_name"],
+        relaxation_time=params["relaxation_time"],
+        include_backward=False,
+        record_states=(STATE_TO_PLOT,),
+        overflow_limit=params["overflow_limit"],
+    )
+    history = np.abs(result["state_history"][STATE_TO_PLOT])
+    times = np.arange(1, history.size + 1) * params["dt"]
+    y_anchor = history[np.argmin(np.abs(times - T_ANCHOR))]
+    lower, upper, t_max = compute_predicted_bounds(times, params["relaxation_time"], params["dt"], y_anchor)
 
-    for params in SCENARIOS:
-        result = run_truss_relaxation(
-            dt=params["dt"],
-            Nsteps=params["Nsteps"],
-            Nsub_steps=params["Nsub_steps"],
-            epsilon0=params["epsilon0"],
-            bc_name=params["bc_name"],
-            relaxation_time=params["relaxation_time"],
-            include_backward=False,
-            record_states=(STATE_TO_PLOT,),
-            overflow_limit=params["overflow_limit"],
-        )
-
-        history = result["state_history"][STATE_TO_PLOT]
-        steps = np.arange(1, history.size + 1) * params["dt"]
-
-        (line,) = ax.plot(
-            steps,
-            history,
-            linewidth=1.1,
-            marker=None,
-            label=format_tau(params["relaxation_time"],params["dt"]),
-            color='green'
-        )
-
-        color = line.get_color()
-        
-        initial_dual = estimate_initial_dual(history[0], params["dt"], params["relaxation_time"])
-        lower, upper, _t_max = compute_predicted_bounds(
-            steps,
-            params["relaxation_time"],
-            initial_dual,
-            params["dt"],
-            params["overflow_limit"],
-        )
-
-        lower_label = "predicted bounds (lower/upper)" if not bounds_label_added else None
-        ax.plot(
-            steps,
-            lower,
-            linestyle="--",
-            linewidth=1.0,
-            color=color,
-            alpha=0.9,
-            label=lower_label,
-        )
-        ax.plot(
-            steps,
-            upper,
-            linestyle="--",
-            linewidth=1.0,
-            color=color,
-            alpha=0.9,
-            label=None,
-        )
-        bounds_label_added = True
-
-        y_min_values.append(np.min([history.min(), lower.min()]))
-        y_max_values.append(np.max([history.max(), upper.max()]))
+    ax.plot(times, history, linewidth=1.6, color="#2b738eff",
+            label=format_tau(params["relaxation_time"], params["dt"]))
+    ax.plot(times, lower, linestyle="--", linewidth=1.2, color="#f9826bff",
+            label=r"homogeneous growth $\propto e^{t/\tau}$")
+    ax.plot(times, upper, linestyle="--", linewidth=1.2, color="k",
+            label="worst-case bound")
+    ax.axhline(H * M_MAX, color="gray", linestyle=":", linewidth=1.0)
+    ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"sizing level $h\,m_{\max}$", fontsize="small", va="bottom")
+    ax.axvline(t_max, color="gray", linestyle=":", linewidth=1.0)
+    ax.text(t_max * 1.02, 1.5e-3, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom")
 
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel("ancillary variable", fontsize="large")
-    # ax.legend(loc="lower right", bbox_to_anchor=(0.0, 1.0), fontsize=10)
-    ax.legend(loc="lower right", fontsize='medium')
-
-    # plot y=200 line
-    ax.axhline(y=200, color='gray', linestyle=':', linewidth=1.0)
-
-
-
-    ax.set_xlim(-200 * axis_dt, 3400 * axis_dt)
-    # ax.set_xlim(-.001, max(max(np.arange(1, params["Nsteps"] + 1) * params["dt"]) for params in SCENARIOS) + .001)
-
+    ax.legend(loc="lower right", fontsize="medium", frameon=False)
     ax.set_yscale("log")
-
-    ymin = max(MIN_POSITIVE_BOUND, min(y_min_values) * 0.8)
-    ymax = max(y_max_values) * 1.2
-    # ax.set_ylim(ymin, ymax)
-    ax.set_ylim(10**-2, 1000)
-    ax.set_ylim(10**-6, 10000)
-    ax.text(
-        0.09,
-        -0.065,
-        r"$t_{\max}$",
-        transform=ax.transAxes,
-        fontsize='13',
-    )
-
-
-    # ax.set_ylim(10**-2, 1000)
-
+    ax.set_xlim(0.0, params["Nsteps"] * params["dt"])
+    ax.set_ylim(1.0e-3, 1.0e5)
 
     fig.tight_layout()
     fig.savefig("dual_bounds.pdf", dpi=200)
+    fig.savefig("dual_bounds.png", dpi=200)
 
 
 if __name__ == "__main__":
