@@ -238,7 +238,7 @@ def rational_factor(dt, relaxation_time):
 
 
 def compute_predicted_bounds(times, relaxation_time, dt, y_anchor):
-    # Homogeneous growth at the rate 1/tau (eq:dual-lower), through the simulated value at T_ANCHOR
+    # Homogeneous growth at the rate 1/tau (eq:dual-homogeneous), through the simulated value at T_ANCHOR
     lower = y_anchor * np.exp((times - T_ANCHOR) / relaxation_time)
 
     # Worst-case bound eq:dual-upper with m_0 = 0, converted from mantissas to values
