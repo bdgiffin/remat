@@ -152,10 +152,11 @@ def draw(ax, t, fwd, bwd, ylim, duration, legend_loc="upper right"):
     ax.plot(t[:-1], bwd, linewidth=1.6, dashes=(4, 3.5), label="backward", color=BACKWARD_COLOR)
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel(r"axial stress ($\sigma_{xx}$)", fontsize="large")
-    legend = ax.legend(loc=legend_loc, fontsize="small")
-    legend.get_texts()[0].set_color(FORWARD_COLOR)
-    legend.get_texts()[1].set_color(BACKWARD_COLOR)
-    legend.get_lines()[1].set_linestyle("dashed")
+    if legend_loc is not None:
+        legend = ax.legend(loc=legend_loc, fontsize="small")
+        legend.get_texts()[0].set_color(FORWARD_COLOR)
+        legend.get_texts()[1].set_color(BACKWARD_COLOR)
+        legend.get_lines()[1].set_linestyle("dashed")
     ax.set_xlim(0, duration)
     ax.set_ylim(*ylim)
 
@@ -212,8 +213,8 @@ def main():
             ]
             for label, fwd, bwd in columns:
                 fig, ax = plt.subplots(figsize=PANEL_SIZE)
-                # the discarded backward curve leaves near the right edge, so its legend moves
-                draw(ax, t, fwd, bwd, ylim, duration, "center" if label == "discarded" else "upper right")
+                # a single legend, in the top-right panel (step history, reversible fixed point)
+                draw(ax, t, fwd, bwd, ylim, duration, "upper right" if (name, label) == ("step", "fixed") else None)
                 fig.tight_layout()
                 stem = outdir / f"stress_backward_{label}__{name}{tag}"
                 fig.savefig(f"{stem}.pdf", dpi=200)
