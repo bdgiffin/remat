@@ -187,8 +187,10 @@ STATE_TO_PLOT = "dual_viscous_strain"
 OUTPUT_FILE = "plot_fig_dual_vs_tau.pdf"
 MIN_POSITIVE_MAGNITUDE = 1.0e-8
 DISPLAY_YMIN = 1.0e-2
-DISPLAY_YMAX = 1.0e3
-BUFFER_LEVEL = 5e2
+DISPLAY_YMAX = 2.0e3  # below the int32 value limit 2^31 h, so no overflowed value is shown
+H = 1.0e-6          # lattice spacing of the decimal fixed-point lattice (Fixed<10,-6>)
+M_MAX = 2**30       # sizing level of eq:flush-time, as in plot_fig_dual_bounds.py
+SIZING_LEVEL = H * M_MAX
 DEFAULT_RATE_MARKER_OFFSET = 0.55
 DEFAULT_RATE_MARKER_TIME_FACTOR = 7.0
 TAU_CMAP = mcolors.LinearSegmentedColormap.from_list(
@@ -391,6 +393,10 @@ def main():
         history = result["state_history"][STATE_TO_PLOT]
         times = np.arange(1, history.size + 1) * params["dt"]
         magnitude = np.maximum(np.abs(history), MIN_POSITIVE_MAGNITUDE)
+        # stop at the top of the axes; without flushes the int32 mantissa overflows later
+        above = np.nonzero(magnitude > DISPLAY_YMAX)[0]
+        if above.size:
+            times, magnitude = times[: above[0] + 1], magnitude[: above[0] + 1]
         color = TAU_CMAP(TAU_NORM(params["relaxation_time"]))
 
         ax.plot(
@@ -407,7 +413,7 @@ def main():
     axis_dt = SCENARIOS[0]["dt"]
     x_max = 3400 * axis_dt
     ax.set_yscale("log")
-    ax.set_xlim(-200 * axis_dt, x_max)
+    ax.set_xlim(0.0, x_max)
     ax.set_ylim(DISPLAY_YMIN, DISPLAY_YMAX)
 
     for _params, times, magnitude, color in histories:
@@ -446,12 +452,13 @@ def main():
         )
 
     ax.axhline(
-        BUFFER_LEVEL,
+        SIZING_LEVEL,
         color="0.35",
         linestyle=":",
         linewidth=1.0,
-        label=rf"example buffer level $y_{{\max}}={BUFFER_LEVEL:g}$",
+        label=r"sizing level $h\,m_{\max}$",
     )
+    ax.text(1.3, SIZING_LEVEL / 1.3, r"sizing level $h\,m_{\max}$", fontsize="small", va="top")
 
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")
