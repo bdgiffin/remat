@@ -8,11 +8,18 @@ sys.path.append("../../install/package/")
 import REMAT
 from plot_fig_flt_fxd_dt_convergence import fixed_flush_interval
 
+FIG_SIZE = (4.0, 4.0)
+# Printed at 0.43\linewidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# subscripts at 6 pt or more (Elsevier artwork sizing).
+FONT_SIZE = 8.6 * FIG_SIZE[0] / (0.43 * 6.5)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
-        "mathtext.fontset": "cm",       
+        "mathtext.fontset": "cm",
+        "font.size": FONT_SIZE,
+        "pdf.fonttype": 42,
     }
 )
 
@@ -252,7 +259,7 @@ def main():
 
     for set_integrator_type, output_prefix in INTEGRATOR_MODES:
         for params in SCENARIOS:
-            fig, ax = plt.subplots(figsize=(4.0, 4.0))
+            fig, ax = plt.subplots(figsize=FIG_SIZE)
             result = run_truss_relaxation(
                 dt=params["dt"],
                 Nsteps=params["Nsteps"],

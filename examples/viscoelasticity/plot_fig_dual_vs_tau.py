@@ -3,7 +3,6 @@ from math import pi, sin
 import os
 import sys
 from matplotlib import colors as mcolors
-from matplotlib.cm import ScalarMappable
 import matplotlib.ticker as mticker
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,11 +11,18 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+FIG_SIZE = (6, 3.5)
+# Printed at 0.65\textwidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# superscripts at 6 pt or more (Elsevier artwork sizing).
+FONT_SIZE = 8.6 * FIG_SIZE[0] / (0.65 * 6.5)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "font.size": FONT_SIZE,
+        "pdf.fonttype": 42,
     }
 )
 
@@ -207,7 +213,7 @@ SCENARIOS = [
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
-        "rate_marker_offset": 0.45,
+        "rate_marker_offset": 0.30,
         "rate_marker_time": 0.19,
     },
     {
@@ -218,7 +224,7 @@ SCENARIOS = [
         "epsilon0": 0.1,
         "bc_name": "right_node_step",
         "overflow_limit": 1e6,
-        "rate_marker_offset": 0.70,
+        "rate_marker_offset": 0.50,
         "rate_marker_time": 0.80,
     },
     {
@@ -342,7 +348,7 @@ def add_rate_marker(ax, x, y, rate, color, marker_offset, x_limit, duration):
         np.sqrt(y * y_top),
         rf"${format_rate(rate)}\,\mathrm{{s}}^{{-1}}$",
         color=color,
-        fontsize=8,
+        fontsize="medium",
         ha=ha,
         va="center",
     )
@@ -364,7 +370,7 @@ def add_tau_label(ax, x, y, rate, color, relaxation_time, duration):
         label_y,
         format_tau(relaxation_time),
         color=color,
-        fontsize=9,
+        fontsize="medium",
         rotation=rotation,
         rotation_mode="anchor",
         ha="center",
@@ -373,7 +379,7 @@ def add_tau_label(ax, x, y, rate, color, relaxation_time, duration):
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(6, 3.5))
+    fig, ax = plt.subplots(figsize=FIG_SIZE)
     histories = []
 
     for params in SCENARIOS:
@@ -458,7 +464,7 @@ def main():
         linewidth=1.0,
         label=r"ancillary limit $h\,m_{\max}$",
     )
-    ax.text(1.3, SIZING_LEVEL / 1.3, r"ancillary limit $h\,m_{\max}$", fontsize="small", va="top")
+    ax.text(1.3, SIZING_LEVEL / 1.3, r"ancillary limit $h\,m_{\max}$", fontsize="medium", va="top")
 
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")
@@ -470,11 +476,6 @@ def main():
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.tick_params(axis="y", which="major", length=5, width=0.8)
     ax.tick_params(axis="y", which="minor", length=3, width=0.6)
-
-    sm = ScalarMappable(norm=TAU_NORM, cmap=TAU_CMAP)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, pad=0.02)
-    cbar.set_label(r"relaxation time $\tau$ (s)", fontsize="medium")
 
     # ax.legend(loc="lower right", fontsize="small")
 

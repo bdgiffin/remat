@@ -26,7 +26,7 @@ Usage
 
 Outputs
   fe_wave_bit_reversibility.json
-  fe_wave_bit_reversibility.{pdf,png}
+  fe_wave_bit_reversibility__{field,ancillary,error}.{pdf,png}   (paper Fig. 7 panels a, b, c)
 """
 
 import argparse
@@ -387,6 +387,12 @@ def storage_summary(meta, timing_fixed, ckpt):
 
 
 def plot(results):
+    """Three figure files: (a) relaxation-time field, (b) ancillary growth, (c) floating-point error.
+
+    Panel (a) is printed at 0.95\\textwidth and panels (b) and (c) side by side at 0.47\\linewidth
+    (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps subscripts and superscripts at
+    6 pt or more (Elsevier artwork sizing).
+    """
     import matplotlib.pyplot as plt
 
     plt.rcParams.update(
@@ -394,8 +400,13 @@ def plot(results):
             "font.family": "serif",
             "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
             "mathtext.fontset": "cm",
+            "pdf.fonttype": 42,
         }
     )
+    field_size = (6.5, 1.75)
+    panel_size = (3.8, 3.0)
+    field_font = 8.6 * field_size[0] / (0.95 * 6.5)
+    panel_font = 8.6 * panel_size[0] / (0.47 * 6.5)
     fx = np.load(THIS_DIR / "fe_wave_fixed_visco.npz")
     fl = np.load(THIS_DIR / "fe_wave_float_visco.npz")
     meta = results["fixed_visco"]
@@ -404,8 +415,14 @@ def plot(results):
 
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    fig = plt.figure(figsize=(7.6, 5.0))
-    ax0 = fig.add_subplot(2, 1, 1)
+    def save(fig, name):
+        fig.tight_layout()
+        for ext in ("pdf", "png"):
+            fig.savefig(THIS_DIR / f"fe_wave_bit_reversibility__{name}.{ext}", dpi=200)
+        plt.close(fig)
+
+    plt.rcParams["font.size"] = field_font
+    fig, ax0 = plt.subplots(figsize=field_size)
     nx, nz = inverse.NX, inverse.NZ
     tau_grid = np.asarray(fx["tau_elem"]).reshape(nz, nx)
     im = ax0.imshow(tau_grid, origin="lower", extent=[0, inverse.WIDTH, 0, inverse.DEPTH],
@@ -420,33 +437,30 @@ def plot(results):
     cax = make_axes_locatable(ax0).append_axes("right", size="1.5%", pad=0.08)
     cb = fig.colorbar(im, cax=cax)
     cb.set_label(r"$\tau$", fontsize="large")
-    ax0.set_title("(a) relaxation-time field, bottom edge fixed", fontsize="medium", pad=16)
+    save(fig, "field")
 
-    ax1 = fig.add_subplot(2, 2, 3)
+    plt.rcParams["font.size"] = panel_font
+    fig, ax1 = plt.subplots(figsize=panel_size)
     ax1.semilogy(t, np.maximum(fx["anc_mantissa"], 1.0), color="#2b738eff", linewidth=1.6)
     ax1.axhline(INT32_MAX, color="k", linestyle="--", linewidth=1.0)
     ax1.axhline(M_MAX, color="k", linestyle=":", linewidth=1.0)
-    ax1.text(0.02 * t_end, INT32_MAX * 1.6, "int32 limit", fontsize="small", va="bottom")
-    ax1.text(0.02 * t_end, M_MAX * 0.6, r"ancillary limit $m_{\max}$", fontsize="small", va="top")
+    ax1.text(0.02 * t_end, INT32_MAX * 1.6, "32-bit limit", fontsize="medium", va="bottom")
+    ax1.text(0.02 * t_end, M_MAX * 0.6, r"$m_{\max}=2^{30}$", fontsize="medium", va="top")
     ax1.set_ylim(top=INT32_MAX * 12)
     ax1.set_xlim(0.0, t_end)
     ax1.set_xlabel("time", fontsize="large")
     ax1.set_ylabel(r"max ancillary $m$", fontsize="large")
-    ax1.set_title("(b) ancillary growth with flushes", fontsize="medium")
+    save(fig, "ancillary")
 
-    ax2 = fig.add_subplot(2, 2, 4)
+    fig, ax2 = plt.subplots(figsize=panel_size)
     ax2.semilogy(t, np.maximum(fl["err_v"], 1e-18), color="#f9826bff", linewidth=1.6, label="velocity")
     ax2.semilogy(t, np.maximum(fl["err_q"], 1e-18), color="#f9826bff", linewidth=1.6, linestyle="--",
                  label="viscous strain")
     ax2.set_xlim(0.0, t_end)
     ax2.set_xlabel("time", fontsize="large")
     ax2.set_ylabel("relative backward error", fontsize="large")
-    ax2.set_title("(c) floating point (fixed point: 0)", fontsize="medium")
     ax2.legend(fontsize="small", frameon=False)
-
-    fig.tight_layout()
-    for ext in ("pdf", "png"):
-        fig.savefig(THIS_DIR / f"fe_wave_bit_reversibility.{ext}", dpi=200)
+    save(fig, "error")
 
 
 def main():

@@ -1,5 +1,6 @@
 from math import pi, sin
 from contextlib import contextmanager
+import argparse
 import json
 import os
 import sys
@@ -10,11 +11,18 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+FIG_SIZE = (4.5, 3.0)
+# Printed at 0.55\textwidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# superscripts at 6 pt or more (Elsevier artwork sizing).
+FONT_SIZE = 8.6 * FIG_SIZE[0] / (0.55 * 6.5)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "font.size": FONT_SIZE,
+        "pdf.fonttype": 42,
     }
 )
 
@@ -381,7 +389,7 @@ def print_convergence_orders(dt_results):
 
 
 def plot_dt_errors(dt_results, scenario):
-    fig, ax = plt.subplots(figsize=(4.5, 3.0))
+    fig, ax = plt.subplots(figsize=FIG_SIZE)
 
     dts = np.asarray([entry["dt"] for entry in dt_results])
     normalized_steps = dts / scenario["relaxation_time"]
@@ -393,7 +401,7 @@ def plot_dt_errors(dt_results, scenario):
         rel_l2_error_float,
         marker="o",
         linewidth=1.6,
-        label=r"floating-point",
+        label=r"double precision",
         color=MODE_COLORS["float"],
     )
     ax.plot(
@@ -401,7 +409,7 @@ def plot_dt_errors(dt_results, scenario):
         rel_l2_error_fixed,
         marker="s",
         linewidth=1.6,
-        label=r"rev. fixed-point",
+        label=r"reversible fixed-point",
         color=MODE_COLORS["fixed"],
     )
 
@@ -412,7 +420,7 @@ def plot_dt_errors(dt_results, scenario):
         linestyle="--",
         linewidth=1.0,
         alpha=0.85,
-        label=r"rev. fixed-point min.",
+        label=r"reversible fixed-point min.",
     )
 
     ax.set_xscale("log")
@@ -423,15 +431,23 @@ def plot_dt_errors(dt_results, scenario):
     #     f"{scenario['description']}, duration={DURATION}s",
     #     fontsize="medium",
     # )
-    ax.legend(loc="best", fontsize="medium")
+    ax.legend(loc="lower right", fontsize="small")
     fig.tight_layout()
     return fig
 
 
 def main():
-    dt_results = evaluate_time_step_convergence(DT_VALUES, SCENARIO)
-    with open("flt_vs_fxd_dt_convergence.json", "w", encoding="utf-8") as f:
-        json.dump(dt_results, f, indent=2)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot-only", action="store_true",
+                        help="redraw the figure from flt_vs_fxd_dt_convergence.json without rerunning")
+    args = parser.parse_args()
+    if args.plot_only:
+        with open("flt_vs_fxd_dt_convergence.json", encoding="utf-8") as f:
+            dt_results = json.load(f)
+    else:
+        dt_results = evaluate_time_step_convergence(DT_VALUES, SCENARIO)
+        with open("flt_vs_fxd_dt_convergence.json", "w", encoding="utf-8") as f:
+            json.dump(dt_results, f, indent=2)
     #print_convergence_orders(dt_results)
     fig = plot_dt_errors(dt_results, SCENARIO)
     fig.savefig(

@@ -9,11 +9,18 @@ sys.path.append("../../install/package/")
 import REMAT
 from plot_fig_flt_fxd_dt_convergence import fixed_flush_interval
 
+FIG_SIZE = (4.0, 4.0)
+# Printed at 0.45\linewidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# subscripts and superscripts at 6 pt or more (Elsevier artwork sizing).
+FONT_SIZE = 8.6 * FIG_SIZE[0] / (0.45 * 6.5)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "font.size": FONT_SIZE,
+        "pdf.fonttype": 42,
     }
 )
 
@@ -323,7 +330,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         2,
         1,
         sharex=True,
-        figsize=(4.0, 4.0),
+        figsize=FIG_SIZE,
         gridspec_kw={"height_ratios": [3, 1]},
     )
 
@@ -334,7 +341,7 @@ def plot_analytical_vs_fixed(params, fixed_result):
         times,
         fixed_history,
         linewidth=1.6,
-        label="rev. fixed-point",
+        label="reversible fixed-point",
         color=MODE_COLORS["fixed"],
     )
     ax_state.plot(
@@ -370,6 +377,8 @@ def plot_analytical_vs_fixed(params, fixed_result):
         bbox_to_anchor=(0.5, 1.02),
         ncol=2,
         fontsize="small",
+        handlelength=1.6,
+        columnspacing=1.0,
         borderaxespad=0.0,
     )
 

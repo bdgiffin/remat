@@ -8,11 +8,18 @@ sys.path.append("../../install/package/")
 
 import REMAT
 
+FIG_SIZE = (6, 3.5)  # same size as plot_fig_dual_vs_tau.py
+# Printed at 0.65\textwidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# superscripts at 6 pt or more (Elsevier artwork sizing).
+FONT_SIZE = 8.6 * FIG_SIZE[0] / (0.65 * 6.5)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "font.size": FONT_SIZE,
+        "pdf.fonttype": 42,
     }
 )
 
@@ -211,18 +218,6 @@ SCENARIOS = [
 ]
 
 
-def format_tau(value,dt):
-    # shows the relaxation time in math mode and dt size in the legend
-    # show dt in 10^-n format if possible
-    if dt == 1e-3:
-        return rf"$\tau = {value:.2f}, \Delta t =  10^{{-3}}$ "
-    elif dt == 1e-4:
-        return rf"$\tau = {value:.2f}, \Delta t =  10^{{-4}}$ "
-    elif dt == 1e-5:
-        return rf"$\tau = {value:.2f}, \Delta t =  10^{{-5}}$ "
-    else: 
-        return rf"$\tau = {value:.2f}, \Delta t = {dt}$ "
-
 
 H = 1.0e-6          # lattice spacing of the decimal fixed-point lattice (Fixed<10,-6>)
 INT32_MAX = 2**31 - 1
@@ -254,7 +249,7 @@ def compute_predicted_bounds(times, relaxation_time, dt, y_anchor):
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(6, 3.5))  # same size as plot_fig_dual_vs_tau.py
+    fig, ax = plt.subplots(figsize=FIG_SIZE)
     params = SCENARIOS[0]
     result = run_truss_relaxation(
         dt=params["dt"],
@@ -273,15 +268,15 @@ def main():
     lower, upper, t_max = compute_predicted_bounds(times, params["relaxation_time"], params["dt"], y_anchor)
 
     ax.plot(times, history, linewidth=1.6, color="#2b738eff",
-            label=format_tau(params["relaxation_time"], params["dt"]))
+            label="simulated")  # tau and dt are given in the caption
     ax.plot(times, lower, linestyle="--", linewidth=1.2, color="#f9826bff",
             label=r"homogeneous growth $\propto\exp(t/\tau)$")
     ax.plot(times, upper, linestyle="--", linewidth=1.2, color="k",
             label="worst-case bound")
     ax.axhline(H * M_MAX, color="gray", linestyle=":", linewidth=1.0)
-    ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"ancillary limit $h\,m_{\max}$", fontsize="small", va="bottom")
+    ax.text(0.02 * times[-1], H * M_MAX * 1.25, r"ancillary limit $h\,m_{\max}$", fontsize="medium", va="bottom")
     ax.axvline(t_max, color="gray", linestyle=":", linewidth=1.0)
-    ax.text(t_max - 0.03, 2.0e-2, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom", ha="right")
+    ax.text(t_max - 0.03, 2.0e4, r"$N_{\max}\Delta t$", fontsize="medium", va="bottom", ha="right")
 
     ax.set_xlabel("time (s)", fontsize="large")
     ax.set_ylabel(r"ancillary magnitude $|\varepsilon^{v*}|$", fontsize="large")

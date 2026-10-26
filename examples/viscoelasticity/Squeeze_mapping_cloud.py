@@ -48,6 +48,7 @@ plt.rcParams.update(
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "pdf.fonttype": 42,
     }
 )
 
@@ -323,7 +324,9 @@ def main() -> None:
                 linewidth=1.6,
             )
         ],
-        [r"continuous reference $S^{\mathbb{R}}_{p/q}$"],
+        # The caption names the symbol S^R_{p/q}: the cm math fonts have no blackboard bold,
+        # and matplotlib would take that glyph from STIX, unlike the other figures.
+        ["continuous reference"],
         loc="lower center",
         frameon=False,
         fontsize="small",

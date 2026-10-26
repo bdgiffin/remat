@@ -7,9 +7,12 @@ uniform sqrt(N) checkpointing, and the bit-reversible fixed-point update
 Outputs
   storage_benchmark.json            raw results (table case and N sweep)
   storage_benchmark_table.tex       LaTeX table body for the paper
-  storage_vs_steps.{pdf,png}        storage and wall time versus number of steps
+  storage_vs_steps__{bytes,time}.{pdf,png}   storage (a) and wall time (b) versus number of steps
+
+With --plot-only the figure is redrawn from storage_benchmark.json without rerunning the benchmark.
 """
 
+import argparse
 import json
 import math
 import subprocess
@@ -24,6 +27,7 @@ plt.rcParams.update(
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "pdf.fonttype": 42,
     }
 )
 
@@ -123,7 +127,45 @@ def write_table(res, path):
     path.write_text("\n".join(lines) + "\n")
 
 
+def plot(sweep):
+    """Storage (a) and total wall time (b) versus number of steps, one figure file per panel.
+
+    Both panels are printed side by side at 0.45\\linewidth (6.5 in) in paper_1.tex; an 8.6 pt
+    printed base size keeps superscripts at 6 pt or more (Elsevier artwork sizing).
+    """
+    panel_size = (3.8, 3.2)
+    plt.rcParams["font.size"] = 8.6 * panel_size[0] / (0.45 * 6.5)
+    n = np.asarray(SWEEP_N, dtype=float)
+    panels = [
+        ("bytes", lambda r: r["bytes"] / SWEEP_NP, "stored bytes per\nhistory variable"),
+        ("time", lambda r: r["t_total"] / SWEEP_NP * 1e6, r"forward + backward time ($\mu$s)"),
+    ]
+    for tag, value, ylabel in panels:
+        fig, ax = plt.subplots(figsize=panel_size)
+        for name in ["store_all", "checkpoint", "reversible"]:
+            y = [value(sweep[k]["methods"][name]) for k in SWEEP_N]
+            ax.loglog(n, y, color=COLORS[name], linewidth=1.6, marker="o", markersize=3.5, label=LABELS[name])
+        ax.set_xlabel("number of time steps $N$", fontsize="large")
+        ax.set_ylabel(ylabel, fontsize="large")
+        if tag == "bytes":
+            ax.set_ylim(top=1.0e8)  # room for the legend above the full-storage line
+            ax.legend(loc="upper left", fontsize="small", frameon=False)
+        fig.tight_layout()
+        for ext in ("pdf", "png"):
+            fig.savefig(THIS_DIR / f"storage_vs_steps__{tag}.{ext}", dpi=200)
+        plt.close(fig)
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot-only", action="store_true",
+                        help="redraw the figure from storage_benchmark.json without rerunning the benchmark")
+    args = parser.parse_args()
+    if args.plot_only:
+        out = json.loads((THIS_DIR / "storage_benchmark.json").read_text())
+        plot({int(n): r for n, r in out["sweep"]["results"].items()})
+        return
+
     flush, p, q = flush_interval(DT, TAU)
     with tempfile.TemporaryDirectory() as tmpdir:
         exe = build(tmpdir)
@@ -141,25 +183,7 @@ def main():
     for name, r in table["methods"].items():
         print(f"{name:17s} bytes={r['bytes']:>12d} fwd={r['t_forward']:.3f}s bwd={r['t_backward']:.3f}s "
               f"extra={r['extra_forward_steps']} flushes={r['flushes']} max_err={r['max_error']:.3e}")
-
-    # Figure: storage and total wall time versus number of steps
-    fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.2))
-    n = np.asarray(SWEEP_N, dtype=float)
-    for name in ["store_all", "checkpoint", "reversible"]:
-        b = [sweep[k]["methods"][name]["bytes"] / SWEEP_NP for k in SWEEP_N]
-        t = [sweep[k]["methods"][name]["t_total"] / SWEEP_NP * 1e6 for k in SWEEP_N]
-        axes[0].loglog(n, b, color=COLORS[name], linewidth=1.6, marker="o", markersize=3.5, label=LABELS[name])
-        axes[1].loglog(n, t, color=COLORS[name], linewidth=1.6, marker="o", markersize=3.5, label=LABELS[name])
-    axes[0].set_xlabel("number of time steps $N$", fontsize="large")
-    axes[0].set_ylabel("stored bytes per history variable", fontsize="large")
-    axes[1].set_xlabel("number of time steps $N$", fontsize="large")
-    axes[1].set_ylabel(r"forward + backward time ($\mu$s)", fontsize="large")
-    axes[0].legend(fontsize="small", frameon=False)
-    for ax, tag in zip(axes, ["(a)", "(b)"]):
-        ax.set_title(tag, fontsize="medium")
-    fig.tight_layout()
-    for ext in ("pdf", "png"):
-        fig.savefig(THIS_DIR / f"storage_vs_steps.{ext}", dpi=200)
+    plot(sweep)
 
 
 if __name__ == "__main__":

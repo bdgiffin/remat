@@ -50,6 +50,7 @@ plt.rcParams.update(
         "font.family": "serif",
         "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
         "mathtext.fontset": "cm",
+        "pdf.fonttype": 42,
     }
 )
 
@@ -64,6 +65,9 @@ HISTORIES = [("right_node_step", 0.1, "step", (-0.02, 0.12)),
              ("right_node_constant_rate", 0.1, "constant_rate", (0.0, 0.04))]
 FORWARD_COLOR = "#2b738eff"
 PANEL_SIZE = (4.0 * 0.31 / 0.45, 3.5 * 0.31 / 0.45)
+# Printed at 0.31\linewidth (6.5 in) in paper_1.tex; an 8.6 pt printed base size keeps
+# subscripts at 6 pt or more (Elsevier artwork sizing).
+plt.rcParams["font.size"] = 8.6 * PANEL_SIZE[0] / (0.31 * 6.5)
 BACKWARD_COLOR = "#f9826bff"
 
 
