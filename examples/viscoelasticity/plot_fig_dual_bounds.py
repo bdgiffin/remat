@@ -275,7 +275,7 @@ def main():
     ax.plot(times, history, linewidth=1.6, color="#2b738eff",
             label=format_tau(params["relaxation_time"], params["dt"]))
     ax.plot(times, lower, linestyle="--", linewidth=1.2, color="#f9826bff",
-            label=r"homogeneous growth $\propto e^{t/\tau}$")
+            label=r"homogeneous growth $\propto\exp(t/\tau)$")
     ax.plot(times, upper, linestyle="--", linewidth=1.2, color="k",
             label="worst-case bound")
     ax.axhline(H * M_MAX, color="gray", linestyle=":", linewidth=1.0)
