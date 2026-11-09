@@ -30,6 +30,11 @@ REFINEMENTS = (16, 32)
 OUTPUT = SCRIPT_DIR / "squeeze_cloud_deformation_progression.pdf"
 
 REFERENCE_COLOR = "#2b738eff"
+# The tight bounding box is printed at about 1.045 times its size (0.95\textwidth), so
+# 1.4 pt prints at 1.46 pt, within Elsevier's 0.1-1.5 pt line-weight range.
+REFERENCE_LINEWIDTH = 1.4
+# Dash lengths scale with the line width; keep the printed pattern of the former 1.6 pt line.
+REFERENCE_DASHES = tuple(length * 1.6 / REFERENCE_LINEWIDTH for length in (6, 5))
 LOW_COLOR = "#2b738eff"
 HIGH_COLOR = "#f9826bff"
 POINT_CMAP = LinearSegmentedColormap.from_list(
@@ -149,7 +154,8 @@ def draw_points(ax, points: np.ndarray, colors: np.ndarray, refinement: int) -> 
         marker="s",
         alpha=0.82,
         linewidths=0,
-        rasterized=True,
+        # Vector markers: a rasterized layer would be a bitmap below Elsevier's
+        # 1000 dpi minimum for line art (CMAME artwork rules).
     )
 
 
@@ -229,8 +235,8 @@ def draw_mapped(ax, refinement: int, *, show_ylabel: bool) -> None:
         reference_box[:, 1],
         "--",
         color=REFERENCE_COLOR,
-        linewidth=1.6,
-        dashes=(6, 5),
+        linewidth=REFERENCE_LINEWIDTH,
+        dashes=REFERENCE_DASHES,
     )
     # draw_panel_label(ax, r"$S_{p/q2}$", left=0.04)
     style_axes(
@@ -319,9 +325,9 @@ def main() -> None:
             Line2D(
                 [0],
                 [0],
-                linestyle=(0, (6, 5)),
+                linestyle=(0, REFERENCE_DASHES),
                 color=REFERENCE_COLOR,
-                linewidth=1.6,
+                linewidth=REFERENCE_LINEWIDTH,
             )
         ],
         # The caption names the symbol S^R_{p/q}: the cm math fonts have no blackboard bold,

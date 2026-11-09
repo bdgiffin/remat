@@ -415,10 +415,10 @@ def plot(results):
 
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    def save(fig, name):
+    def save(fig, name, pdf_dpi=200):
         fig.tight_layout()
-        for ext in ("pdf", "png"):
-            fig.savefig(THIS_DIR / f"fe_wave_bit_reversibility__{name}.{ext}", dpi=200)
+        for ext, dpi in (("pdf", pdf_dpi), ("png", 200)):
+            fig.savefig(THIS_DIR / f"fe_wave_bit_reversibility__{name}.{ext}", dpi=dpi)
         plt.close(fig)
 
     plt.rcParams["font.size"] = field_font
@@ -426,10 +426,14 @@ def plot(results):
     nx, nz = inverse.NX, inverse.NZ
     tau_grid = np.asarray(fx["tau_elem"]).reshape(nz, nx)
     im = ax0.imshow(tau_grid, origin="lower", extent=[0, inverse.WIDTH, 0, inverse.DEPTH],
-                    cmap="magma", aspect="equal")
+                    cmap="magma", aspect="equal", interpolation="nearest")
     half = 0.5 * inverse.IMPACT_WINDOW_WIDTH
-    ax0.plot([IMPACT_CENTER - half, IMPACT_CENTER + half], [inverse.DEPTH, inverse.DEPTH],
-             color="#2b738eff", linewidth=4.0, solid_capstyle="butt", clip_on=False)
+    # A filled bar about 4 pt thick rather than a 4 pt stroke, which would exceed Elsevier's
+    # 1.5 pt maximum line weight.
+    ax0.fill_between([IMPACT_CENTER - half, IMPACT_CENTER + half], inverse.DEPTH - 0.06,
+                     inverse.DEPTH + 0.06, color="#2b738eff", linewidth=0, clip_on=False)
+    ax0.set_xlim(0.0, inverse.WIDTH)
+    ax0.set_ylim(0.0, inverse.DEPTH)
     ax0.text(IMPACT_CENTER + half + 0.15, inverse.DEPTH + 0.12, "impact", fontsize="medium",
              color="#2b738eff", va="bottom")
     ax0.set_xlabel("$x$", fontsize="large")
@@ -437,7 +441,9 @@ def plot(results):
     cax = make_axes_locatable(ax0).append_axes("right", size="1.5%", pad=0.08)
     cb = fig.colorbar(im, cax=cax)
     cb.set_label(r"$\tau$", fontsize="large")
-    save(fig, "field")
+    # The element field and the colorbar are embedded as bitmaps. At 1200 dpi they print at
+    # about 1260 dpi (0.95\textwidth), above Elsevier's 1000 dpi minimum for line art.
+    save(fig, "field", pdf_dpi=1200)
 
     plt.rcParams["font.size"] = panel_font
     fig, ax1 = plt.subplots(figsize=panel_size)
